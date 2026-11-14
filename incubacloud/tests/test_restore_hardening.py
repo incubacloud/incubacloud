@@ -523,8 +523,10 @@ class TestTheLinkIsNeverAWordOfTheCommand(RestoreFixture, TransactionCase):
         )
         for hidden in (SIGNATURE, "X-Amz", "acme-7", "backup.zip"):
             self.assertNotIn(hidden, command)
-        self.assertIn(f"--config {self.executor._curl_config_path()}", command)
-        self.assertIn(f"rm -f {self.executor._curl_config_path()}", command)
+        config = self.executor._curl_config_path()
+        self.assertIn("--config -", command)
+        self.assertNotIn(f"--config {config}", command)
+        self.assertIn(f"exec 3< {config} && rm -f -- {config}", command)
 
     def test_no_step_run_apart_names_the_link(self):
         """A step apart keeps its command in its directory on the server and
@@ -541,9 +543,15 @@ class TestTheLinkIsNeverAWordOfTheCommand(RestoreFixture, TransactionCase):
             for hidden in (SIGNATURE, "X-Amz", "acme-7", "backup.zip"):
                 self.assertNotIn(hidden, command, label)
 
+    def _write_staged(self, private):
+        """Write on disk, 0600, what ``before_execute`` staged."""
+        for path, content in private.items():
+            Path(path).write_text(content, encoding="utf-8")
+            Path(path).chmod(0o600)
+
     def test_lab_the_argv_curl_gets_holds_no_link(self):
         """On a real shell, with ``curl`` recording its arguments."""
-        self._staged()
+        self._write_staged(self._staged())
         curl = Path(self.tmp, "bin", "curl")
         curl.parent.mkdir()
         curl.write_text(
@@ -559,13 +567,93 @@ class TestTheLinkIsNeverAWordOfTheCommand(RestoreFixture, TransactionCase):
         )
         self.assertEqual(done.returncode, 0)
         argv = Path(self.tmp, "argv").read_text(encoding="utf-8")
-        self.assertIn(self.executor._curl_config_path(), argv)
+        self.assertNotIn(self.executor._curl_config_path(), argv)
+        self.assertIn("--config\0-\0", argv)
         self.assertNotIn(SIGNATURE, argv)
         self.assertNotIn("93.184.216.34/bucket", argv)
 
+    def _fake_curl(self, body):
+        """Put a ``curl`` made of *body* first in a bin directory; return it."""
+        curl = Path(self.tmp, "bin", "curl")
+        curl.parent.mkdir(exist_ok=True)
+        curl.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+        curl.chmod(0o755)
+        return curl.parent
+
+    def _download_env(self, bindir):
+        """Return the environment the download step runs in."""
+        return {"PATH": f"{bindir}:/usr/bin:/bin", "TMPD": self.tmp}
+
+    def test_lab_the_config_is_gone_before_curl_runs_and_curl_reads_it(self):
+        """The step opens the config, removes it and gives curl the open file
+        as its standard input: when curl starts the file is no longer on the
+        disk, and curl still reads the whole of it (#118)."""
+        private = self._staged()
+        self._write_staged(private)
+        config = self.executor._curl_config_path()
+        bindir = self._fake_curl(
+            f'[ -e "{config}" ] && echo present > "$TMPD/seen" '
+            '|| echo gone > "$TMPD/seen"\ncat > "$TMPD/read"'
+        )
+        _label, command, _opts = self.executor._download_command(
+            self.executor._remote_path(),
+        )
+        done = subprocess.run(
+            ["bash", "-c", command], cwd=self.tmp, check=False,
+            env=self._download_env(bindir),
+        )
+        self.assertEqual(done.returncode, 0)
+        self.assertEqual(Path(self.tmp, "seen").read_text().strip(), "gone")
+        self.assertEqual(
+            Path(self.tmp, "read").read_text(encoding="utf-8"), private[config],
+        )
+        self.assertFalse(Path(config).exists())
+
+    def test_lab_a_download_stopped_leaves_no_config_on_the_disk(self):
+        """A stop sends TERM to the step's session, again from its timeout,
+        and kills what runs: the ``rm`` that followed curl never ran and the
+        file stayed (#118). Now it went before curl started."""
+        import signal
+        import time
+        self._write_staged(self._staged())
+        config = self.executor._curl_config_path()
+        bindir = self._fake_curl(': > "$TMPD/started"\nexec sleep 30')
+        _label, command, _opts = self.executor._download_command(
+            self.executor._remote_path(),
+        )
+        proc = subprocess.Popen(
+            ["bash", "-c", command], cwd=self.tmp, start_new_session=True,
+            env=self._download_env(bindir),
+        )
+        self.addCleanup(proc.kill)
+        for _ in range(100):
+            if Path(self.tmp, "started").exists():
+                break
+            time.sleep(0.05)
+        self.assertTrue(Path(self.tmp, "started").exists())
+        os.killpg(proc.pid, signal.SIGTERM)
+        proc.wait(timeout=10)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertFalse(Path(config).exists())
+
+    def test_lab_a_config_that_is_not_there_runs_no_curl(self):
+        """Nothing staged, nothing downloaded: the step fails before curl."""
+        bindir = self._fake_curl(': > "$TMPD/ran"')
+        self._staged()
+        _label, command, _opts = self.executor._download_command(
+            self.executor._remote_path(),
+        )
+        done = subprocess.run(
+            ["bash", "-c", command], cwd=self.tmp, check=False,
+            env=self._download_env(bindir), capture_output=True,
+        )
+        self.assertNotEqual(done.returncode, 0)
+        self.assertFalse(Path(self.tmp, "ran").exists())
+
     def test_lab_curl_downloads_the_link_its_config_names(self):
-        """The real ``curl`` reads ``url`` from the config: the query reaches
-        the server whole, and the archive lands where ``-o`` says."""
+        """The real ``curl`` reads ``url`` from the config it is given on its
+        standard input, as the step does (#118): the query reaches the server
+        whole, and the archive lands where ``-o`` says."""
         import http.server
         import threading
 
@@ -597,10 +685,12 @@ class TestTheLinkIsNeverAWordOfTheCommand(RestoreFixture, TransactionCase):
         config = Path(self.tmp, "curl.conf")
         config.write_text(rie._curl_url_config(url), encoding="utf-8")
         out = Path(self.tmp, "out.zip")
-        done = subprocess.run(
-            ["curl", "-q", "-fsS", "--globoff", "--config", str(config), "-o", str(out)],
-            capture_output=True, text=True, check=False, timeout=30,
-        )
+        with config.open("rb") as stdin:
+            done = subprocess.run(
+                ["curl", "-q", "-fsS", "--globoff", "--config", "-", "-o", str(out)],
+                stdin=stdin, capture_output=True, text=True, check=False,
+                timeout=30,
+            )
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(out.read_bytes(), b"zip")
         self.assertEqual(heard, [urlsplit(url).path + "?" + urlsplit(url).query])

@@ -376,6 +376,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **The curl config of a restore from a link no longer outlives a stopped
+  download (#118).** The "Download the archive" step ran curl with the
+  config file that holds the link and its credential and removed the file
+  after curl ended; a stop (TERM to the step's session, once more from
+  its timeout, KILL after 60 s) killed the shell before the `rm` and left
+  the file on the server. The step now opens the file, removes it and
+  gives curl the open file as its standard input (`--config -`), so it is
+  gone from the disk before curl starts; the TERMs that land in the two
+  commands between are ignored.
 - **A rebuild that ends before its restart leaves a mark on the server,
   and nothing puts its untried work in service (#96)**
   ([RB-42](docs/runbooks/RB-42-rebuild-left-unapplied.md)). A rebuild

@@ -661,11 +661,17 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         the address was validated and pinned here, and a redirect is
         precisely how that validation would be escaped. And the
         link and its credentials, if any, are in a curl config file
-        ``before_execute`` staged owner-only in the job's directory,
-        removed when the download ends — a password, or a link that
-        downloads by itself, in the command line would be readable in
-        ``ps`` by anyone on the host. Sent only to the address the link
-        names: no redirect is followed. Every value is one quoted word:
+        ``before_execute`` staged owner-only in the job's directory — a
+        password, or a link that downloads by itself, in the command line
+        would be readable in ``ps`` by anyone on the host. The step opens
+        it, removes it and hands curl the open file as its standard input
+        (``--config -``), so it is gone from the disk before curl starts
+        and a step stopped at any later point leaves nothing behind: a
+        ``rm`` after curl never ran when the stop's TERM killed the shell
+        (#118). The TERMs are ignored for the two commands between the
+        opening and the removal, and given back to curl before it is
+        executed (an ignored signal would stay ignored in it). Sent only
+        to the address the link names: no redirect is followed. Every value is one quoted word:
         the address is the requester's, and a quote in it ended the
         quoting it was written in (28-oct-2026).
 
@@ -704,11 +710,15 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             "--proto-redir", "=https",
             "--resolve", resolve,
             "--max-filesize", str(limit),
-            "--config", config,
+            "--config", "-",
             "-o", remote,
         ]
+        quoted = shlex.quote(config)
         command = (
-            f"{shlex.join(args)}; rc=$?; rm -f {shlex.quote(config)}; exit $rc"
+            "trap '' TERM INT HUP"
+            f"; exec 3< {quoted} && rm -f -- {quoted}"
+            " && trap - TERM INT HUP"
+            f" && exec {shlex.join(args)} 0<&3 3<&-"
         )
         # Apart on the server: an archive of several GB downloads past the
         # time a request is given. Its command names the config file, never

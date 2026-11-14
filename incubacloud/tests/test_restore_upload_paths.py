@@ -870,7 +870,8 @@ class TestTheJobSecretIsTheServers(TransactionCase):
         _label, command, _opts = executor._download_command(
             executor._remote_path(),
         )
-        self.assertIn(f"--config {executor._curl_config_path()}", command)
+        self.assertIn("--config -", command)
+        self.assertIn(executor._curl_config_path(), command)
         self.assertNotIn("hunter2", command)
         self.assertNotIn("hunter2", job.payload.get("url_display", ""))
 
@@ -957,7 +958,8 @@ class TestADownloadFromALinkRunsNothingItCarries(TransactionCase):
     def test_lab_curl_gets_each_value_as_one_word(self):
         """The step runs on a real shell with ``curl`` recording its
         arguments: the address arrives whole and nothing else runs."""
-        self._staged()
+        for path, content in self._staged().items():
+            Path(path).write_text(content, encoding="utf-8")
         curl = Path(self.tmp, "bin", "curl")
         curl.parent.mkdir()
         curl.write_text(
@@ -980,11 +982,11 @@ class TestADownloadFromALinkRunsNothingItCarries(TransactionCase):
             "--proto", "=https,sftp,ftp", "--proto-redir", "=https",
             "--resolve", "93.184.216.34:443:93.184.216.34",
             "--max-filesize", str(limit),
-            "--config", self.executor._curl_config_path(),
+            "--config", "-",
             "-o", remote,
         ])
         self.assertFalse(Path(self.tmp, "pwned").exists())
-        self.assertEqual(shlex.split(command)[:2], ["bash", "-c"])
+        self.assertIn(" && exec bash -c ", command)
 
     def test_lab_curl_reads_back_every_password(self):
         """The real ``curl`` reads the staged file back exactly, whatever
