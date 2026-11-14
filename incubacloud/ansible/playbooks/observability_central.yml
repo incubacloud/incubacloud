@@ -103,8 +103,10 @@
     ic_log_retention_days: 30
     # Hosts' security logs (SSH, sudo, auditd, fail2ban), where sent:
     # kept longer, because an incident is often found weeks after it
-    # began. They carry operators' and attackers' addresses, not the
-    # instances' visitors.
+    # began. They carry operators' and attackers' addresses and, in the
+    # failed web logins to the instances, the address of whoever tried
+    # (with the instance and the time, never the user name or the
+    # password).
     ic_security_log_retention_days: 90
     # Series one LogQL query may return (Loki's default, 500, would break
     # "top source addresses" during a distributed attack: review M4 of
