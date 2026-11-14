@@ -91,7 +91,12 @@ def _as_list(value):
 #:    and the Docker socket leave every server.
 #: 3. 13-nov-2026: vmagent keeps its queue in its volume
 #:    (``-remoteWrite.tmpDataPath``), so a re-apply no longer loses it.
-AGENTS_REVISION = 3
+#: 4. 14-nov-2026: the agents write with their own user, which may only
+#:    write, once the central knows it; Loki's lines carry ``host_id``;
+#:    the install reads the address and the uid the panel comes in with;
+#:    Fluent Bit counts the instances' failed web logins from the proxy's
+#:    access log (plan #84, C1).
+AGENTS_REVISION = 4
 
 
 class ObservabilityAgentsExecutor(AnsibleExecutor):
