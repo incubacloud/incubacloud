@@ -12,7 +12,7 @@ so what uses them keeps working for the roles it is meant for.
 import importlib.util
 import os
 import socket
-from http.client import HTTPResponse
+from http.client import HTTPResponse, InvalidURL
 from unittest.mock import MagicMock, patch
 
 from odoo import http
@@ -26,7 +26,10 @@ from odoo.addons.incubacloud.net import outbound
 #: What a public webhook host resolves to, so a URL saved here passes the
 #: check of its address without a DNS lookup.
 PUBLIC_HOST = [
-    (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.215.14", 443)),
+    (
+        socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "",
+        ("93.184.215.14", 443),
+    ),
 ]
 
 #: The four roles of the panel, by the group each one is given.
@@ -425,8 +428,9 @@ class TestChannelOffDeletesItsSecret(_SecretFieldCase):
             self.manager._get_cloud_webhook_secret(), "manager-signing-secret",
         )
 
-    def test_another_user_cannot_delete_them(self):
-        """A save reaches only its caller's own channels."""
+    def test_another_user_neither_saves_over_them_nor_writes_them_by_the_orm(self):
+        """Another user's save writes only that user's row, a user id added
+        to it is dropped, and the ORM refuses them a write of the fields."""
         developer = self.roles["developer"]
         # The route takes no user to act on: Odoo drops the argument.
         with self.assertLogs("odoo.http", "WARNING"):
@@ -481,6 +485,78 @@ class TestChannelOffDeletesItsSecret(_SecretFieldCase):
         self.assertIn(b'"515151"', test_req.data)
         self.assertFalse(developer._get_cloud_telegram_bot_token())
         self.assertFalse(developer.cloud_telegram_chat_id)
+
+    def test_a_portal_user_cannot_run_the_telegram_checks(self):
+        """Detect and Send test are refused as the save is."""
+        from odoo.addons.incubacloud.controllers import connect
+
+        portal = new_test_user(
+            self.env, login="secret_groups_portal", groups="base.group_portal",
+        )
+        with patch.object(
+            connect.urllib.request, "urlopen", autospec=True,
+        ) as urlopen:
+            detected = self._call(
+                self.controller, "telegram_detect_chat_id", portal,
+                bot_token="777:typed-bot-token",
+            )
+            tested = self._call(
+                self.controller, "telegram_send_test", portal,
+                bot_token="777:typed-bot-token", chat_id="515151",
+            )
+        refused = {"ok": False, "error": "Not available for this account"}
+        self.assertEqual(detected, refused)
+        self.assertEqual(tested, refused)
+        urlopen.assert_not_called()
+
+    def test_a_token_with_spaces_is_trimmed_and_kept_out_of_the_log(self):
+        """Pasted with a newline, the token still reaches its bot; a URL
+        Telegram's library refuses is logged without the token."""
+        from odoo.addons.incubacloud.controllers import connect
+
+        developer = self.roles["developer"]
+        response = MagicMock(spec=HTTPResponse)
+        response.__enter__.return_value = response
+        response.read.return_value = b'{"ok": true}'
+        with patch.object(
+            connect.urllib.request, "urlopen", autospec=True,
+            return_value=response,
+        ) as urlopen:
+            tested = self._call(
+                self.controller, "telegram_send_test", developer,
+                bot_token=" 777:typed-bot-token\n", chat_id="515151",
+            )
+        self.assertEqual(tested, {"ok": True})
+        self.assertIn(
+            "/bot777:typed-bot-token/sendMessage",
+            urlopen.call_args.args[0].full_url,
+        )
+        refusal = InvalidURL(
+            "URL can't contain control characters. "
+            "'/bot777:typed bot-token/getUpdates' (found at least ' ')"
+        )
+        with (
+            patch.object(
+                connect.urllib.request, "urlopen", autospec=True,
+                side_effect=refusal,
+            ),
+            self.assertLogs(connect._logger.name, "WARNING") as logs,
+        ):
+            detected = self._call(
+                self.controller, "telegram_detect_chat_id", developer,
+                bot_token="777:typed bot-token",
+            )
+        self.assertFalse(detected["ok"])
+        self.assertNotIn("typed bot-token", "\n".join(logs.output))
+        # The save stores it trimmed too.
+        self._save(
+            developer,
+            cloud_telegram_bot_token="666:saved-bot-token\n",
+            cloud_telegram_chat_id="515151",
+        )
+        self.assertEqual(
+            developer._get_cloud_telegram_bot_token(), "666:saved-bot-token",
+        )
 
     def test_the_update_deletes_the_secrets_of_channels_already_off(self):
         """A token without a chat ID or a secret without a URL goes."""

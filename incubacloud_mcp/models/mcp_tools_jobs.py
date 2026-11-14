@@ -645,8 +645,9 @@ class McpToolsJobs(models.AbstractModel):
 
         A save that changes the Telegram chat (the notifications would go
         to another chat, or stop with it empty and the bot token be
-        deleted), sets the level to none,
-        turns the emails off, or mutes every project the user sees asks; any other save, and the Telegram checks, do not.
+        deleted), sets the level to none, turns the emails off, or mutes
+        every project the user sees asks; any other save, and the
+        Telegram checks, do not.
 
         :return: what the user approves, or None
         """

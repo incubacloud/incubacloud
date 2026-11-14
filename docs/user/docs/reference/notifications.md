@@ -52,10 +52,10 @@ Toggle it on and pick a mode:
 
 1. Turn on **Send Telegram notifications**, create a bot with
    [@BotFather](https://t.me/BotFather) and paste the bot token.
-2. Send any message to your bot, then click **Detect chat ID** — the platform
-   finds your chat automatically.
-3. **Send test** to verify, then **Save**. Done: job outcomes and alerts arrive
-   as Telegram messages, following your level.
+2. Send any message to your bot, then click **Detect** beside *Chat ID* — the
+   platform finds your chat automatically.
+3. **Send test message** to verify, then **Save**. Done: job outcomes and
+   alerts arrive as Telegram messages, following your level.
 
 Turning **Send Telegram notifications** off and saving deletes the bot token
 and the chat ID. To turn it on again, paste the token again.

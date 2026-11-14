@@ -206,7 +206,15 @@ and the Spanish catalogue.
   token and the chat ID shown in the card with the check instead of
   saving the form first (`bot_token`, `chat_id`, else the stored ones),
   so Detect no longer stores a token without a chat ID, and a test no
-  longer saves what Cancel then meant to drop. The update deletes the
+  longer saves what Cancel then meant to drop; like the save, they are
+  for internal users only. A card's header follows its switch, as
+  Email's does, and a chat ID or a URL of spaces counts as empty on the
+  page as on the server. A save the server refuses (a stored webhook URL
+  that no longer passes its check, a token too long) leaves the modal
+  open with the server's reason, where it said «Notification preferences
+  saved» and closed with nothing saved. A bot token is trimmed when saved
+  and checked, and a call to Telegram that fails is logged without it.
+  The update deletes the
   tokens already saved without a chat ID and the secrets without a URL
   (migration 1.0.229). The MCP tool's confirmation for emptying the
   Telegram chat says the bot token goes with it.
