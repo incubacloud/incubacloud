@@ -70,6 +70,17 @@ columns: Odoo keeps what each holds as its English text.
   the route leaves them out for anyone else. The tables are counted on the
   panel over the last 5 000 lines, 24 hours at most or 7 days filtered
   (`docs/observability-operations.md`, "A server's Security view").
+- **The fleet's Security block (#84).** Monitoring's Fleet view counts,
+  in figures and every account's on the operator's board, the failed SSH
+  logins and bans of the last hour, the servers under SSH brute force and
+  the instances under web-login brute force now by their rules'
+  thresholds, and the servers whose security logs do not arrive; from the
+  panel's database, the servers with security logs off, without hardening
+  and with active security alerts. It lists this panel's own servers to
+  look at, never another account's, with no address, user or alert text
+  for any role. A panel whose servers may not send their security logs
+  asks nothing and says so
+  (`docs/observability-operations.md`, "A server's board and the fleet's").
 - **The alerts of the servers' security events (#84).** Every 5 minutes,
   over the servers sending their security logs with agents of revision 4,
   the *Read the servers' security events* cron reads sign-ins, sudo and
