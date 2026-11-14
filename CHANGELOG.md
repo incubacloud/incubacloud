@@ -33,6 +33,16 @@ instance archives and dates the purge of the archives switched off
 before it from the update, so each gets the whole backup window from
 then. The rest is the panel's assets and the Spanish catalogue.
 
+### Added
+
+- **`backup_stale` alert: scheduled backups that stopped.** The daily
+  backup listing of a production instance raises it when the newest
+  duplicity set is older than 48 hours (one missed night plus the hours
+  until the listing; an instance with no set yet counts from its
+  creation), and closes it on the first listing that sees a fresh set, or
+  once the instance no longer has a backup service. Nothing told the
+  operator before that the copies had stopped.
+
 ### Changed
 
 - **Help text, switches and tab bars follow the panel's form standard
