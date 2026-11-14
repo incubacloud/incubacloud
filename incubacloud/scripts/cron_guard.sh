@@ -68,7 +68,14 @@ fi
 # A previous run may have died between pause and resume.
 _resume
 _psql "CREATE TABLE IF NOT EXISTS $MARKER (id integer PRIMARY KEY)" >/dev/null
-trap _resume EXIT
+# Run apart (``detached_step.sh``), a stop sends TERM to the step's whole
+# session and the ``timeout`` that runs the step sends it once more to its
+# process group: this shell gets it two or three times. Left to bash's
+# default, one that lands while bash goes into the trap kills it there,
+# and the crons stay paused. Handled, the first TERM leaves through the
+# trap, and the trap ignores the others (and its ``psql`` calls with it).
+trap 'trap "" TERM INT HUP; _resume' EXIT
+trap 'trap "" TERM INT HUP; exit 143' TERM INT HUP
 
 ic_log "pausing crons (up to $tries × ${interval}s for in-flight ticks)"
 for _ in $(seq 1 "$tries"); do
