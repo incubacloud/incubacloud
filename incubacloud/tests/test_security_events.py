@@ -6,12 +6,15 @@ of Loki and the connection that confirms the panel's address are
 ``MagicMock(spec=…)`` of the real classes: the tests hand them lines and
 answers, and look at the alerts, the cursors and what was asked.
 """
+import contextlib
 import re
 import time
 from unittest.mock import MagicMock, patch
 
 import requests
 
+from odoo import fields
+from odoo.sql_db import Cursor
 from odoo.tests.common import TransactionCase
 from odoo.tools import translate
 
@@ -78,6 +81,10 @@ class SecurityEventsCase(TransactionCase):
     def setUp(self):
         """One server of the panel, the cursors a pass old, no alert open."""
         super().setUp()
+        # The cron writes the servers' rows on a READ COMMITTED cursor of
+        # its own: in test mode it rides on this transaction, outside it
+        # would be a connection that sees nothing of the test.
+        self.registry_enter_test_mode()
         self.Events = self.env["cloud.security.events"]
         self.now = time.time_ns()
         self.lines = {"accepted": [], "sudo": [], "auditd": []}
@@ -190,6 +197,9 @@ class SecurityEventsCase(TransactionCase):
 
     def _run(self, **context):
         """Run one pass of the cron."""
+        # The cron's own cursor reads the database, not this env's
+        # pending writes.
+        self.env.flush_all()
         self.Events.with_context(**context)._cron_security_events()
 
     def _alerts(self, code, host=None):
@@ -516,6 +526,21 @@ class TestCursors(SecurityEventsCase):
         self._run()
         self.assertEqual(backlog.state, "dismissed")
 
+    def test_with_no_server_left_the_backlog_closes(self):
+        """Behind, then every server switched off: nothing is behind (B3)."""
+        self.incomplete.add("sudo")
+        self._add("sudo", _sudo(), ago=4 * MINUTE)
+        self._run()
+        self._run()
+        backlog = self.env["cloud.alert"].sudo().search([
+            ("code", "=", events.CODE_BACKLOG), ("state", "=", "active"),
+            ("dedup_key", "=", "sudo"),
+        ])
+        self.assertTrue(backlog)
+        self.host.write({"security_logs_enabled": False})
+        self._run()
+        self.assertEqual(backlog.state, "dismissed")
+
     def test_sudo_noise_does_not_hide_a_sign_in(self):
         """sudo stopped at its limit; the sign-in of the same pass is seen (A3)."""
         self.incomplete.add("sudo")
@@ -631,3 +656,145 @@ class TestTexts(SecurityEventsCase):
             self._run(lang="es_ES")
         message = self._alerts(events.CODE_FOREIGN).message
         self.assertTrue(message.startswith("S1: SSH sign-in as incubacloud"))
+
+
+#: The table a writing statement writes, whatever the statement.
+_WRITE = re.compile(
+    r"^\s*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+\"?(\w+)\"?",
+    re.IGNORECASE,
+)
+
+
+class TestHostRowsApart(SecurityEventsCase):
+    """The cron's transaction never writes a server's row (final review, M1).
+
+    ``security_last_line_at`` and the panel's addresses are written on a
+    READ COMMITTED cursor of their own: under the cron's snapshot, a
+    job's hook or a save of the server writing the same row made one of
+    the two lose it, and a pass that lost rolled back with its alerts
+    already sent.
+    """
+
+    def _writes(self):
+        """Run the cron and sort what it wrote by the cursor writing it.
+
+        :return: ``(main, separate)``, the tables written by the cron's
+            transaction and by its READ COMMITTED cursors.
+        """
+        self.env.flush_all()
+        main, separate = set(), set()
+        inside = []
+        real_open = events.read_committed_cursor
+        real_execute = Cursor.execute
+
+        @contextlib.contextmanager
+        def tracked(registry):
+            """Open the real cursor and note while it is in use."""
+            inside.append(True)
+            try:
+                with real_open(registry) as cr:
+                    yield cr
+            finally:
+                inside.pop()
+
+        def spy(cr, query, params=None, *args, **kwargs):
+            """Note the table of every write, by the cursor it is on."""
+            code = getattr(query, "code", query)
+            found = _WRITE.match(code if isinstance(code, str) else "")
+            if found:
+                (separate if inside else main).add(found.group(1))
+            return real_execute(cr, query, params, *args, **kwargs)
+
+        with patch.object(
+            events, "read_committed_cursor", side_effect=tracked,
+        ), patch.object(Cursor, "execute", autospec=True, side_effect=spy):
+            self._run()
+            # What the cron's transaction left in its cache would be
+            # written by its commit.
+            self.env.flush_all()
+        return main, separate
+
+    def test_last_line_and_learned_address_are_written_apart(self):
+        """A server back from a silence, one seen first, an address learned."""
+        self.host.write({
+            "security_last_line_at": events._to_datetime(self.now - 2 * 3600 * SECOND),
+        })
+        other = self._host("S2")
+        self.reader.query.return_value = [
+            ({"host_id": str(self.host.id)}, 12.0),
+            ({"host_id": str(other.id)}, 3.0),
+        ]
+        self.probe.read.return_value = NEW_PANEL_IP
+        self._add("accepted", _accepted(NEW_PANEL_IP))
+        main, separate = self._writes()
+        self.assertIn("cloud_host", separate)
+        self.assertNotIn("cloud_host", main)
+        self.assertEqual(
+            self.host.security_last_line_at,
+            events._to_datetime(self.now - events.SETTLE_NS).replace(microsecond=0),
+        )
+        self.assertTrue(other.security_last_line_at)
+        self.assertTrue(self.host._panel_source_known(NEW_PANEL_IP))
+        self.assertTrue(self.host._panel_source_known(PANEL_IP))
+
+
+class TestOneEventAtATime(SecurityEventsCase):
+    """A line that breaks its judgement stops nothing else (final review, M2)."""
+
+    def test_an_auditd_stamp_out_of_range_takes_loki_s_instant(self):
+        """Twelve digits of seconds, written by hand: no datetime holds them."""
+        ns = self.now - 2 * MINUTE
+        for line in _change(ns, auid=1005):
+            self._add("auditd", line.replace(f"audit({ns // SECOND}.", "audit(999999999999."))
+        self._add("accepted", _accepted(STRANGER_IP, OTHER_FP))
+        self._run()
+        change = self._alerts(events.CODE_CHANGE)
+        self.assertEqual(change.level, "critical")
+        self.assertEqual(
+            change.payload["last"]["time"],
+            fields.Datetime.to_string(events._to_datetime(ns)),
+        )
+        self.assertTrue(self._alerts(events.CODE_FOREIGN))
+        for query in events.QUERIES:
+            self.assertEqual(self._cursor(query), self.now - events.SETTLE_NS, query)
+        # The next pass reads the same lines again: nothing counts twice.
+        self.now += MINUTE
+        self._run()
+        self.assertEqual(self._alerts(events.CODE_CHANGE).payload["count"], 1)
+        self.assertEqual(self._alerts(events.CODE_FOREIGN).payload["count"], 1)
+
+    def test_an_event_that_fails_is_logged_and_skipped(self):
+        """sudo's judgement raises: the sign-in and the change still alert."""
+        self._add("accepted", _accepted(STRANGER_IP, OTHER_FP))
+        self._add("sudo", _sudo())
+        for line in _change(self.now - 2 * MINUTE, auid=1005):
+            self._add("auditd", line)
+        with patch.object(
+            type(self.Events), "_security_sudo", autospec=True,
+            side_effect=ValueError("a line no judgement expected"),
+        ), self.assertLogs(events.__name__, "ERROR") as logged:
+            self._run()
+        self.assertIn("skipped", "\n".join(logged.output))
+        self.assertFalse(self._alerts(events.CODE_SUDO))
+        self.assertTrue(self._alerts(events.CODE_FOREIGN))
+        self.assertTrue(self._alerts(events.CODE_CHANGE))
+        for query in events.QUERIES:
+            self.assertEqual(self._cursor(query), self.now - events.SETTLE_NS, query)
+        # The pass was kept: the next one counts nothing again.
+        self.now += MINUTE
+        self._run()
+        self.assertEqual(self._alerts(events.CODE_FOREIGN).payload["count"], 1)
+
+
+class TestRootPanel(SecurityEventsCase):
+    """Where the panel signs in as root, login uid 0 is root (final review, B5)."""
+
+    def test_root_s_change_outside_a_window_takes_root_s_level(self):
+        """Not the panel's critical: root's scheduled tasks carry uid 0 too."""
+        self.host.write({"security_panel_uid": "0"})
+        for line in _change(self.now - 2 * MINUTE, auid=0):
+            self._add("auditd", line)
+        self._run()
+        alert = self._alerts(events.CODE_CHANGE)
+        self.assertEqual(alert.level, events.ROOT_CHANGE_LEVEL)
+        self.assertEqual(alert.payload["last"]["who"], "root")

@@ -60,6 +60,7 @@ from datetime import datetime, timedelta, timezone
 from odoo import api, fields, models
 
 from . import logs
+from ._concurrency import is_concurrency_error, read_committed_cursor
 from .cloud_host_observability import _panel_source_network
 from .cloud_security_event import event_identity
 
@@ -140,6 +141,27 @@ def _to_datetime(ns):
     return datetime.fromtimestamp(ns / _SECOND_NS, tz=timezone.utc).replace(
         tzinfo=None,
     )
+
+
+def _audit_moment(event):
+    """Return when an auditd change happened, as a naive UTC datetime.
+
+    auditd's own ``audit(<seconds>:…)`` stamp, unless it is more than
+    :data:`LOOKBACK_NS` away from the instant Loki holds the line at: a
+    line written by hand can carry any number there, even one no
+    datetime holds, and then Loki's instant is the one used.
+
+    :param dict event: one of ``logs.join_audit``'s events.
+    :rtype: datetime
+    """
+    ns = int(event["ns"])
+    try:
+        stamp = int(float(event["time"]) * _SECOND_NS)
+    except (TypeError, ValueError, OverflowError):
+        stamp = ns
+    if abs(stamp - ns) > LOOKBACK_NS:
+        stamp = ns
+    return _to_datetime(stamp)
 
 
 def _to_ns(moment):
@@ -262,10 +284,13 @@ class CloudSecurityEvents(models.AbstractModel):
         was, for the next pass to read the same window again.
         """
         reader = self._security_reader()
-        if reader is None:
-            return
-        hosts = self._security_hosts()
+        hosts = self._security_hosts() if reader is not None else None
         if not hosts:
+            # Nothing is read, so no read is behind (Fable's final review
+            # of F4, B3).
+            Alert = self.env["cloud.alert"].sudo()
+            for query in QUERIES:
+                Alert.resolve_alert(CODE_BACKLOG, key=query)
             return
         end = self._security_now_ns() - SETTLE_NS
         run = _Pass(hosts, self._security_probe())
@@ -456,7 +481,7 @@ class CloudSecurityEvents(models.AbstractModel):
             else:
                 fresh |= host
         if fresh:
-            fresh.write({"security_last_line_at": now})
+            self._security_heard(fresh, now)
         returning.sort(key=lambda host: (host.security_last_line_at, host.id))
         for host in returning[:RETURNS_PER_PASS]:
             start = max(
@@ -464,7 +489,38 @@ class CloudSecurityEvents(models.AbstractModel):
                 end - LOOKBACK_NS,
             )
             if self._security_replay(reader, run, host, start, end):
-                host.write({"security_last_line_at": now})
+                self._security_heard(host, now)
+
+    def _security_heard(self, hosts, moment):
+        """Write when *hosts* last sent lines, on a cursor of their own.
+
+        These host rows are the ones a job's hook or a save of the server
+        writes too: written in the cron's REPEATABLE READ snapshot, ahead
+        of its reads of Loki and its connections, the second writer lost
+        the row and the whole pass rolled back, with its alerts already
+        sent (Fable's final review of F4, M1). The cron's own transaction
+        never writes these rows.
+
+        :param hosts: ``cloud.host`` records.
+        :param datetime moment: naive UTC, in seconds.
+        """
+        with read_committed_cursor(self.env.registry) as cr:
+            hosts.with_env(hosts.env(cr=cr)).sudo().write(
+                {"security_last_line_at": moment},
+            )
+        hosts.invalidate_recordset(["security_last_line_at"])
+
+    def _security_learn_source(self, host, address):
+        """Record *address* as the panel's on *host*, on a cursor of its own.
+
+        For the reason of :meth:`_security_heard`.
+
+        :param host: the ``cloud.host``.
+        :param str address: what a connection of the panel's own read.
+        """
+        with read_committed_cursor(self.env.registry) as cr:
+            host.with_env(host.env(cr=cr)).sudo()._record_panel_source(address)
+        host.invalidate_recordset(["security_panel_sources"])
 
     def _security_replay(self, reader, run, host, start, end):
         """Read the three windows again for one server.
@@ -527,7 +583,7 @@ class CloudSecurityEvents(models.AbstractModel):
                 for host, event in events
             )
             for host, event in events:
-                self._security_change(run, host, event)
+                self._security_isolated(host, self._security_change, run, host, event)
             if joined.deferred:
                 return window_end - logs.AUDIT_DEFER_SECONDS * _SECOND_NS
             return None
@@ -538,13 +594,37 @@ class CloudSecurityEvents(models.AbstractModel):
         hold = None
         for line in lines:
             host = run.hosts[line.host_id]
-            if query == "accepted":
-                verdict = self._security_login(run, host, line)
-            else:
-                verdict = self._security_sudo(run, host, line)
+            judge = self._security_login if query == "accepted" else self._security_sudo
+            verdict = self._security_isolated(host, judge, run, host, line)
             if verdict == HOLD:
                 hold = line.ns if hold is None else min(hold, line.ns)
         return hold
+
+    def _security_isolated(self, host, judge, *args):
+        """Judge one event in a savepoint of its own; log and skip what fails.
+
+        A line that breaks its judgement (one written by hand on the
+        server, say) neither stops the pass for every server nor rolls
+        back the alerts the pass already raised and sent, which the next
+        pass would raise and send again (Fable's final review of F4, M2).
+        A lost race is raised still, for Odoo to run the cron again.
+
+        :param host: the ``cloud.host`` the event came from.
+        :param judge: the method that judges it.
+        :param args: its arguments.
+        :return: what *judge* returned, or None when it failed.
+        """
+        try:
+            with self.env.cr.savepoint():
+                return judge(*args)
+        except Exception as exc:
+            if is_concurrency_error(exc):
+                raise
+            _logger.exception(
+                "[security] an event of cloud.host(id=%s) skipped: %s",
+                host.id, exc,
+            )
+            return None
 
     def _security_login(self, run, host, line):
         """Judge one ``Accepted`` line and raise its alert, if any.
@@ -682,7 +762,7 @@ class CloudSecurityEvents(models.AbstractModel):
         """
         network = _panel_source_network(address)
         if network in run.confirmed:
-            host._record_panel_source(address)
+            self._security_learn_source(host, address)
             return "match"
         if host.id not in run.probed:
             if run.probes_left <= 0:
@@ -698,7 +778,7 @@ class CloudSecurityEvents(models.AbstractModel):
                 seen = None
             run.probed[host.id] = seen
             if seen:
-                host._record_panel_source(seen)
+                self._security_learn_source(host, seen)
                 run.confirmed.add(_panel_source_network(seen))
         seen = run.probed[host.id]
         if seen is None:
@@ -756,7 +836,7 @@ class CloudSecurityEvents(models.AbstractModel):
         identity = event_identity(host.id, event["ns"], audit_event=event["event"])
         if identity in run.known:
             return
-        at = _to_datetime(int(event["time"] * _SECOND_NS))
+        at = _audit_moment(event)
         if who == "user":
             level = "critical"
         elif self._security_in_window(run, host, at):
@@ -775,7 +855,10 @@ class CloudSecurityEvents(models.AbstractModel):
 
         Without the panel's uid (an install before it was recorded) a
         user cannot be told from the panel's: it is judged as the
-        panel's, by its windows.
+        panel's, by its windows. Login uid 0 is root even where the panel
+        signs in as root: root's scheduled tasks carry it too, so outside
+        the panel's windows it takes :data:`ROOT_CHANGE_LEVEL`, as the
+        alerts' reference says (Fable's final review of F4, B5).
 
         :param host: the ``cloud.host``.
         :param auid: auditd's login uid, or None.
@@ -783,11 +866,11 @@ class CloudSecurityEvents(models.AbstractModel):
         """
         if auid is None or auid == logs.AUID_UNSET:
             return "system"
+        if auid == 0:
+            return "root"
         uid = (host.security_panel_uid or "").strip()
         if uid and str(auid) == uid:
             return "panel"
-        if auid == 0:
-            return "root"
         if not uid:
             return "panel"
         return "user"
