@@ -21,6 +21,20 @@ _MAX_USER_SECRET_CHARS = 1024
 
 _logger = logging.getLogger(__name__)
 
+
+def _typed_or_stored(typed, stored):
+    """Return the secret typed in a form, or else the stored one.
+
+    :param typed: what the request carried; anything but a non-empty
+        string counts as nothing typed
+    :param stored: a callable returning the stored secret
+    :return: the secret, or ``False`` when there is none
+    """
+    if isinstance(typed, str) and typed:
+        return typed
+    return stored()
+
+
 # ── Python scripts executed inside the Odoo container via docker exec ─────────
 
 # Flags a target user as an administrator of the instance's database: uid 2
@@ -543,21 +557,48 @@ class InstanceConnectController(http.Controller):
             vals['cloud_webhook_url'] = url
         if cloud_webhook_secret:
             vals['cloud_webhook_secret'] = cloud_webhook_secret
-        request.env.user.sudo().write(vals)
+        # A channel is on while its address is saved, which is what its
+        # senders check: the chat ID for Telegram, the URL for the
+        # webhook. A save that leaves the address empty turns the channel
+        # off, and its secret goes with it, a token typed in the same save
+        # included, so no request leaves a secret that nothing uses. The
+        # panel's switch off sends both empty; an empty secret field
+        # alone still keeps the stored one. Decided on 2026-11-14.
+        user = request.env.user
+        if not vals.get('cloud_telegram_chat_id',
+                        user.cloud_telegram_chat_id):
+            vals['cloud_telegram_bot_token'] = False
+            vals['cloud_telegram_chat_id'] = False
+        if not vals.get('cloud_webhook_url', user.cloud_webhook_url):
+            vals['cloud_webhook_secret'] = False
+            vals['cloud_webhook_url'] = False
+        user.sudo().write(vals)
         return {'ok': True}
 
     @http.route('/cloud/telegram_detect_chat_id', type='jsonrpc', auth='user',
                 methods=['POST'])
-    def telegram_detect_chat_id(self):
+    def telegram_detect_chat_id(self, bot_token=None):
         """Poll the user's Telegram bot for the most recent chat_id.
 
         Calls ``getUpdates`` and returns the chat_id of the last
         message the bot received. The user must send at least one
         message to their bot first.
+
+        :param bot_token: a token typed in the preferences and not saved
+            yet; without one, the stored token is used. The preferences
+            save a token only with a chat ID, so the one being set up
+            comes here instead of being saved first.
         """
-        token = request.env.user._get_cloud_telegram_bot_token()
+        token = _typed_or_stored(
+            bot_token, request.env.user._get_cloud_telegram_bot_token,
+        )
         if not token:
             return {'ok': False, 'error': 'No Telegram bot token configured'}
+        if len(token) > _MAX_USER_SECRET_CHARS:
+            return {'ok': False, 'error': _(
+                'The Telegram bot token can be %(max)s characters at most.',
+                max=_MAX_USER_SECRET_CHARS,
+            )}
         url = f"https://api.telegram.org/bot{token}/getUpdates"
         try:
             req = urllib.request.Request(url)
@@ -583,12 +624,27 @@ class InstanceConnectController(http.Controller):
 
     @http.route('/cloud/telegram_send_test', type='jsonrpc', auth='user',
                 methods=['POST'])
-    def telegram_send_test(self):
-        """Send a test message to the user's configured Telegram chat."""
-        token = request.env.user._get_cloud_telegram_bot_token()
-        chat_id = request.env.user.cloud_telegram_chat_id
+    def telegram_send_test(self, bot_token=None, chat_id=None):
+        """Send a test message to the user's Telegram chat.
+
+        :param bot_token: a token typed in the preferences and not saved
+            yet; without one, the stored token is used
+        :param chat_id: the chat ID in the preferences, saved or not;
+            without one, the stored chat ID is used
+        """
+        user = request.env.user
+        token = _typed_or_stored(bot_token, user._get_cloud_telegram_bot_token)
+        if isinstance(chat_id, str):
+            chat_id = chat_id.strip()
+        else:
+            chat_id = user.cloud_telegram_chat_id
         if not token:
             return {'ok': False, 'error': 'No Telegram bot token configured'}
+        if len(token) > _MAX_USER_SECRET_CHARS:
+            return {'ok': False, 'error': _(
+                'The Telegram bot token can be %(max)s characters at most.',
+                max=_MAX_USER_SECRET_CHARS,
+            )}
         if not chat_id:
             return {'ok': False, 'error': 'No Telegram chat ID configured'}
         url = f"https://api.telegram.org/bot{token}/sendMessage"

@@ -2377,8 +2377,12 @@ msgstr ""
 #. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
-msgid "Stop your Telegram notifications."
-msgstr "Dejar de enviarle las notificaciones por Telegram."
+msgid ""
+"Stop your Telegram notifications and delete the bot token stored in the "
+"panel."
+msgstr ""
+"Dejar de enviarle las notificaciones por Telegram y borrar el token del bot "
+"guardado en el panel."
 
 #. module: incubacloud_mcp
 #. odoo-python

@@ -16,10 +16,13 @@ update stopped while the instance's database is out of reach no longer
 leaves its container running. A stored password, secret or token reads
 «Stored» with Replace across the panel, as in Settings, and an
 instance's, a host's, a project's and a backup destination's page save
-with Settings' save bar.
+with Settings' save bar. Switching a notification channel off deletes its
+bot token or signing secret.
 
-The update adds no table or column and needs no data migration; only the
-panel's assets and the Spanish catalogue change.
+The update adds no table or column. Its one data migration, 1.0.229's
+post-migrate, deletes the Telegram bot tokens saved without a chat ID and
+the webhook secrets left without a URL; the rest is the panel's assets
+and the Spanish catalogue.
 
 ### Changed
 
@@ -187,6 +190,26 @@ panel's assets and the Spanish catalogue change.
   the repository URL `aria-invalid`, described by the message, now in
   `--rl-red-text`. *Restore to a moment*'s field is described by the
   range it accepts. No text changes.
+- **Switching a notification channel off deletes its secret (#122).**
+  The Telegram and webhook cards of *Notification Preferences* have a
+  switch, as Email has: *Send Telegram notifications* and *Send webhook
+  notifications*, on while the channel is saved, with their fields shown
+  only while on. Off and saved, the server deletes the bot token and the
+  chat ID, or the signing secret and the URL, and the fields read «Not
+  set» again. The server decides it, not the page: Telegram is on while a
+  chat ID is saved and the webhook while a URL is, which is what their
+  senders check, and any save that leaves the address empty deletes the
+  secret, one sent in the same request included, so no request leaves a
+  secret that serves no channel. While the channel stays on, an empty
+  secret field still keeps the stored one. A save changes only its
+  caller's own preferences. *Detect* and *Send test message* send the
+  token and the chat ID shown in the card with the check instead of
+  saving the form first (`bot_token`, `chat_id`, else the stored ones),
+  so Detect no longer stores a token without a chat ID, and a test no
+  longer saves what Cancel then meant to drop. The update deletes the
+  tokens already saved without a chat ID and the secrets without a URL
+  (migration 1.0.229). The MCP tool's confirmation for emptying the
+  Telegram chat says the bot token goes with it.
 
 ### Fixed
 

@@ -16,6 +16,45 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Send Telegram notifications"
+msgstr "Enviar notificaciones por Telegram"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Send webhook notifications"
+msgstr "Enviar notificaciones al webhook"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Toggle Telegram notifications"
+msgstr "Activar/desactivar las notificaciones por Telegram"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Toggle webhook notifications"
+msgstr "Activar/desactivar las notificaciones al webhook"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Turning it off deletes the stored URL and signing secret when you save"
+msgstr ""
+"Si lo desactiva, al guardar se borran la URL y el secreto de firma guardados"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Turning it off deletes the stored bot token and chat ID when you save"
+msgstr ""
+"Si lo desactiva, al guardar se borran el token del bot y el ID de chat "
+"guardados"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid ""
 "\"\n"
