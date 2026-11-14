@@ -877,6 +877,42 @@ Both database rules read only a fresh `ic_pg.prom`
 no collector, or one that stopped, there is no sample, so neither an alert
 nor a failure.
 
+The servers' security rules (#84, 14-nov-2026) read Fluent Bit's
+counters, which exist only where a server sends its security logs. Their
+thresholds are **provisional**: the measurements that fix them (the
+noise of normal use, the fleet's `already_banned` and failed web logins)
+are still to be taken, and each value is replaced with its measurement
+and date when they are.
+
+| Code | Reads | Threshold | Confirm | Why this value for now |
+| --- | --- | --- | --- | --- |
+| `security_ssh_bruteforce` | failed SSH connections in 10 min, per server | > 100 | 2 cycles | Ten a minute: a person who mistypes makes a few, a scanner of the internet hundreds (the F0 burst: 600 a minute) |
+| `security_f2b_ineffective` | fail2ban's `already banned` in 30 min, per server | > 20, critical | 2 cycles | An address banned that keeps arriving means the ban is not applied; under a heavy attack a few repeats while a ban is set may be normal, so a second reading before paging |
+| `security_weblogin_bruteforce` | failed web logins in 10 min, **per instance** (`ic_weblogin_failed_total`, `instance_id="0"` left out) | > 50 | 2 cycles | Five a minute against one instance: more than a forgotten password, well under what the web-login jail bans an address for |
+| `security_logs_silent` | 1 when Fluent Bit's exporter has not answered in 15 min, its Loki output dropped lines in 30 min, or it read lines of sshd, sudo or weblogin in 30 min and delivered none | > 0 | 1 cycle | Each condition is a window already; "up" alone says Fluent Bit lives, not that Loki takes what it sends (a 401 is retried for hours without dropping anything) |
+
+Every one of them ends in `or (… * 0)`, a 0 for each target seen in the
+last hour (the reporting servers, for the silence rule): the evaluator
+resolves only a target the answer names, and Fluent Bit's counters vanish
+when it restarts, until the next line of their kind. Each target is
+judged once a pass, on its worst sample.
+
+**The web-login alert names the addresses with the most attempts.** Only
+when the rule fires, the panel reads that instance's `weblogin` lines of
+the last 10 minutes from the central's Loki and adds the three addresses
+with the most attempts and their count (IPv6 by /64) to the text; the
+alert's payload keeps the same list, never a line. At most 10 reads a
+pass, the instances with the most attempts first; the others, a central
+that is busy or fails, and a template without `%(sources)s` go out with
+the figure alone. A server reached through a CDN is not read: its proxy
+sees the CDN's addresses, and the text says so.
+
+**Names and messages are translatable.** The text is written in the
+language of the context the rules are evaluated in (the cron runs
+without one, so English), as every other alert producer does. A
+translation whose markers are broken, any `%` that is not `%(host)s`,
+`%(value)s`, `%(sources)s` or `%%`, is not used: the English text is.
+
 ## URLs: which one must resolve from where
 
 The two URLs in Settings are consumed by **different containers**, and
