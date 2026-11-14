@@ -303,6 +303,119 @@
         <field name="message">The database of %(host)s uses %(value)s%% of its connections: new ones will soon be refused. Check its workers and crons, or raise max_connections.</field>
     </record>
 
+    <!-- ── The servers' security (#84, F4) ─────────────────────────────
+         Read from the counters Fluent Bit keeps where a server sends its
+         security logs (security_logs_enabled): with the switch off the
+         series do not exist, so these rules say nothing about it.
+
+         The thresholds are provisional (14-nov-2026): the measurements
+         that fix them (plan #84, step M: the noise of normal use, the
+         fleet's already_banned and failed web logins) have not been
+         taken. Each one says what it is a guess from; the table in
+         docs/observability-operations.md, "Tuning alerts", too.
+
+         Every expression groups by host_id alone, not with the name: a
+         server renamed in the last window would give two samples for one
+         host, and the first would resolve what the second raises.
+
+         Every expression ends in "or (… * 0)": a 0 for each target seen
+         in the last hour (the last 15 minutes for the silence rule).
+         The evaluator only resolves a target the answer names, and a
+         counter of Fluent Bit vanishes when it restarts, until the next
+         line of its kind: without the 0, an alert raised before a
+         restart would stay open for ever. Checked against
+         VictoriaMetrics v1.102.0, the central's version, with synthetic
+         series (14-nov-2026). -->
+
+    <record id="metric_rule_security_ssh_bruteforce" model="cloud.metric.rule">
+        <field name="name">SSH brute force</field>
+        <field name="sequence">100</field>
+        <field name="code">security_ssh_bruteforce</field>
+        <!-- Two windows in a row: a burst is not an attack that lasts. -->
+        <field name="confirm_cycles">2</field>
+        <field name="expression">round(sum by (host_id) (increase(ic_ssh_auth_failed_total[10m]))) or (max by (host_id) (last_over_time(ic_ssh_auth_failed_total[1h])) * 0)</field>
+        <field name="comparator">gt</field>
+        <!-- Ten a minute. A person who mistypes makes a few; a scanner
+             of the internet makes hundreds (F0's burst: 600 a minute). -->
+        <field name="threshold">100</field>
+        <field name="level">warning</field>
+        <field name="message">%(host)s has received %(value)s failed SSH logins in 10 minutes. The detail is in Metrics → Security; to keep them from reaching the server, limit the addresses that may connect in Servers → Hardening.</field>
+    </record>
+
+    <record id="metric_rule_security_f2b_ineffective" model="cloud.metric.rule">
+        <field name="name">fail2ban bans not taking effect</field>
+        <field name="sequence">101</field>
+        <field name="code">security_f2b_ineffective</field>
+        <!-- Two windows in a row: a critical alert, on a threshold not
+             yet measured. -->
+        <field name="confirm_cycles">2</field>
+        <!-- fail2ban writes "already banned" when an address it banned
+             is found again: the ban did not stop it. -->
+        <field name="expression">round(sum by (host_id) (increase(ic_f2b_total{action="already_banned"}[30m]))) or (max by (host_id) (last_over_time(ic_f2b_total{action="already_banned"}[1h])) * 0)</field>
+        <field name="comparator">gt</field>
+        <!-- The plan's figure. Under a heavy attack a few repeats while
+             a ban is applied may be normal (review M7); step M-b
+             measures the fleet before it is fixed. -->
+        <field name="threshold">20</field>
+        <field name="level">critical</field>
+        <field name="message">fail2ban banned addresses on %(host)s but they keep arriving (%(value)s attempts from banned addresses in 30 minutes): the bans are not taking effect. Re-apply the hardening (Servers → Hardening) and, if it persists, check nftables.</field>
+    </record>
+
+    <record id="metric_rule_security_weblogin_bruteforce" model="cloud.metric.rule">
+        <field name="name">Web login brute force</field>
+        <field name="sequence">102</field>
+        <field name="code">security_weblogin_bruteforce</field>
+        <!-- As the SSH rule: a burst is not an attack that lasts. -->
+        <field name="confirm_cycles">2</field>
+        <!-- Per instance: the proxy's access log names the router, and
+             with it the instance (C1.9). instance_id="0" is an attempt
+             no instance was identified for (a proxy kept by hand, the
+             sleeping instances' router): it is seen in the viewer, not
+             alerted on. The alert's text adds the addresses with the
+             most attempts, read from the logs only when this fires
+             (cloud_metric_rule._weblogin_extra). -->
+        <field name="scope">instance</field>
+        <field name="expression">round(sum by (host_id, instance_id) (increase(ic_weblogin_failed_total{instance_id!="0"}[10m]))) or (max by (host_id, instance_id) (last_over_time(ic_weblogin_failed_total{instance_id!="0"}[1h])) * 0)</field>
+        <field name="comparator">gt</field>
+        <!-- Five a minute against one instance: more than a person who
+             forgot a password, well under what the jail bans an address
+             for. Step M-e measures the normal failed logins per instance
+             before it is fixed. -->
+        <field name="threshold">50</field>
+        <field name="level">warning</field>
+        <field name="message">%(host)s has received %(value)s failed web logins in 10 minutes.%(sources)s Check that its users have strong passwords or two-factor authentication; the detail is in Metrics → Security of its server.</field>
+    </record>
+
+    <record id="metric_rule_security_logs_silent" model="cloud.metric.rule">
+        <field name="name">Security logs not arriving</field>
+        <field name="sequence">103</field>
+        <field name="code">security_logs_silent</field>
+        <!-- Every condition already measures over its own window. -->
+        <field name="confirm_cycles">1</field>
+        <!-- 1 for a server whose security logs are on, when any of three
+             holds (review M3):
+             1. Fluent Bit's exporter has not answered once in 15 minutes;
+             2. its Loki output dropped lines in the last 30 minutes;
+             3. it read lines in the last 30 minutes and its Loki output
+                delivered none. "up" says Fluent Bit lives, not that Loki
+                takes what it sends: with retry_limit no_limits a 401 (a
+                credential rotated) drops nothing for hours.
+             Each condition is kept only where it holds (> 0) before the
+             "or", which otherwise keeps the left side's 0 over the
+             right side's 1; the last term is the 0 of every server that
+             reports (job "node"), so one whose switch was turned off
+             resolves. The lines of 3 are those of sshd, sudo and
+             weblogin, which are always sent (weblogin, up to its cap a
+             minute): auditd's records off the watched files and the
+             lines of other jails are counted and dropped on purpose.
+             The outputs are named by plugin, loki.0. -->
+        <field name="expression">max by (host_id) ((max by (host_id) (max_over_time(up{job="security"}[15m])) &lt; bool 1) &gt; 0 or (max by (host_id) (increase(fluentbit_output_dropped_records_total{name=~"loki.*"}[30m])) &gt; bool 0) &gt; 0 or ((sum by (host_id) (increase(ic_security_lines_total{source=~"sshd|sudo|weblogin"}[30m])) &gt; bool 0) * on (host_id) (max by (host_id) (increase(fluentbit_output_proc_records_total{name=~"loki.*"}[30m])) == bool 0)) &gt; 0 or (max by (host_id) (max_over_time(up{job="node"}[15m])) * 0))</field>
+        <field name="comparator">gt</field>
+        <field name="threshold">0</field>
+        <field name="level">warning</field>
+        <field name="message">%(host)s sends its security logs, but they are not reaching the central: its collector stopped answering, dropped lines or cannot deliver the lines it reads. Without them no access or change on it is detected. Run Install Observability again from the server's page.</field>
+    </record>
+
     <record id="cron_cloud_metric_rule_evaluate" model="ir.cron">
         <field name="name">Evaluate metric rules</field>
         <field name="model_id" ref="model_cloud_metric_rule"/>
