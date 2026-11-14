@@ -135,6 +135,20 @@ panel's assets and the Spanish catalogue change.
   dialogs' typed name and pip choices). The new-project form is the same
   page and still creates the project from its footer. `TagSelector`
   takes an optional `id` for its input.
+- **A backup destination's page has three tabs (#13).** General,
+  Storage and Notifications. Usage joins General as a group of its own,
+  and the old Advanced tab (retention period, timezone and retention
+  owner) is a fold at the end of General's first group, «Advanced · 3
+  settings», as in Settings: it marks how many of them are unsaved, and
+  opens by itself while the retention period has an error or the
+  retention owner is still unconfirmed. Storage splits into the bucket and
+  «Access and encryption». «Quota (GB)» is now «Quota», with «GB» as the
+  field's suffix. The fields sit in group cards on the 12-column grid, no
+  wider than 920 px, and the eighteen labels name their control by
+  `for`/`id`; the backup path preview is an `<output>` its label names,
+  and the notes under the quota, the alert threshold, the retention
+  period and the retention owner describe their field. `SettingAdvanced`
+  takes `forceOpen` and `changed` from a page outside Settings.
 
 ### Fixed
 

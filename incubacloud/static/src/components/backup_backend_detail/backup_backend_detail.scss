@@ -52,7 +52,7 @@
         word-break: break-all;
     }
 
-    // Usage tab: "Last measured …" + Refresh now on one row.
+    // Usage group: "Last measured …" + Refresh now on one row.
     .ic-usage-meta-row {
         display: flex;
         align-items: center;
@@ -60,6 +60,12 @@
         margin-top: 6px;
         flex-wrap: wrap;
     }
+
+    // The quota and its alert, under what the bucket holds.
+    .ic-usage-fields { margin-top: 16px; }
+
+    // Report on success, under the two addresses.
+    .ic-notify-toggle { margin-top: 16px; }
 }
 
 // The Delete button in the detail footer uses .ic-btn-danger. Kept here

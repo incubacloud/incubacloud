@@ -301,6 +301,10 @@ export class SettingAdvanced extends Component {
         fields: { type: Array, element: String },
         // The form holding them, read so the count of changes follows it.
         form: { type: Object, optional: true },
+        // A record's page, outside Settings, tells what Settings' state
+        // would: an error it knows of inside, and how many inside are unsaved.
+        forceOpen: { type: Boolean, optional: true },
+        changed: { type: Number, optional: true },
         slots: { type: Object, optional: true },
     };
 
@@ -315,13 +319,16 @@ export class SettingAdvanced extends Component {
 
     /** @returns {boolean} open by hand, or for a field found or in error */
     get open() {
-        return this.state.open || this.props.fields.some(
+        return this.state.open || !!this.props.forceOpen || this.props.fields.some(
             (id) => this.store.found === id || this.store.errors[id],
         );
     }
 
     /** @returns {number} how many of its fields differ from what is saved */
     get changedCount() {
+        if (this.props.changed !== undefined) {
+            return this.props.changed;
+        }
         for (const id of this.props.fields) {
             void this.form?.[id];
         }

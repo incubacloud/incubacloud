@@ -2,6 +2,7 @@ import {Deferred, describe, expect, test} from "@odoo/hoot";
 import {patchWithCleanup} from "@web/../tests/web_test_helpers";
 import {rpc} from "@web/core/network/rpc";
 import {BackupBackendDetail} from "@incubacloud/components/backup_backend_detail/backup_backend_detail";
+import {SettingAdvanced} from "@incubacloud/components/settings_form/settings_form";
 
 /**
  * BackupBackendDetail uses useEnv, rpc, onWillStart, and PasswordInput.
@@ -244,5 +245,57 @@ describe("BackupBackendDetail — the save bar", () => {
     expect.verifySteps(["saved"]);
     expect(JSON.parse(comp._savedForm)).toEqual({name: "r2", quota_gb: 50});
     expect(comp.unsavedCount).toBe(1);
+  });
+});
+
+describe("BackupBackendDetail — Advanced", () => {
+  /**
+   * A destination as loaded, its form saved as it is.
+   *
+   * @param {object} [extra] state to set over the defaults
+   * @returns {BackupBackendDetail}
+   */
+  function loaded(extra = {}) {
+    const comp = Object.create(BackupBackendDetail.prototype);
+    comp.isNew = false;
+    comp.state = {
+      retention_owner_declared: true,
+      form: {name: "r2", backup_retention: "3M", backup_tz: "UTC", retention_owner: "cron", quota_gb: 0},
+      ...extra,
+    };
+    comp.validator = {fieldError: () => null};
+    comp._snapshotForm();
+    return comp;
+  }
+
+  test("counts only the unsaved fields folded under it", () => {
+    const comp = loaded();
+    comp.state.form.quota_gb = 20;
+    expect(comp.advancedChanged).toBe(0);
+    comp.state.form.backup_tz = "Europe/Madrid";
+    comp.state.form.retention_owner = "lifecycle";
+    expect(comp.advancedChanged).toBe(2);
+  });
+
+  test("stays open for a retention period to fix or an owner to confirm", () => {
+    expect(loaded().advancedNeedsLook).toBe(false);
+    expect(loaded({retention_owner_declared: false}).advancedNeedsLook).toBe(true);
+    const wrong = loaded();
+    wrong.validator = {fieldError: (field) => (field === "backup_retention" ? "Use N + D/M/Y" : null)};
+    expect(wrong.advancedNeedsLook).toBe(true);
+  });
+
+  test("the fold takes what the page tells: open, and how many changed", () => {
+    const fold = Object.create(SettingAdvanced.prototype);
+    fold.state = {open: false};
+    fold.store = {found: null, errors: {}};
+    fold.api = {isChanged: () => false};
+    fold.form = null;
+    fold.props = {fields: ["backup_retention"], changed: 1, forceOpen: true};
+    expect(fold.open).toBe(true);
+    expect(fold.changedCount).toBe(1);
+    fold.props = {fields: ["backup_retention"]};
+    expect(fold.open).toBe(false);
+    expect(fold.changedCount).toBe(0);
   });
 });

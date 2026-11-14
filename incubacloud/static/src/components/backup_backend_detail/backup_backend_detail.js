@@ -5,6 +5,7 @@ import {PasswordInput} from "../password_input/password_input";
 import {IcConfirmDialog} from "../ic_confirm_dialog/ic_confirm_dialog";
 import {RlSelect} from "../rl_select/rl_select";
 import {restoreForm, SaveBar, unsavedCount} from "../settings_form/save_bar";
+import {SettingAdvanced} from "../settings_form/settings_form";
 import {useNavGuard} from "../../utils/use_nav_guard";
 import {useFormValidation} from "../../utils/use_form_validation";
 import {required, email, retention} from "../../utils/validators";
@@ -31,10 +32,14 @@ const EMPTY_FORM = () => ({
   alert_email: "",
 });
 
+// Folded under Advanced at the end of General: their defaults serve nearly
+// every destination (form standard §4).
+const ADVANCED_FIELDS = ["backup_retention", "backup_tz", "retention_owner"];
+
 export class BackupBackendDetail extends Component {
   static props = {backend_id: {type: Number, optional: true}};
   static template = "incubacloud.BackupBackendDetail";
-  static components = {PasswordInput, IcConfirmDialog, RlSelect, SaveBar};
+  static components = {PasswordInput, IcConfirmDialog, RlSelect, SaveBar, SettingAdvanced};
 
   setup() {
     this.env = useEnv();
@@ -96,6 +101,25 @@ export class BackupBackendDetail extends Component {
   /** @returns {number} how many fields of the form are unsaved */
   get unsavedCount() {
     return this._savedForm ? unsavedCount(this.state.form, JSON.parse(this._savedForm)) : 0;
+  }
+
+  /** @returns {number} how many of the fields folded under Advanced are unsaved */
+  get advancedChanged() {
+    if (!this._savedForm) return 0;
+    const saved = JSON.parse(this._savedForm);
+    const pick = (form) => Object.fromEntries(ADVANCED_FIELDS.map((key) => [key, form[key]]));
+    return unsavedCount(pick(this.state.form), pick(saved));
+  }
+
+  /**
+   * Whether Advanced stays open: a retention period to fix, or a retention
+   * owner still to confirm, is inside it.
+   *
+   * @returns {boolean}
+   */
+  get advancedNeedsLook() {
+    return Boolean(this.validator.fieldError("backup_retention"))
+      || (!this.isNew && !this.state.retention_owner_declared);
   }
 
   /** Put the form back as it was loaded or last saved. */
@@ -219,7 +243,7 @@ export class BackupBackendDetail extends Component {
 
   /**
    * Flip a boolean form field. Backs the Relay ``rl-sw`` switch buttons
-   * (Notifications "Report on success", Advanced "Deletion cron"), which
+   * (Notifications "Report on success"), which
    * are ``<button>`` elements with no ``checked`` property — so they
    * can't reuse ``onCheckbox`` directly.
    *
