@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import odoo
 from odoo import fields
-from odoo.tests.common import TransactionCase, new_test_user
+from odoo.tests.common import TransactionCase, new_test_user, tagged
 
 from odoo.addons.queue_job.exception import RetryableJobError
 
@@ -662,8 +662,14 @@ class TestTheDeferralSaysWhatItWaitsFor(_HostLockBase):
         ])
 
 
+@tagged("post_install", "-at_install")
 class TestTheListsSayWhatItWaitsFor(_HostLockBase):
-    """``build_wait``: a job deferred by the lock, and the job it waits for."""
+    """``build_wait``: a job deferred by the lock, and the job it waits for.
+
+    After every module is loaded: one test creates a user, and a module
+    loaded after this one may have given ``res_partner`` a required
+    column that the registry of an at-install run does not know of yet.
+    """
 
     def test_a_job_deferred_by_the_lock(self):
         holder = self._other(state='started')
