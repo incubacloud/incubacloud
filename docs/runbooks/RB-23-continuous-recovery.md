@@ -38,6 +38,13 @@ db$ SELECT i.name, a.code, a.level, a.message, a.create_date
     WHERE a.code LIKE 'pitr_%' AND a.state = 'active';
 ```
 
+`pitr_prefix_left` hangs on no instance (§5):
+
+```sql
+db$ SELECT dedup_key, audience, message, create_date FROM cloud_alert
+    WHERE code = 'pitr_prefix_left' AND state = 'active';
+```
+
 | Code | Message starts with | Meaning |
 |---|---|---|
 | `pitr_failing` (warning) | *could not be switched on … keeps no log meanwhile* | The `pitr_enable` job failed or was stopped, and the host parked archiving (`pitr.sh settle`: `archive_command = '/bin/true'`). The watch retries in a day, not before; a failure holds no queue. |
@@ -53,7 +60,8 @@ db$ SELECT i.name, a.code, a.level, a.message, a.create_date
 | `pitr_failing` (warning) | *The cancelled restore … is still being undone* | The host had not finished undoing within the job's wait; a job follows it. Leave the instance alone until it ends. |
 | `pitr_archive_lagging` | *is behind archiving* | The log or the files are more than three objectives late. Usually transient. |
 | `pitr_base_missing` | *first base copy failed* / *no base copy for 36 h* | Nothing (or nothing recent) to restore from. |
-| `pitr_prefix_left` (warning, on the host) | *The continuous recovery archive of … was left in the bucket* | The instance was deleted while its host had no `.docker/pitr.env`: its archive is still in the bucket. See §5. |
+| `pitr_prefix_left` (warning, on no server) | *The continuous recovery archive of … was left in the bucket* / *… was left behind* | The instance was deleted while its host had no `.docker/pitr.env`: its archive is still in the bucket, at the prefix named or, with no destination, at one to find. See §5. |
+| `pitr_prefix_left` (warning, on no server) | *… is not emptied with its archived copy* | An instance archived before 1.0.229 whose chain path does not say where its archive is: deleting it empties the chain only. See §5. |
 
 ## 2. Diagnose on the host
 
@@ -169,10 +177,24 @@ rebuild that follows a backend change). What to expect:
 A delete empties the instance's recovery prefix (`<folder>/<name>-pitr`):
 a live instance's from its host, with `.docker/pitr.env`; an archived
 one's in the job that deletes it for good (`purge_archived_backups`),
-after its duplicity chain. With no `pitr.env` on the host the delete goes
-on and raises `pitr_prefix_left` on the host, naming the prefix
-(`s3://<bucket>/<path>`). Empty it with the backup destination's
-credentials, from a machine that has them (they are never printed):
+after its duplicity chain, at the prefix frozen when it was archived or,
+for one archived before 1.0.229, the one its frozen chain path gives
+(`boto3+s3://<bucket>/<path>/<name>` → `s3://<bucket>/<path>/<name>-pitr`).
+`pitr_prefix_left` (warning) is raised when that cannot happen and the
+instance had recorded a cluster:
+
+- a live delete found no `pitr.env` on the host: the alert names the
+  prefix (`s3://<bucket>/<path>`), or says it is unknown when the instance
+  had no backup destination by then;
+- an archived instance's chain path does not end in its name (imported
+  by hand): nothing computed is purged, as it may be another instance's,
+  and the alert gives the path to start looking from.
+
+The alert hangs on no server and no instance, keyed by the prefix: both
+are deleted with their alerts, and the instance is going. On a managed
+destination it goes to the service provider, who holds its credentials.
+Empty the prefix with the backup destination's credentials, from a
+machine that has them (they are never printed):
 
 ```
 $ export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…
@@ -183,6 +205,11 @@ Check first that `<path>` ends in `<name>-pitr` and names the deleted
 instance: a purge of the bucket, or of the folder, takes every instance on
 the destination. Then resolve the alert. Switching continuous recovery
 off empties nothing: the archive stays until the instance is deleted.
+
+Core refuses an instance name ending in `-pitr` from 1.0.229 on, and
+continuous recovery is not switched on for `x` while an instance
+`x-pitr` (active or archived) is in the same folder: its chain would be
+under `x`'s recovery prefix, and emptying either would empty both.
 
 ## Rollback
 

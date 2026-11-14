@@ -346,24 +346,52 @@ and the Spanish catalogue.
   prefix of an instance that had an archive (on, or a cluster recorded:
   switching off keeps both), frozen when the instance was archived
   (`pitr_archived_prefix`), as core freezes the chain's path, because the
-  computed one follows the project, which may change or go meanwhile; an
-  instance archived before this has it computed when it is deleted, and
-  one brought back forgets it. The archive's own extension, not the
-  executor's: a Python override of the executor would apply to every
-  database of the server, installed or not.
+  computed one follows the project, which may change or go meanwhile; one
+  brought back forgets it. An instance archived before this has it read
+  off its frozen chain path (`boto3+s3://…/<name>` gives
+  `s3://…/<name>-pitr`), never computed: a project folder renamed to
+  start from scratch named an empty folder and left the archive, and a
+  project gone named the shared `default` folder, where another instance
+  of the name may archive. When the chain path does not end in the name
+  (one imported by hand), nothing computed is purged and
+  `pitr_prefix_left` says where to look. An archived instance with no
+  chain path but a further prefix goes through the job instead of being
+  unlinked outright. Archiving pins the destination too
+  (`backup_backend_id`, when the instance inherited it from its project
+  or the global default): the copy is read and deleted with that
+  destination's credentials after a change of either, and the
+  destination cannot be deleted while it holds the copy. The archive's
+  own extension, not the executor's: a Python override of the executor
+  would apply to every database of the server, installed or not.
 - **A delete that leaves the recovery archive in the bucket says so.** With
   no `.docker/pitr.env` on the host the delete's purge printed «the prefix
   is left in the bucket» and the delete succeeded with nothing else to
   show. The line is now marked (`IC_PITR_PREFIX_LEFT`): the delete writes a
   ⚠ line in its log and `incubacloud_pitr` raises `pitr_prefix_left`
-  (warning) on the host, since the instance goes, naming the prefix to
-  empty by hand (RB-23 §5). The delete is not refused: that would leave an
-  instance nobody can delete until a rebuild writes the file again. Core
-  calls the new hook `_teardown_pre_steps_left` once a delete succeeded,
-  before the record goes; it answers nothing in core. RB-23 §4 no longer
+  (warning) naming the prefix to empty by hand (RB-23 §5), on no server
+  and no instance, since both delete their alerts with them. It goes to
+  the service provider when the destination is managed
+  (`managed_reservation_id`), whose bucket the operator holds no
+  credentials of. Only for an instance that recorded a cluster: one whose
+  start failed before its rebuild archived nothing, and alerted at
+  `s3://False/default/<name>-pitr` when it had no destination either; with
+  a cluster and no destination the alert says the prefix is unknown. The
+  delete is not refused: that would leave an instance nobody can delete
+  until a rebuild writes the file again. Core calls the new hook
+  `_teardown_pre_steps_left` once a delete succeeded, before the record
+  goes, in a savepoint: an exception is logged and written in the job's
+  log instead of failing a delete whose host is already clean. It
+  answers nothing in core. RB-23 §4 no longer
   says the retention expires an old archive after a change of backend:
   nothing empties the old prefix then, nor after a change of the
   project's folder.
+- **An instance name ending in `-pitr` is refused.** `x`'s continuous
+  recovery archive is kept at `<folder>/x-pitr`, beside the backups: an
+  instance `x-pitr` in the same folder keeps its duplicity chain at that
+  same prefix, and emptying either emptied both. Core refuses the name
+  when an instance is created or renamed (existing ones keep working),
+  and `incubacloud_pitr` refuses to switch continuous recovery on for `x`
+  while an `x-pitr`, active or archived, is in the same folder.
 
 ### Tests
 

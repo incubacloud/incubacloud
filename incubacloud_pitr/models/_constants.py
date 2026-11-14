@@ -19,9 +19,11 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 #: (``cloud.instance._after_stack_rendered``, ``ic_modules_updated``).
 ALERT_MODULES = "pitr_modules_not_updated"
 #: The alert of a delete that left the instance's recovery prefix in the
-#: bucket, its host having no credentials to empty it with: raised on the
-#: host, as the instance goes, and resolved by the person who empties it
-#: (RB-23 §5).
+#: bucket: its host had no credentials to empty it with, or an archived
+#: instance's record does not say where it is. Raised on no host and no
+#: instance (both delete their alerts with them), to the service provider
+#: on a managed destination (``audience='provider'``), and resolved by the
+#: person who empties it (RB-23 §5).
 ALERT_PREFIX_LEFT = "pitr_prefix_left"
 #: The line the delete's purge prints when it finds no credentials.
 PREFIX_LEFT_MARK = "IC_PITR_PREFIX_LEFT"

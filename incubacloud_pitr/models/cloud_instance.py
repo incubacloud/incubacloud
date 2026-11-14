@@ -299,13 +299,42 @@ class CloudInstance(models.Model):
             return
         self.sudo().write({"pitr_archived_prefix": f"s3://{bucket}/{path}"})
 
+    def _pitr_prefix_from_chain(self):
+        """The recovery prefix of an archived instance, read off its chain.
+
+        For an instance archived before the prefix was frozen
+        (``pitr_archived_prefix``): what ``_pitr_bucket_path`` gave when it
+        was archived is its frozen chain path (``custom_backup_dst``) with
+        ``-pitr`` after it, the same destination path, folder and name.
+        The one computed now follows the project: renamed, it names an
+        empty folder; gone, the shared ``default`` one, where another
+        instance of the same name may archive. Only a chain path that
+        ends in the instance's name, on S3, says it; one imported by hand
+        may say anything else.
+
+        :return: ``s3://bucket/path``, or ``""`` when the chain path does
+            not say it
+        :rtype: str
+        """
+        self.ensure_one()
+        scheme = "boto3+s3://"
+        dst = (self.custom_backup_dst or "").rstrip("/")
+        if not (self.name and dst.startswith(scheme)):
+            return ""
+        rest = dst[len(scheme):]
+        bucket, _sep, path = rest.partition("/")
+        if not (bucket and path) or not rest.endswith(f"/{self.name}"):
+            return ""
+        return f"s3://{rest}-pitr"
+
     def _archived_copy_extra_prefixes(self):
         """Delete an archived instance's recovery archive with its chain.
 
-        The prefix frozen when it was archived, or, for one archived
-        before the prefix was frozen, the one computed now. The purge
-        runs it with the cutoff of the delete (``purge_cutoff_at``), so a
-        successor of the same name keeps what it wrote since.
+        The prefix frozen when it was archived or, for one archived
+        before the prefix was frozen, the one its chain path says
+        (``_pitr_prefix_from_chain``); never the one computed now. The
+        purge runs it with the cutoff of the delete (``purge_cutoff_at``),
+        so a successor of the same name keeps what it wrote since.
 
         :return: core's prefixes and the recovery one
         :rtype: list
@@ -313,11 +342,81 @@ class CloudInstance(models.Model):
         prefixes = list(super()._archived_copy_extra_prefixes())
         prefix = self.pitr_archived_prefix
         if not prefix and self._pitr_had_archive():
-            bucket, path = self._pitr_bucket_path()
-            prefix = f"s3://{bucket}/{path}" if bucket and path else ""
+            prefix = self._pitr_prefix_from_chain()
         if prefix:
             prefixes.append(prefix)
         return prefixes
+
+    def delete_archived(self, payload=None):
+        """Say so when the recovery archive cannot go with the copy.
+
+        An instance archived before the prefix was frozen, whose chain
+        path does not say where its archive is
+        (``_pitr_prefix_from_chain``): nothing computed is purged, as it
+        may be another instance's, and a person is told where to look.
+        Only for one that recorded a cluster: one switched on that never
+        archived has nothing there. Read before core's, which may unlink
+        the record.
+
+        :param payload: as for core's ``delete_archived``
+        :return: as for core's ``delete_archived``
+        """
+        self.ensure_one()
+        unknown = (
+            not self.active and self.pitr_cluster_id
+            and not self.pitr_archived_prefix
+            and not self._pitr_prefix_from_chain()
+        )
+        message = key = backend = None
+        if unknown:
+            key = self._pitr_unknown_prefix_key()
+            message = (
+                f"The continuous recovery archive of '{self.name}' is not "
+                "emptied with its archived copy: the instance was archived "
+                "before its recovery prefix was kept, and its backup path "
+                f"({self.custom_backup_dst or 'none'}) does not say where "
+                f"the archive is. Look for a prefix ending in "
+                f"{self.name}-pitr on its backup destination, empty it by "
+                "hand (RB-23 §5), then resolve this alert."
+            )
+            backend = self.effective_backup_backend
+        result = super().delete_archived(payload=payload)
+        if unknown:
+            self._pitr_alert_prefix_left(message, key, backend)
+        return result
+
+    def _pitr_unknown_prefix_key(self):
+        """The alert key of a recovery archive whose prefix is not known.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        return f"{self.name}-pitr (instance {self.id})"
+
+    def _pitr_alert_prefix_left(self, message, key, backend, job=None):
+        """Raise ``pitr_prefix_left`` for a recovery prefix left to a person.
+
+        On no host and no instance: an alert hangs on them with a cascade,
+        and the instance is going and its server may go after it. Keyed
+        by the prefix (or ``_pitr_unknown_prefix_key``). To the service
+        provider when the destination is managed
+        (``managed_reservation_id``): only whoever runs that bucket holds
+        its credentials. Reads nothing off the record, which may be gone
+        by then.
+
+        :param str message: what was left and what to do
+        :param str key: the alert's ``dedup_key``
+        :param backend: the ``cloud.backup.backend`` the archive is on,
+            possibly empty
+        :param job: the ``cloud.job`` that left it, if any
+        """
+        managed = bool(backend and backend.sudo().managed_reservation_id)
+        self.env["cloud.alert"].sudo().raise_alert(
+            ALERT_PREFIX_LEFT, message, level="warning", job=job, key=key,
+            audience="provider" if managed else "fleet",
+        )
+        # Not the instance's name: ``delete_archived`` may have unlinked it.
+        _logger.warning("recovery archive left to a person: %s", key)
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -599,9 +698,12 @@ class CloudInstance(models.Model):
         The purge finds no ``pitr.env`` on the host (it was removed by
         hand, or never written) and lets the delete go on: refusing would
         leave an instance nobody can delete until a rebuild writes the
-        file again. What it left must reach a person: an alert on the
-        host, since the instance goes, naming the prefix to empty
-        (RB-23 §5), and a line in the job's log.
+        file again. What it left must reach a person: an alert naming the
+        prefix to empty (RB-23 §5, ``_pitr_alert_prefix_left``) and a line
+        in the job's log. Only for an instance that recorded a cluster:
+        one switched on whose start failed before its rebuild never wrote
+        the file nor archived anything. With no destination now, the
+        prefix is not known, and the alert says so.
 
         :param dict results: the delete's steps, as core passes them
         :param job: the delete's ``cloud.job``
@@ -610,22 +712,32 @@ class CloudInstance(models.Model):
         """
         left = list(super()._teardown_pre_steps_left(results, job))
         stdout = ((results or {}).get(PURGE_LABEL) or {}).get("stdout") or ""
-        if PREFIX_LEFT_MARK not in stdout:
+        if PREFIX_LEFT_MARK not in stdout or not self.pitr_cluster_id:
             return left
-        prefix = self._pitr_prefix_base()
-        message = (
-            f"The continuous recovery archive of '{self.name}' was left in "
-            f"the bucket at {prefix}: its host had no recovery credentials "
-            f"({ENV_FILE}) when the instance was deleted. Empty that prefix "
-            f"by hand (RB-23 §5), then resolve this alert."
-        )
-        self.env["cloud.alert"].sudo().raise_alert(
-            ALERT_PREFIX_LEFT, message, level="warning",
-            host=self.host_id, job=job, key=prefix,
-        )
-        _logger.warning(
-            "instance %s deleted, its recovery prefix left: %s",
-            self.name, prefix,
+        bucket, path = self._pitr_bucket_path()
+        host = self.host_id.name or "?"
+        if bucket and path:
+            key = f"s3://{bucket}/{path}"
+            message = (
+                f"The continuous recovery archive of '{self.name}' was left "
+                f"in the bucket at {key}: its host '{host}' had no recovery "
+                f"credentials ({ENV_FILE}) when the instance was deleted. "
+                "Empty that prefix by hand (RB-23 §5), then resolve this "
+                "alert."
+            )
+        else:
+            key = self._pitr_unknown_prefix_key()
+            message = (
+                f"The continuous recovery archive of '{self.name}' was left "
+                f"behind: its host '{host}' had no recovery credentials "
+                f"({ENV_FILE}) when the instance was deleted, and the "
+                "instance had no backup destination by then, so where the "
+                "archive is is unknown. Look for a prefix ending in "
+                f"{self.name}-pitr on the destination it archived to, empty "
+                "it by hand (RB-23 §5), then resolve this alert."
+            )
+        self._pitr_alert_prefix_left(
+            message, key, self.effective_backup_backend, job=job,
         )
         return [*left, message]
 
@@ -922,12 +1034,39 @@ class CloudInstance(models.Model):
         self._pitr_refuse_busy()
         if objective and str(objective) not in dict(OBJECTIVES):
             raise UserError(_("Unknown recovery objective: %s", objective))
+        self._pitr_refuse_name_taken()
         self._pitr_ensure_key()
         vals = {"pitr_enabled": True, "pitr_state": "enabling"}
         if objective:
             vals["pitr_objective"] = str(objective)
         self.sudo().write(vals)
         return self._pitr_enqueue([self._pitr_rebuild_job_type(), "pitr_enable"])
+
+    def _pitr_refuse_name_taken(self):
+        """Refuse to archive where another instance keeps its backups.
+
+        The archive goes under the instance's name and ``-pitr``, in its
+        backup folder (``_pitr_bucket_path``): an instance named so, in
+        the same folder, active or archived, keeps its duplicity chain
+        there, and emptying either would empty both. Core refuses such a
+        name from now on; this covers one created before.
+
+        :raise UserError: when there is one
+        """
+        self.ensure_one()
+        folder = self.project_id.remote_folder or "default"
+        taken = self.with_context(active_test=False).sudo().search([
+            ("name", "=", f"{self.name}-pitr"), ("id", "!=", self.id),
+        ]).filtered(
+            lambda other: (other.project_id.remote_folder or "default") == folder
+        )
+        if taken:
+            raise UserError(_(
+                "Continuous recovery cannot be switched on for %(name)s: its "
+                "archive would be kept where the instance %(other)s, in the "
+                "same backup folder, keeps its backups. Rename one of the two first.",
+                name=self.name, other=taken[0].name,
+            ))
 
     def _pitr_refuse_external(self):
         """A stack configured outside the panel is switched by its runbook.
