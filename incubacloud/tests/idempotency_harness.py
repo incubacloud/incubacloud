@@ -174,7 +174,10 @@ class JobSpec:
         reason: ``{key: why}``, the key ``"twice"``, ``"hook"`` or the
         number of the host call a cut follows. One listed here that
         converges fails the check, so the entry is dropped when the fix
-        lands.
+        lands. A reason given as :class:`RepeatsOnceCalls` declares that
+        the scenario diverges in its calls that must happen once alone:
+        it must still leave the reference world, and repeat one of those
+        calls rather than make another
     :ivar divergent_after: ``((predicate, why), …)``: the cuts right
         after a host call *predicate* matches are known not to converge,
         for the reason given; same rule as ``divergent``
@@ -191,6 +194,21 @@ class JobSpec:
     patches: Callable = None
     divergent: dict = field(default_factory=dict)
     divergent_after: tuple = ()
+
+
+@dataclass(frozen=True)
+class RepeatsOnceCalls:
+    """A known divergence confined to the calls that must happen once.
+
+    The reason of a ``JobSpec.divergent`` or ``divergent_after`` entry
+    whose scenario repeats such a call (the mail sent twice) and changes
+    nothing else: the check still asks for the reference world, and for
+    no once-only call the reference did not make.
+
+    :ivar why: the reason the call repeats
+    """
+
+    why: str
 
 
 #: Scenario plans for one attempt: run it and commit, lose its commit,
@@ -235,24 +253,52 @@ class IdempotencyCase(TransactionCase):
         for key, name, plan in plans:
             with self.subTest(job_type=spec.code, scenario=name):
                 world, ledger = self.scenario(spec, job, tracked, plan)
-                same = world == reference and (
-                    self._once_calls(spec, ledger) == once_calls
-                )
-                if key in spec.divergent or (isinstance(key, int) and any(
-                    known(ref_ledger.of("ssh")[key - 1])
-                    for known, _why in spec.divergent_after
-                )):
-                    self.assertFalse(
-                        same,
-                        f"{name} converges now: drop it from the "
-                        f"specification's divergent points",
+                scenario_once = self._once_calls(spec, ledger)
+                same = world == reference and scenario_once == once_calls
+                why = self._known_divergence(spec, key, ref_ledger)
+                if why is None:
+                    self.assertEqual(world, reference, f"{name}: another world")
+                    self.assertEqual(
+                        scenario_once, once_calls,
+                        f"{name}: a call that must happen once did not",
                     )
                     continue
-                self.assertEqual(world, reference, f"{name}: another world")
-                self.assertEqual(
-                    self._once_calls(spec, ledger), once_calls,
-                    f"{name}: a call that must happen once did not",
+                self.assertFalse(
+                    same,
+                    f"{name} converges now: drop it from the "
+                    f"specification's divergent points",
                 )
+                if isinstance(why, RepeatsOnceCalls):
+                    self.assertEqual(
+                        world, reference,
+                        f"{name}: known to diverge in a call that must"
+                        f" happen once alone, it left another world",
+                    )
+                    self.assertLessEqual(
+                        set(scenario_once), set(once_calls),
+                        f"{name}: known to repeat a call that must happen"
+                        f" once, it made one the reference did not",
+                    )
+
+    def _known_divergence(self, spec, key, ref_ledger):
+        """The reason *spec* gives for scenario *key* not to converge.
+
+        :param JobSpec spec: the type's specification
+        :param key: ``"twice"``, ``"hook"`` or the number of the host
+            call a cut follows
+        :param Ledger ref_ledger: the reference scenario's calls, whose
+            k-th host call the ``divergent_after`` predicates read
+        :return: the reason (a ``str`` or a :class:`RepeatsOnceCalls`),
+            or None for a scenario that must converge
+        """
+        if key in spec.divergent:
+            return spec.divergent[key]
+        if isinstance(key, int):
+            call = ref_ledger.of("ssh")[key - 1]
+            for known, why in spec.divergent_after:
+                if known(call):
+                    return why
+        return None
 
     def _once_calls(self, spec, ledger):
         """The calls of *ledger* that must happen once, in order.
