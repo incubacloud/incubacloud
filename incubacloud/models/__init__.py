@@ -48,6 +48,7 @@ from . import cloud_host_edge_guard
 from . import cloud_host_shared_guard
 from . import cloud_settings_direct
 from . import cloud_settings_central
+from . import cloud_settings_agents
 from . import cloud_host_posture
 from . import cloud_host_panel_address
 from . import cloud_settings_metrics_purge

@@ -81,6 +81,10 @@ HOOK_HELPERS = {
     "_record_shipped_accounts": "records the ACL a successful run shipped",
     "_record_central_ca": "records the central's authority a successful "
                           "install gave the host's agents",
+    "_record_write_user": "records the credential a successful install "
+                          "left the host's agents writing with",
+    "_record_panel_identity": "records the panel's address and uid a "
+                              "successful install read on the host",
     "_sync_backup_records": "mirrors the listed backups after success",
     "_alert_on_purge_failure": "alerts on a failed teardown",
     "_stamp_core_commit": "stamps the core release a run shipped",

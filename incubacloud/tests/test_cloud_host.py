@@ -1272,6 +1272,8 @@ class TestHardeningKeepsTheKeyReachable(KnownHostsCase):
         executor.job.host_id = host
         executor.env = self.env
         executor._log_buffer = []
+        # What the playbook exported: nothing here.
+        executor._facts = {}
         with patch.object(HostHardeningExecutor, "_sys"), patch.object(
             HostHardeningExecutor, "_resolve_alert",
         ), patch.object(

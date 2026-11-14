@@ -830,13 +830,20 @@ class TestTheCentralsSecretsOutliveTheJob(JobEndAssertions, ObservabilityExecuto
             for u in yaml.safe_load(extra["ic_vmauth_config"])["users"]
             if u["username"] != "operator"
         }
-        (account,) = users
+        accounts = [user for user in users if not user.endswith("-agent")]
+        (account,) = accounts
         self.assertTrue(account)
         self.assertEqual(self.stored(self.settings, "metrics_account"), account)
         self.assertEqual(
             self.stored(self.settings, "metrics_remote_write_token"),
             users[account],
         )
+        # The agents' user, where this panel mints its credentials.
+        agent = users.get(f"{account}-agent")
+        if agent:
+            self.assertEqual(
+                self.stored(self.settings, "metrics_agent_token"), agent,
+            )
         self.assertEqual(
             self.stored(self.settings, "metrics_operator_token"),
             extra["ic_operator_plain"],

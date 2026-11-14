@@ -50,6 +50,14 @@ DO $$ BEGIN
         metrics_central_cert_expires = NULL;
 EXCEPTION WHEN undefined_column THEN NULL;
 END $$;
+-- The agents' write-only credential and a read credential being rotated in
+-- (1.0.230): production's central knows both, so a copy holding them could
+-- write as production's servers or read as its panel.
+DO $$ BEGIN
+    UPDATE cloud_settings SET metrics_agent_token = NULL,
+        metrics_read_token_next = NULL, metrics_credentials_deployed = NULL;
+EXCEPTION WHEN undefined_column THEN NULL;
+END $$;
 
 -- 2. Clear known_hosts fingerprints (prod-specific)
 UPDATE cloud_host SET known_hosts_key = NULL;

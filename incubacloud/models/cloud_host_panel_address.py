@@ -33,6 +33,10 @@ longer hardened; the alert closes when none is left. The change is then
 kept, settled, so the same notice again does not raise it anew. With no
 new address given, every hardened host with a list is named, as nothing
 tells which of them admits it.
+
+When the alert closes, every host forgets the old address among the
+panel's addresses it saw (``security_panel_sources``). The notice never
+teaches one: only what a job of the panel read on a host does.
 """
 import json
 import logging
@@ -198,6 +202,10 @@ class CloudHost(models.Model):
         ).filtered(lambda host: not host._panel_address_admitted(new_ip, since))
         if not hosts:
             Alert.resolve_alert(ALERT)
+            # The address the panel left is no longer one of its own: the
+            # servers that saw the panel come from it forget it (plan #84,
+            # A1). Never the other way: the notice teaches no address.
+            self._forget_panel_source(change.get("old"))
             return hosts
         names = ", ".join(hosts.mapped("name"))
         if new_ip:

@@ -696,6 +696,7 @@ class CloudSettings(models.Model):
             "metrics_enabled": False,
             "metrics_central_public_host": False,
             "metrics_accounts_deployed": False,
+            "metrics_credentials_deployed": False,
         })
         Alert = self.env["cloud.alert"].sudo()
         for code in ("metrics_central_failed", "metrics_acl_sync_failed"):
