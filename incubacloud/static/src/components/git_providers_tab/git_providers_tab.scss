@@ -74,6 +74,9 @@
 
     .ic-gitp-credrm { flex: none; margin-bottom: 6px; }
 
+    // A token's field, «Stored» with Replace or the input with Keep stored.
+    .ic-gitp-token input { flex: 1 1 auto; min-width: 0; }
+
     // ── Webhooks ──
     .ic-gitp-hookhead { margin-top: 28px; }
 

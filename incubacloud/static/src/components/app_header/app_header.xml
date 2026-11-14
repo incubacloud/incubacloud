@@ -298,8 +298,10 @@
                     </div>
                     <div class="ic-notif-card-body" t-if="state.expandedSection === 'telegram'">
                         <div class="ic-form-row">
-                            <label>Bot token</label>
-                            <PasswordInput hasValue="state.telegramTokenConfigured"
+                            <label for="ic-notif-telegram-token" id="ic-notif-telegram-token-label">Bot token</label>
+                            <PasswordInput id="'ic-notif-telegram-token'"
+                                           value="state._telegramToken"
+                                           hasValue="state.telegramTokenConfigured"
                                            emptyHint="'Get this from @BotFather on Telegram'"
                                            onChange="(v) => this.onTelegramTokenChange(v)"/>
                         </div>
@@ -364,8 +366,10 @@
                                    placeholder="https://hooks.example.com/cloud"/>
                         </div>
                         <div class="ic-form-row">
-                            <label>Signing secret</label>
-                            <PasswordInput hasValue="state.webhookSecretConfigured"
+                            <label for="ic-notif-webhook-secret" id="ic-notif-webhook-secret-label">Signing secret</label>
+                            <PasswordInput id="'ic-notif-webhook-secret'"
+                                           value="state._webhookSecret"
+                                           hasValue="state.webhookSecretConfigured"
                                            emptyHint="'Choose a secret and set the same value on your endpoint'"
                                            onChange="(v) => this.onWebhookSecretChange(v)"/>
                         </div>

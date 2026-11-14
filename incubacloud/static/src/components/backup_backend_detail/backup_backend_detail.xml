@@ -184,15 +184,20 @@
                   />
                                 </div>
                                 <div class="rl-frow">
-                                    <label>Secret access key</label>
+                                    <label for="bbd-s3_secret_access_key" id="bbd-s3_secret_access_key-label">Secret access key</label>
                                     <PasswordInput
+                    id="'bbd-s3_secret_access_key'"
+                    value="state.form.s3_secret_access_key"
                     hasValue="state.has_s3_secret_access_key"
                     onChange="(val) => this.onPasswordChange('s3_secret_access_key', val)"
                   />
                                 </div>
                                 <div class="rl-frow rl-full">
-                                    <label>Passphrase</label>
+                                    <label for="bbd-passphrase" id="bbd-passphrase-label">Passphrase</label>
                                     <PasswordInput
+                    id="'bbd-passphrase'"
+                    value="state.form.passphrase"
+                    autoGenerate="true"
                     hasValue="state.has_passphrase"
                     onChange="(val) => this.onPasswordChange('passphrase', val)"
                   />

@@ -636,8 +636,11 @@
                                 </div>
                                 <t t-if="state.form.login_type === 'password'">
                                     <div class="rl-frow rl-full">
-                                        <label>Password</label>
+                                        <label for="hd-password" id="hd-password-label">Password</label>
                                         <PasswordInput
+                                            id="'hd-password'"
+                                            value="state.form.password"
+                                            autoGenerate="true"
                                             hasValue="state.has_password"
                                             required="true"
                                             onChange="(val) => this.onPasswordChange('password', val)"/>
@@ -750,8 +753,11 @@
                                     </t>
                                 </div>
                                 <div class="rl-frow">
-                                    <label>Panel password</label>
+                                    <label for="hd-traefik_panel_password" id="hd-traefik_panel_password-label">Panel password</label>
                                     <PasswordInput
+                                        id="'hd-traefik_panel_password'"
+                                        value="state.form.traefik_panel_password"
+                                        autoGenerate="true"
                                         hasValue="state.has_traefik_panel_password"
                                         onChange="(val) => this.onPasswordChange('traefik_panel_password', val)"/>
                                 </div>

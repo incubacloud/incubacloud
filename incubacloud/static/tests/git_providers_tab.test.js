@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { click, edit, queryAll, queryOne, waitFor } from "@odoo/hoot-dom";
+import { animationFrame } from "@odoo/hoot-mock";
+import { allowTranslations, mountWithCleanup, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import { getTemplate } from "@web/core/templates";
 import {
@@ -11,6 +13,7 @@ import {
 } from "@incubacloud/components/git_providers_tab/git_providers_tab";
 import { GitProvidersBlock } from "@incubacloud/components/settings/core_settings_block";
 import { blocksOf } from "@incubacloud/components/settings/settings_registry";
+import { relayIcon } from "@incubacloud/utils/icons";
 
 /**
  * Settings → Git providers: the section saves each
@@ -43,6 +46,108 @@ describe("GitProvidersTab — credentials", () => {
         expect(cred.token).toBe("");
         expect(cred.has_token).toBe(false);
         expect(blankCredential()).not.toBe(cred);
+    });
+});
+
+describe("GitProvidersTab — a stored token", () => {
+    beforeEach(() => allowTranslations());
+
+    /** @returns {object} a stand-in of the tab, for its helpers */
+    const helpers = () => Object.create(GitProvidersTab.prototype);
+
+    test("shows as Stored until it is replaced or typed over", () => {
+        const t = helpers();
+        expect(t.tokenStored({ has_token: true, replacing: false, token: "" })).toBe(true);
+        expect(t.tokenStored({ has_token: true, replacing: true, token: "" })).toBe(false);
+        expect(t.tokenStored({ has_token: true, replacing: false, token: "glpat-x" })).toBe(false);
+        expect(t.tokenStored(blankCredential())).toBe(false);
+    });
+
+    test("the input says New value over a stored token, the token's shape otherwise", () => {
+        const t = helpers();
+        expect(String(t.tokenPlaceholder({ has_token: true }))).toBe("New value");
+        expect(t.tokenPlaceholder(blankCredential())).toBe("glpat-… / gldt-…");
+    });
+
+    test("every field of a credential row has its id, for its label", () => {
+        const row = getTemplate("incubacloud.GitProviderEditor").querySelector(".ic-gitp-credrow");
+        const fors = [...row.querySelectorAll("label")].map((l) => l.getAttribute("t-att-for"));
+        expect(fors).toEqual([
+            "credId(cred_index, 'namespace')",
+            "credId(cred_index, 'kind')",
+            "credId(cred_index, 'username')",
+            "tokenStored(cred) ? undefined : credId(cred_index, 'token')",
+            "credId(cred_index, 'expires')",
+        ]);
+        expect(helpers().credId(2, "token")).toBe("ic-gitp-cred-2-token");
+    });
+
+    test("Replace, a new token typed and saved; Keep stored sends none", async () => {
+        const saved = [];
+        patchWithCleanup(rpc, {
+            _rpc(url, params) {
+                if (url === "/cloud/get_git_providers") {
+                    return Promise.resolve({
+                        can_manage: true, network: "any",
+                        providers: [{
+                            id: 7, name: "GitLab.com", base_url: "https://gitlab.com",
+                            ca_bundle: "",
+                            credentials: [
+                                { id: 1, namespace: "acme", kind: "group", username: "",
+                                  has_token: true, expires_on: false, scopes: "api" },
+                                { id: 2, namespace: "acme/web", kind: "project", username: "",
+                                  has_token: true, expires_on: false, scopes: "api" },
+                            ],
+                        }],
+                    });
+                }
+                if (url === "/cloud/get_git_hooks") {
+                    return Promise.resolve({ hooks: [] });
+                }
+                if (url === "/cloud/save_git_provider") {
+                    saved.push(params.vals);
+                    return Promise.resolve({ ok: true, provider: { id: 7 }, warnings: [] });
+                }
+                return Promise.resolve({});
+            },
+        });
+        await mountWithCleanup(GitProvidersTab, { env: { icon: relayIcon }, noMainContainer: true });
+        await click(".ic-gitp-actions button:contains(Edit)");
+        await waitFor(".ic-gitp-editor");
+        // Both tokens are stored: «Stored» and Replace, no input, and the
+        // label describes the button instead of naming it.
+        expect(".ic-gitp-credrow .ic-set-secret").toHaveCount(2);
+        expect(".ic-gitp-credrow input[type=password]").toHaveCount(0);
+        expect(queryOne("#ic-gitp-cred-0-token-label").getAttribute("for")).toBe(null);
+        expect("#ic-gitp-cred-0-token-replace").toHaveAttribute(
+            "aria-describedby", "ic-gitp-cred-0-token-label"
+        );
+        expect("label[for=ic-gitp-cred-0-namespace]").toHaveText("Namespace");
+        expect("input#ic-gitp-cred-0-namespace").toHaveValue("acme");
+
+        // The first: Replace opens its input, focused and named by the label.
+        await click("#ic-gitp-cred-0-token-replace");
+        await animationFrame();
+        expect("input#ic-gitp-cred-0-token").toBeFocused();
+        expect("input#ic-gitp-cred-0-token").toHaveAttribute("placeholder", "New value");
+        expect("#ic-gitp-cred-0-token-label").toHaveAttribute("for", "ic-gitp-cred-0-token");
+        await edit("glpat-new");
+        // The second: Replace, something typed, then Keep stored.
+        await click("#ic-gitp-cred-1-token-replace");
+        await animationFrame();
+        await edit("typed-by-mistake");
+        await click(queryAll(".ic-gitp-credrow button:contains(Keep stored)")[1]);
+        await animationFrame();
+        expect("#ic-gitp-cred-1-token-replace").toBeFocused();
+        expect("input#ic-gitp-cred-1-token").toHaveCount(0);
+
+        await click(".ic-gitp-actions button:contains(Save)");
+        await animationFrame();
+        expect(saved.length).toBe(1);
+        expect(saved[0].credentials.map((c) => [c.id, c.token])).toEqual([
+            [1, "glpat-new"], [2, ""],
+        ]);
+        expect("replacing" in saved[0].credentials[0]).toBe(false);
     });
 });
 
