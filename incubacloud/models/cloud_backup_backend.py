@@ -1,14 +1,20 @@
+import hashlib
+import ipaddress
 import logging
 from datetime import timedelta
 from urllib.parse import urlparse
 
+import asyncssh
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from odoo import _, api, fields, models
+from odoo.exceptions import UserError, ValidationError
 
+from ..net.hostname import is_host_address
+from . import sftp_dst
 from .cloud_instance import _GLOBAL_BACKUP_PARAM
-from .encrypted_char import EncryptedChar
+from .encrypted_char import EncryptedChar, EncryptedText
 from .password_utils import generate_password
 
 _logger = logging.getLogger(__name__)
@@ -18,6 +24,26 @@ _logger = logging.getLogger(__name__)
 # without being noisy.
 _ALERT_DEBOUNCE_DAYS = 7
 
+#: The comment of the key pair an SFTP destination generates: what the
+#: line in the server's ``authorized_keys`` is recognised by.
+SFTP_KEY_COMMENT = "incubacloud-backup"
+
+#: Fields only the server writes on an SFTP destination: the key pair it
+#: generates and the server key a person confirmed. Refused to any write
+#: that does not run as the platform, so a manager cannot set a trusted
+#: key over ``call_kw`` without reading it first and being audited.
+_SFTP_SERVER_FIELDS = (
+    "sftp_private_key",
+    "sftp_public_key",
+    "sftp_known_hosts",
+    "sftp_host_key_trusted_at",
+    "sftp_host_key_trusted_by",
+)
+
+#: What an SFTP destination's copies are reached by: changing one leaves
+#: a copy kept on the old server out of reach (``_check_sftp_identity``).
+_SFTP_IDENTITY_FIELDS = ("sftp_host", "sftp_port", "sftp_user")
+
 
 class CloudBackupBackend(models.Model):
     _name = "cloud.backup.backend"
@@ -26,7 +52,7 @@ class CloudBackupBackend(models.Model):
 
     name = fields.Char(required=True)
     backend_type = fields.Selection(
-        selection=[("s3", "S3 Compatible")],
+        selection=[("s3", "S3 Compatible"), ("sftp", "SFTP")],
         string="Type",
         required=True,
         default="s3",
@@ -51,6 +77,46 @@ class CloudBackupBackend(models.Model):
     s3_secret_access_key = EncryptedChar(
         string="Secret Access Key",
         groups="incubacloud.group_cloud_manager",
+    )
+
+    # ── SFTP ────────────────────────────────────────────────────────────────
+    # The panel generates the key pair; the person adds the public half to
+    # the server and confirms the server's own key (``sftp_known_hosts``).
+
+    sftp_host = fields.Char(string="SFTP Server")
+    sftp_port = fields.Integer(string="SFTP Port", default=22)
+    sftp_user = fields.Char(string="SFTP User")
+    sftp_path = fields.Char(
+        string="SFTP Path",
+        default="backups",
+        help="Folder under the user's home (e.g. backups). Start with / "
+        "for an absolute path.",
+    )
+    sftp_private_key = EncryptedText(
+        string="SFTP Private Key",
+        groups="base.group_system",
+        copy=False,
+    )
+    sftp_public_key = fields.Char(
+        string="SFTP Public Key",
+        readonly=True,
+        copy=False,
+        help="Add this line to the server's authorized_keys.",
+    )
+    sftp_known_hosts = fields.Text(
+        string="Trusted Server Key",
+        readonly=True,
+        copy=False,
+        groups="incubacloud.group_cloud_manager",
+    )
+    sftp_host_key_fingerprint = fields.Char(
+        string="Server Key Fingerprint",
+        compute="_compute_sftp_host_key_fingerprint",
+        store=True,
+    )
+    sftp_host_key_trusted_at = fields.Datetime(readonly=True, copy=False)
+    sftp_host_key_trusted_by = fields.Many2one(
+        "res.users", readonly=True, copy=False,
     )
 
     # ── Encryption ─────────────────────────────────────────────────────────
@@ -122,7 +188,10 @@ class CloudBackupBackend(models.Model):
         help="Computed duplicity DST URL (e.g. boto3+s3://bucket/path).",
     )
 
-    @api.depends("backend_type", "s3_bucket", "s3_path")
+    @api.depends(
+        "backend_type", "s3_bucket", "s3_path",
+        "sftp_host", "sftp_port", "sftp_user", "sftp_path",
+    )
     def _compute_backup_dst(self):
         for rec in self:
             if rec.backend_type == "s3" and rec.s3_bucket:
@@ -131,8 +200,78 @@ class CloudBackupBackend(models.Model):
                     rec.backup_dst = f"boto3+s3://{rec.s3_bucket}/{path}"
                 else:
                     rec.backup_dst = f"boto3+s3://{rec.s3_bucket}"
+            elif rec.backend_type == "sftp" and rec.sftp_host and rec.sftp_user:
+                try:
+                    rec.backup_dst = sftp_dst.build(
+                        rec.sftp_user, rec.sftp_host, rec.sftp_port,
+                        rec.sftp_path,
+                    )
+                except sftp_dst.DstError:
+                    # The constraint refuses it on save; computed before.
+                    rec.backup_dst = ""
             else:
                 rec.backup_dst = ""
+
+    @api.depends("sftp_known_hosts")
+    def _compute_sftp_host_key_fingerprint(self):
+        Host = self.env["cloud.host"]
+        for rec in self:
+            rec.sftp_host_key_fingerprint = Host._known_hosts_fingerprint(
+                rec.sudo().sftp_known_hosts,
+            ) or False
+
+    # ── SFTP validation ─────────────────────────────────────────────────────
+
+    @api.constrains(
+        "backend_type", "sftp_host", "sftp_port", "sftp_user", "sftp_path",
+        "retention_owner",
+    )
+    def _check_sftp_fields(self):
+        """Refuse an SFTP destination its values cannot safely reach.
+
+        The values end up in a URL, the backup container's environment and
+        copier's answers: a host is a DNS name or an IPv4 address (an IPv6
+        literal would need brackets duplicity does not write), the user
+        and the path are limited to characters nothing reads twice
+        (``sftp_dst``). There is no bucket lifecycle on a server, so only
+        the cron or nobody can own the retention.
+
+        :raise ValidationError: on the first value refused
+        """
+        for rec in self.filtered(lambda r: r.backend_type == "sftp"):
+            host = (rec.sftp_host or "").strip()
+            if not host or not is_host_address(host):
+                raise ValidationError(_(
+                    "Enter the SFTP server as a host name or an IPv4 address."
+                ))
+            try:
+                if ipaddress.ip_address(host).version == 6:
+                    raise ValidationError(_(
+                        "IPv6 addresses are not supported for SFTP yet: "
+                        "enter a host name instead."
+                    ))
+            except ValueError:
+                pass
+            if not 1 <= (rec.sftp_port or 0) <= 65535:
+                raise ValidationError(_("The SFTP port goes from 1 to 65535."))
+            if not sftp_dst.USER_RE.match(rec.sftp_user or ""):
+                raise ValidationError(_(
+                    "The SFTP user may hold letters, digits, dots, dashes "
+                    "and underscores, up to 100 characters."
+                ))
+            try:
+                sftp_dst.check_path(rec.sftp_path)
+            except sftp_dst.DstError as exc:
+                raise ValidationError(_(
+                    "The SFTP path may hold letters, digits, dots, dashes "
+                    "and underscores between slashes, without empty, . or "
+                    ".. parts."
+                )) from exc
+            if rec.retention_owner == "lifecycle":
+                raise ValidationError(_(
+                    "An SFTP server has no bucket lifecycle: let the backup "
+                    "cron delete old backups, or nobody."
+                ))
 
     # ── Deletion guard ──────────────────────────────────────────────────────
 
@@ -240,14 +379,101 @@ class CloudBackupBackend(models.Model):
 
     # ── Password handling ───────────────────────────────────────────────────
 
-    _PASSWORD_FIELDS = ("s3_secret_access_key", "passphrase")
+    _PASSWORD_FIELDS = ("s3_secret_access_key", "passphrase", "sftp_private_key")
+
+    def _check_server_fields(self, vals):
+        """Refuse the fields only the server writes, unless it is writing.
+
+        :param dict vals: values of a ``create`` or ``write``
+        :raise UserError: when *vals* holds one of them outside ``sudo``
+        """
+        if self.env.su:
+            return
+        refused = sorted(set(vals) & set(_SFTP_SERVER_FIELDS))
+        if refused:
+            raise UserError(_(
+                "%(fields)s cannot be set by hand: the panel generates the "
+                "key and records the server key you confirm.",
+                fields=", ".join(refused),
+            ))
+
+    def _sftp_frozen_instances(self):
+        """Return the instances whose copy is pinned on this destination.
+
+        An archived instance, or an imported one, carries its copy's
+        place in ``custom_backup_dst``: a path on this destination's
+        server, read with its key and its trusted server key. Archived
+        ones included (``active_test``), as ``_deletion_blockers`` counts
+        them.
+
+        :rtype: cloud.instance
+        """
+        self.ensure_one()
+        return (
+            self.env["cloud.instance"]
+            .sudo()
+            .with_context(active_test=False)
+            .search([("custom_backup_dst", "!=", False)])
+            .filtered(lambda i: i.effective_backup_backend == self)
+        )
+
+    def _check_sftp_identity(self, vals):
+        """Refuse moving an SFTP destination that holds pinned copies.
+
+        The user, the server and the port are the destination's, never a
+        DST's (``sftp_dst``): an archived or imported instance's copy
+        stays on the server it was written to, and a destination that
+        moved would read and purge it with the wrong key and server key,
+        or not at all.
+
+        :param dict vals: values of a ``write``
+        :raise UserError: when one changes and such an instance exists
+        """
+        for rec in self.filtered(lambda r: r.backend_type == "sftp"):
+            moved = [
+                f for f in _SFTP_IDENTITY_FIELDS
+                if f in vals and vals[f] != rec[f]
+            ]
+            if not moved:
+                continue
+            pinned = rec._sftp_frozen_instances()
+            if pinned:
+                raise UserError(_(
+                    "The server, port and user of %(name)s cannot change: "
+                    "%(instances)s keep their copy on the current server. "
+                    "Create a new destination for the other server.",
+                    name=rec.name,
+                    instances=", ".join(pinned.mapped("name")),
+                ))
 
     def write(self, vals):
         self._check_can_manage_settings()
+        self._check_server_fields(vals)
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
                 del vals[field]
+        if "backend_type" in vals and any(
+            rec.backend_type != vals["backend_type"] for rec in self
+        ):
+            raise UserError(_(
+                "A backup destination keeps its type: create a new "
+                "destination for the other type."
+            ))
+        self._check_sftp_identity(vals)
+        endpoint_moved = self.filtered(
+            lambda r: r.backend_type == "sftp" and any(
+                f in vals and vals[f] != r[f] for f in ("sftp_host", "sftp_port")
+            )
+        )
         res = super().write(vals)
+        if endpoint_moved:
+            # Another server, or another port of it: the key confirmed
+            # was the old endpoint's, and must be confirmed again.
+            endpoint_moved.sudo().write({
+                "sftp_known_hosts": False,
+                "sftp_host_key_trusted_at": False,
+                "sftp_host_key_trusted_by": False,
+            })
         # An explicit user choice of retention_owner resolves the
         # ambiguous state and its warning alert. Migrations bypass the
         # ORM (raw SQL), so this only fires for real operator edits.
@@ -280,9 +506,68 @@ class CloudBackupBackend(models.Model):
     def create(self, vals_list):
         self._check_can_manage_settings()
         for vals in vals_list:
+            self._check_server_fields(vals)
             if not vals.get("passphrase"):
                 vals["passphrase"] = generate_password()
+            if vals.get("backend_type") == "sftp":
+                vals.update(self._sftp_key_pair())
         return super().create(vals_list)
+
+    @api.model
+    def _sftp_key_pair(self):
+        """Generate the Ed25519 key pair an SFTP destination logs in with.
+
+        The private half stays in the panel, encrypted and readable by the
+        platform only; the public half is what the person adds to the
+        server's ``authorized_keys``.
+
+        :return: ``sftp_private_key`` (OpenSSH PEM) and ``sftp_public_key``
+            (one ``authorized_keys`` line)
+        :rtype: dict
+        """
+        key = asyncssh.generate_private_key(
+            "ssh-ed25519", comment=SFTP_KEY_COMMENT,
+        )
+        kind, data = key.export_public_key("openssh").decode().split()[:2]
+        return {
+            "sftp_private_key": key.export_private_key("openssh").decode(),
+            "sftp_public_key": f"{kind} {data} {SFTP_KEY_COMMENT}",
+        }
+
+    def _sftp_regenerate_key(self):
+        """Replace the key pair; the instances get it on their next build.
+
+        The new public key has to be on the server before then: until each
+        instance is rebuilt it keeps logging in with the old one, so the
+        old line stays in ``authorized_keys`` until all are.
+        """
+        self.ensure_one()
+        if self.backend_type != "sftp":
+            raise UserError(_("Only an SFTP destination has a key."))
+        self.sudo().write(self._sftp_key_pair())
+        self.env["cloud.audit.log"].sudo().create({
+            "action": "SFTP backup key regenerated",
+            "details": f"backup destination {self.name} (id {self.id})",
+        })
+
+    def _sftp_snapshot(self):
+        """Return what an instance's configuration snapshot keeps of SFTP.
+
+        Fingerprints only, never a key: a new key pair or a newly trusted
+        server key leaves the instances on this destination with changes
+        to apply, because the files that carry them reach a host on a
+        build only.
+
+        :return: ``public`` (SHA-256 of the public key) and ``host_key``
+            (the trusted server key's fingerprint)
+        :rtype: dict
+        """
+        self.ensure_one()
+        public = self.sftp_public_key or ""
+        return {
+            "public": hashlib.sha256(public.encode()).hexdigest() if public else "",
+            "host_key": self.sftp_host_key_fingerprint or "",
+        }
 
     # ── Effective alert threshold ──────────────────────────────────────────
 
@@ -316,6 +601,22 @@ class CloudBackupBackend(models.Model):
 
     # ── Usage measurement (boto3 ListObjectsV2 + sum) ──────────────────────
 
+    def _check_backend_type_supported(self, what):
+        """Raise on a type *what* does not handle, instead of answering empty.
+
+        An empty answer reads as an empty destination: an archived copy
+        reported lost, a quota at zero. Not knowing has to say so.
+
+        :param str what: the operation, for the message
+        :raise UserError: on a type other than S3
+        """
+        self.ensure_one()
+        if self.backend_type != "s3":
+            raise UserError(_(
+                "%(what)s does not handle %(type)s destinations.",
+                what=what, type=self.backend_type,
+            ))
+
     def _measure_prefix(self, dst):
         """Return ``(bytes, object_count)`` under the duplicity DST *dst*.
 
@@ -340,7 +641,8 @@ class CloudBackupBackend(models.Model):
         :return: tuple of total size in bytes and number of objects.
         """
         self.ensure_one()
-        if self.backend_type != "s3" or not dst:
+        self._check_backend_type_supported("_measure_prefix")
+        if not dst:
             return 0.0, 0
         parsed = urlparse(dst.replace("boto3+s3://", "s3://"))
         bucket = parsed.netloc
@@ -377,7 +679,8 @@ class CloudBackupBackend(models.Model):
         (cron or on-demand endpoint) decides whether to swallow.
         """
         self.ensure_one()
-        if self.backend_type != "s3" or not self.s3_bucket:
+        self._check_backend_type_supported("_measure_usage")
+        if not self.s3_bucket:
             return
         if not self.s3_access_key_id or not self.s3_secret_access_key:
             return

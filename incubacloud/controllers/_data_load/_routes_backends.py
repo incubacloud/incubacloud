@@ -38,6 +38,12 @@ class BackendsMixin:
         "quota_gb",
         "alert_threshold_pct",
         "alert_email",
+        # SFTP: where. The key pair and the trusted server key are the
+        # server's to write (``_SFTP_SERVER_FIELDS``), never the SPA's.
+        "sftp_host",
+        "sftp_port",
+        "sftp_user",
+        "sftp_path",
     }
     # NOTE: ``managed_reservation_id`` and ``archived_until`` are NOT in the
     # allowlist. They are written exclusively by server-side flows
@@ -92,6 +98,7 @@ class BackendsMixin:
                     "s3_bucket": b.s3_bucket or "",
                     "s3_path": b.s3_path or "",
                     "s3_endpoint_url": b.s3_endpoint_url or "",
+                    "sftp_host": b.sftp_host or "",
                     "backup_dst": b.backup_dst or "",
                     "instance_count": usage.get(b.id, 0),
                     "quota_gb": b.quota_gb or 0.0,
@@ -130,6 +137,20 @@ class BackendsMixin:
             "s3_access_key_id": b.s3_access_key_id or "",
             "has_s3_secret_access_key": _has_encrypted(b, "s3_secret_access_key"),
             "has_passphrase": _has_encrypted(b, "passphrase"),
+            # SFTP: the public half and the trusted server key's
+            # fingerprint. Never the private key: no route reads it.
+            "sftp_host": b.sftp_host or "",
+            "sftp_port": b.sftp_port or 22,
+            "sftp_user": b.sftp_user or "",
+            "sftp_path": b.sftp_path or "",
+            "sftp_public_key": b.sftp_public_key or "",
+            "sftp_host_key_fingerprint": b.sftp_host_key_fingerprint or "",
+            "sftp_host_key_trusted": bool(b.sftp_host_key_fingerprint),
+            "sftp_host_key_trusted_at": (
+                b.sftp_host_key_trusted_at.isoformat()
+                if b.sftp_host_key_trusted_at else ""
+            ),
+            "sftp_host_key_trusted_by": b.sftp_host_key_trusted_by.name or "",
             "backup_image_version": b.backup_image_version or "latest",
             "email_from": b.email_from or "",
             "email_to": b.email_to or "",
@@ -173,6 +194,20 @@ class BackendsMixin:
         # Writing the retention owner confirms it (see the model's write):
         # the page drops its «Unconfirmed» note on this answer.
         return {"ok": True, "retention_owner_declared": b.retention_owner_declared}
+
+    @http.route(["/cloud/sftp_backend_regenerate_key"], type="jsonrpc", auth="user")
+    def cloud_sftp_backend_regenerate_key(self, backend_id):
+        """Replace an SFTP destination's key pair and return the new public key.
+
+        The instances log in with the old key until they are rebuilt: the
+        page says to keep both lines in ``authorized_keys`` until then.
+        """
+        self._sec()._check_can_manage_settings()
+        b = request.env["cloud.backup.backend"].browse(backend_id)
+        if not b.exists():
+            return {"ok": False, "error": _("Backend not found")}
+        b._sftp_regenerate_key()
+        return {"ok": True, "sftp_public_key": b.sftp_public_key or ""}
 
     @http.route(["/cloud/delete_backup_backend"], type="jsonrpc", auth="user")
     def cloud_delete_backup_backend(self, backend_id):
@@ -247,6 +282,11 @@ class BackendsMixin:
         b = request.env["cloud.backup.backend"].browse(backend_id)
         if not b.exists():
             return {"ok": False, "error": _("Backend not found.")}
+        if b.backend_type != "s3":
+            return {
+                "ok": False,
+                "error": _("Testing this type of destination is not supported."),
+            }
         if not b.s3_bucket:
             return {"ok": False, "error": _("No bucket configured.")}
 
