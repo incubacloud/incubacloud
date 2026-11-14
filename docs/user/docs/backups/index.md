@@ -91,9 +91,9 @@ uses its own if it has one, else its project's, else the default.
 
 ## How long backups are kept
 
-Every backup backend has a **retention period** (its **Advanced** tab) — 3
-months unless you change it (`30D`, `3M`, `1Y`…) — and a **retention owner**,
-who deletes the backups older than that:
+Every backup backend has a **retention period** (under **Advanced** on its
+**General** tab) — 3 months unless you change it (`30D`, `3M`, `1Y`…) — and a
+**retention owner**, who deletes the backups older than that:
 
 - **Duplicity cron** (the default) — the instance's backup service deletes them.
 - **Bucket lifecycle** — a lifecycle rule you set up on the bucket, outside
