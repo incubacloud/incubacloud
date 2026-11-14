@@ -604,3 +604,193 @@ class TestReading(TransactionCase):
         args, kwargs = mocked.call_args
         self.assertEqual(args[0], f"{BASE}/api/v1/query")
         self.assertEqual(kwargs["params"], {"query": "sum(x)", "time": 5})
+
+
+def _weblogin(ip, instance=42, t="2026-11-14T10:00:01Z"):
+    """Return the line a server sends for one failed web login (C1.9).
+
+    :rtype: str
+    """
+    return f"weblogin failed ip={ip} instance={instance} t={t}"
+
+
+class TestWebloginLines(BaseCase):
+    """The instances' failed web logins: the server's own line, whole."""
+
+    def test_a_line_gives_address_instance_and_time(self):
+        """IPv4, IPv6 and the proxy's time with a fraction and an offset."""
+        self.assertEqual(logs.parse_weblogin(_weblogin("203.0.113.5")), {
+            "ip": "203.0.113.5", "instance_id": 42,
+            "time": "2026-11-14T10:00:01Z",
+        })
+        self.assertEqual(logs.parse_weblogin(_weblogin(
+            "2001:DB8::7", instance=0, t="2026-11-14T10:00:01.123456789+01:00",
+        )), {
+            "ip": "2001:db8::7", "instance_id": 0,
+            "time": "2026-11-14T10:00:01.123456789+01:00",
+        })
+
+    def test_anything_else_is_no_line(self):
+        """Text after it or before it, a bad address or id: ignored."""
+        for line in (
+            _weblogin("203.0.113.5") + " extra",
+            _weblogin("203.0.113.5") + "\n",
+            "x " + _weblogin("203.0.113.5"),
+            _weblogin("999.0.113.5"),
+            _weblogin("203.0.113"),
+            _weblogin("::g"),
+            _weblogin("203.0.113.5", instance="4a"),
+            _weblogin("203.0.113.5", instance="-4"),
+            _weblogin("203.0.113.5", t="yesterday"),
+            "weblogin failed ip=203.0.113.5 instance=42",
+            "", None,
+        ):
+            self.assertIsNone(logs.parse_weblogin(line), line)
+
+    def test_ipv6_counts_by_its_64(self):
+        """Two addresses of one /64 are one source; IPv4 is itself."""
+        self.assertEqual(logs.source_key("2001:db8:1:2::5"), "2001:db8:1:2::/64")
+        self.assertEqual(
+            logs.source_key("2001:db8:1:2:ffff::9"), "2001:db8:1:2::/64",
+        )
+        self.assertEqual(logs.source_key("203.0.113.5"), "203.0.113.5")
+
+    def test_the_query_of_one_instance(self):
+        """One server by id, the instance by a filter that 4 is not 42."""
+        self.assertEqual(
+            logs.logql_weblogin(3, 42),
+            '{log_type="security", source="weblogin", host_id="3"}'
+            ' |= " instance=42 "',
+        )
+        for bad in ("42", -1, True, 4.2, None):
+            with self.assertRaises(ValueError, msg=bad):
+                logs.logql_weblogin(3, bad)
+        with self.assertRaises(ValueError):
+            logs.logql_weblogin(0, 42)
+
+
+class TestWebloginTopSources(TransactionCase):
+    """The addresses with the most attempts, counted on the panel."""
+
+    def setUp(self):
+        """A reader of the central, the transport patched by each test."""
+        super().setUp()
+        self.reader = logs.LogReader(BASE, token="t", user="acct")
+        patcher = patch.object(logs, "PAGE_LIMIT", 3)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _get(self, *answers):
+        """Patch the transport with *answers*, the busy pause skipped."""
+        get = patch(f"{_TRANSPORT}.requests.get", side_effect=_responses(*answers))
+        sleep = patch(f"{_TRANSPORT}.time.sleep")
+        mocked = get.start()
+        sleep.start()
+        self.addCleanup(get.stop)
+        self.addCleanup(sleep.stop)
+        return mocked
+
+    def test_two_pages_back_without_repeats(self):
+        """The newest page first, the next ending at its first instant."""
+        mocked = self._get(
+            _streams((7, 40, _weblogin("203.0.113.5"), "weblogin"),
+                     (7, 50, _weblogin("198.51.100.7"), "weblogin"),
+                     (7, 60, _weblogin("203.0.113.5"), "weblogin")),
+            _streams((7, 20, _weblogin("203.0.113.5"), "weblogin"),
+                     (7, 30, _weblogin("203.0.113.9"), "weblogin"),
+                     (7, 40, _weblogin("203.0.113.5"), "weblogin")),
+        )
+        got = self.reader.weblogin_sources(7, 42, minutes=10, now_ns=1000)
+        self.assertEqual(got, logs.WebloginSources(
+            [("203.0.113.5", 3), ("198.51.100.7", 1), ("203.0.113.9", 1)],
+            3, 5, True,
+        ))
+        first, second = (call.kwargs["params"] for call in mocked.call_args_list)
+        self.assertEqual(first["query"], logs.logql_weblogin(7, 42))
+        self.assertEqual(first["direction"], "backward")
+        self.assertEqual(first["end"], 1001)
+        self.assertEqual(first["start"], 1000 - 600 * SECOND)
+        self.assertEqual(second["end"], 41)
+        self.assertEqual(mocked.call_args.kwargs["auth"], ("acct", "t"))
+
+    def test_ipv6_by_64_ordered_and_not_cut(self):
+        """A /64 is one source; a short page means the window was read whole."""
+        self._get(_streams(
+            (7, 10, _weblogin("2001:db8:1:2::5"), "weblogin"),
+            (7, 11, _weblogin("2001:db8:1:2::6"), "weblogin"),
+        ))
+        got = self.reader.weblogin_sources(7, 42, now_ns=1000)
+        self.assertEqual(got.top, [("2001:db8:1:2::/64", 2)])
+        self.assertEqual((got.distinct, got.attempts, got.cut), (1, 2, False))
+
+    def test_other_lines_do_not_count(self):
+        """A line of another instance or of another shape is not an attempt."""
+        self._get(_streams(
+            (7, 10, _weblogin("203.0.113.5", instance=4), "weblogin"),
+            (7, 11, _weblogin("203.0.113.6") + " ip=9.9.9.9", "weblogin"),
+        ))
+        got = self.reader.weblogin_sources(7, 42, now_ns=1000)
+        self.assertEqual(got, logs.WebloginSources([], 0, 0, False))
+
+    def test_no_answer_is_no_data(self):
+        """Busy, down, an error or a bad id: None, and nothing raised."""
+        for answers in (
+            (429, 429),
+            (requests.ConnectionError("reset"), requests.ConnectionError("reset")),
+            (requests.Timeout("slow"), requests.Timeout("slow")),
+            ({"status": "error", "error": "too many"},),
+        ):
+            with self.subTest(answers=answers):
+                self._get(*answers)
+                with self.assertLogs(
+                    "odoo.addons.incubacloud.models.logs", "WARNING",
+                ):
+                    self.assertIsNone(
+                        self.reader.weblogin_sources(7, 42, now_ns=1000),
+                    )
+        with self.assertLogs("odoo.addons.incubacloud.models.logs", "WARNING"):
+            self.assertIsNone(self.reader.weblogin_sources(7, "42"))
+
+    def test_the_pairs_the_rule_names(self):
+        """From the metrics URL, pairs most first; nothing read is None."""
+        mocked = self._get(_streams(
+            (7, 10, _weblogin("203.0.113.5"), "weblogin"),
+            (7, 11, _weblogin("2001:db8:1:2::6"), "weblogin"),
+            (7, 12, _weblogin("203.0.113.5"), "weblogin"),
+        ), _streams(), _streams(), 429, 429)
+        self.assertEqual(
+            logs.weblogin_top_sources(
+                "https://central.example.test/r", 7, 42, minutes=10,
+                token="t", user="acct", now_ns=1000,
+            ),
+            [("203.0.113.5", 2), ("2001:db8:1:2::/64", 1)],
+        )
+        self.assertEqual(mocked.call_args.args[0], f"{BASE}/api/v1/query_range")
+        self.assertIsNone(logs.weblogin_top_sources(BASE, 7, 42, now_ns=1000))
+        with self.assertLogs("odoo.addons.incubacloud.models.logs", "WARNING"):
+            self.assertIsNone(logs.weblogin_top_sources(BASE, 7, 42, now_ns=1000))
+        self.assertIsNone(
+            logs.weblogin_top_sources("https://vm.example.test:8428", 7, 42),
+        )
+
+    def test_the_reader_of_the_settings(self):
+        """From the panel's central and credential; none without a central."""
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        settings.write({
+            "metrics_enabled": True,
+            "metrics_central_url": "https://central.example.test/r",
+            "metrics_account": "acct",
+            "metrics_remote_write_token": "secret",
+        })
+        reader = logs.LogReader.from_env(self.env)
+        self.assertEqual(
+            (reader.base_url, reader.user, reader.token),
+            (BASE, "acct", "secret"),
+        )
+        settings.metrics_central_url = "https://vm.example.test:8428"
+        self.assertIsNone(logs.LogReader.from_env(self.env))
+        settings.write({
+            "metrics_central_url": "https://central.example.test/r",
+            "metrics_enabled": False,
+        })
+        self.assertIsNone(logs.LogReader.from_env(self.env))

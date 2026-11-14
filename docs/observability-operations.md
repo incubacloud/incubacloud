@@ -407,7 +407,12 @@ itself and its counters never expire).
   the line itself. An auditd change is its `SYSCALL` joined to its `PATH`
   records by server and `audit(seconds:serial)`, once every page is read;
   a `SYSCALL` whose `PATH` has not arrived in the last 60 s of the window
-  waits for the next pass.
+  waits for the next pass. The addresses with the most failed web logins
+  on an instance are counted on the panel over the last 1 000 `weblogin`
+  lines of its server (`logs.weblogin_top_sources`, IPv6 by its
+  /64), never by an aggregation per address, so Loki's
+  `max_query_series` cannot refuse them; a central that is busy or does
+  not answer gives no addresses, never an error.
 - **The panel's addresses and uid.** The agents' install reads
   `SSH_CONNECTION` without `become` (sudo clears it) and the panel keeps,
   per server, the last five addresses it came from, each forgotten 30
