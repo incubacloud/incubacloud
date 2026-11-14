@@ -440,6 +440,61 @@ itself and its counters never expire).
   The setting *Show the country of addresses* (`security_geoip`, on by
   default) turns both the lookup and the download off. A country from
   DB-IP is shown with its attribution, `geoip.ATTRIBUTION`.
+- **The alerts of the security events**
+  (`models/cloud_security_events.py`, the *Read the servers' security
+  events* cron, every 5 minutes). Over the servers sending their security
+  logs whose agents were installed with `host_id` (`metrics_write_user`
+  set), three reads, each with its cursor in `ir.config_parameter`
+  (`incubacloud.security_events_cursor.<accepted|sudo|auditd>`): sign-ins,
+  sudo with the panel's own user left out in LogQL (one read per user the
+  panel signs in as), and auditd's changes. Each reads from 15 minutes
+  before its cursor to 30 seconds ago, at most 10 pages of 500 lines; the
+  cursor starts at "now" (nothing earlier is alerted on), stays where it
+  was when the read fails, and moves only to the last line read when the
+  pages ran out, two passes in a row of which raise
+  `security_events_backlog` (a warning per read, closed by the next pass
+  that reads to the end). After an outage the window reaches 24 hours
+  back. One more instant query a pass counts each server's sshd, sudo,
+  fail2ban and auditd lines of the last 15 minutes: a server silent
+  longer than that (`cloud.host.security_last_line_at`) is read again
+  alone from where it went quiet, five a pass, since Fluent Bit sends what
+  it kept with the time it happened.
+  - *Sign-ins.* With the panel's key from an address it connects from
+    (`security_panel_sources`, or `_hardening_panel_ip` where a layer
+    knows it; IPv6 by /64), never an alert. Another key, or a password on
+    a server the panel signs in to with a key, is
+    `security_ssh_login_foreign` (critical); so is, on a server the panel
+    signs in to with a password or a key it cannot read, another user.
+    The key a change of the server's key replaced counts as the panel's
+    for a sign-in up to a minute after the change
+    (`security_previous_key_fingerprint`, `security_key_changed_at`). The
+    panel's key (or user) from an unknown address is confirmed first: the
+    cron opens one connection of its own to that server, at most 10 a
+    pass, and reads `SSH_CONNECTION`. The address it reads is learned as
+    the panel's there and counts as the panel's on every server for the
+    rest of the pass; the same address as the sign-in's, no alert; another,
+    `security_ssh_login_panel_key_elsewhere` (critical); no connection,
+    `security_ssh_login_unconfirmed` (a warning without the address). A
+    sign-in left without a connection stops its cursor for the next pass.
+  - *sudo.* Another user's command or refusal is `security_sudo_foreign`
+    (a warning), with the program and never its arguments.
+  - *Changes.* By login uid, against the uid the agents' install read for
+    the panel's user: another user is `security_sensitive_change`
+    (critical); the panel's user outside every job of the server or of its
+    instances, console and terminal of the panel (a minute's margin around
+    each), critical; root there, a warning (`ROOT_CHANGE_LEVEL`,
+    provisional until root's changes on the fleet are measured: root's
+    crontab writes with login uid 0 too); the system's own, nothing.
+  - *Once.* `cloud.security.event` keeps each event that raised or
+    refreshed an alert, by server and line digest (or auditd's stamp),
+    never the line, for 7 days: the overlap never counts one twice and a
+    dismissed alert does not come back for the same event. The alerts do
+    not resolve themselves; a repeat while one is open refreshes its text
+    with the count since the first, and the payload holds the count and
+    the last event's sanitized fields. Only the two sign-in alerts carry
+    an address; none carries a country. The texts are translated in the
+    language of the cron's context, a broken translation giving the
+    English one.
 
 ## The panel's own charts
 

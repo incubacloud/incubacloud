@@ -75,6 +75,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         "data/traefik_templates.xml",
         "data/move_recovery_cron.xml",
         "data/geoip_refresh_cron.xml",
+        "data/security_events_cron.xml",
         # Views
         "views/dashboard_action.xml",
         "views/menus.xml",
