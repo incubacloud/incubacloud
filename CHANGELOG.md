@@ -104,10 +104,12 @@ columns: Odoo keeps what each holds as its English text.
   counted once (`cloud.security.event`, 7 days, never the line), and
   judged in a savepoint of its own: one that fails is logged and skipped.
   The servers' rows the cron writes are written on a READ COMMITTED cursor
-  of their own. The alerts do not resolve themselves and count their
-  repeats without notifying again, so an open one must be dismissed for
-  the next to notify; only the two sign-in alerts carry the address, none
-  the country.
+  of their own. The alerts do not resolve themselves; a new event on an
+  open one adds to its count and notifies again, at most once an hour per
+  server (the alerts the server opened count), and refreshes it on the
+  panel alone within that hour, kept in the alert so it holds across
+  restarts; only the two sign-in alerts carry the address, none the
+  country.
 - **The security logs read back from the central (#84).** `models/logs.py`:
   LogQL over the account's `/lr` route, paged by time, closed templates,
   parsers anchored at the start of the line whose user names and programs
