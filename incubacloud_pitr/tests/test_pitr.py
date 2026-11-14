@@ -478,12 +478,27 @@ exit 0
         self.assertFalse(self.inst.removal_finalized)
 
 
+    def _left(self):
+        """What the delete reports when the host had no ``pitr.env``.
+
+        :return: the messages and the active ``pitr_prefix_left`` alerts
+        :rtype: tuple
+        """
+        self.env_file.unlink()
+        self.assertEqual(self._run(self.first), 0)
+        results = {PURGE_LABEL: {"stdout": self.output, "exit_status": 0}}
+        left = self.inst._teardown_pre_steps_left(results, self.env["cloud.job"])
+        return left, self.env["cloud.alert"].search([
+            ("code", "=", ALERT_PREFIX_LEFT), ("state", "=", "active"),
+        ])
+
     def test_no_credentials_on_the_host_let_the_delete_go_on_with_an_alert(self):
         """What it left in the bucket reaches a person, not a log line.
 
-        On the host, as the instance goes: an alert on the instance would
-        go with the record.
+        On no host and no instance: both cascade onto their alerts, and
+        the instance goes, its server maybe after it.
         """
+        self.inst.pitr_cluster_id = "7698"
         self.env_file.unlink()
         self.assertEqual(self._run(self.first), 0)
         self.assertIn(PREFIX_LEFT_MARK, self.output)
@@ -500,10 +515,41 @@ exit 0
             ("code", "=", ALERT_PREFIX_LEFT), ("state", "=", "active"),
         ])
         self.assertEqual(len(alert), 1)
-        self.assertEqual(alert.host_id, self.host)
+        self.assertFalse(alert.host_id)
         self.assertFalse(alert.instance_id)
+        self.assertEqual(alert.audience, "fleet")
         self.assertEqual(alert.dedup_key, "s3://bucket/backups/pp/pitr-inst-pitr")
         self.assertIn("RB-23", alert.message)
+        self.assertIn("pitr-host", alert.message)
+
+    def test_one_that_never_archived_leaves_nothing_to_alert_about(self):
+        """Switched on, its start failed before the rebuild wrote the
+        file: no cluster was recorded and nothing was archived."""
+        left, alerts = self._left()
+        self.assertEqual(left, [])
+        self.assertFalse(alerts)
+
+    def test_with_no_destination_the_alert_says_the_prefix_is_unknown(self):
+        self.inst.pitr_cluster_id = "7698"
+        self.project.backup_backend_id = False
+        self.env["ir.config_parameter"].sudo().set_param(
+            "incubacloud.backup_backend_id", "0",
+        )
+        self.inst.invalidate_recordset()
+        left, alert = self._left()
+        self.assertEqual(len(left), 1)
+        self.assertEqual(len(alert), 1)
+        self.assertNotIn("s3://", alert.message)
+        self.assertNotIn("False", alert.message)
+        self.assertIn("unknown", alert.message)
+        self.assertIn("pitr-inst-pitr", alert.message)
+
+    def test_on_a_managed_destination_the_alert_goes_to_the_provider(self):
+        """The tenant holds no credentials of that bucket."""
+        self.inst.pitr_cluster_id = "7698"
+        self.backend.sudo().managed_reservation_id = "managed-1"
+        _left, alert = self._left()
+        self.assertEqual(alert.audience, "provider")
 
     def test_a_purge_that_ran_raises_nothing(self):
         self.assertEqual(self._run(self.first, purge=3), 0)
@@ -581,10 +627,63 @@ class TestDeletingAnArchivedInstancePurgesTheArchive(_PitrCase):
         self.inst.invalidate_recordset()
         self.assertEqual(self.inst._archived_copy_extra_prefixes(), [self.PREFIX])
 
-    def test_one_archived_before_the_freeze_purges_the_computed_prefix(self):
+    def _before_the_freeze(self):
+        """Archived as it was before the prefix was frozen."""
         self._archive()
         self.inst.sudo().pitr_archived_prefix = False
+
+    def _left_alerts(self):
+        return self.env["cloud.alert"].search([
+            ("code", "=", ALERT_PREFIX_LEFT), ("state", "=", "active"),
+        ])
+
+    def test_one_archived_before_the_freeze_purges_what_its_chain_says(self):
+        self._before_the_freeze()
         self.assertEqual(self.inst._archived_copy_extra_prefixes(), [self.PREFIX])
+
+    def test_one_archived_before_the_freeze_whose_folder_was_renamed(self):
+        """Starting from scratch renames the folder before deleting: the
+        computed prefix names an empty folder, the archive stays."""
+        self._before_the_freeze()
+        self.project.remote_folder = f"pp-archived-{self.inst.id}"
+        self.inst.invalidate_recordset()
+        self.assertEqual(self.inst._archived_copy_extra_prefixes(), [self.PREFIX])
+
+    def test_one_archived_before_the_freeze_whose_project_went(self):
+        """The computed prefix falls back to the shared ``default``
+        folder, where another instance of the name may archive."""
+        self._before_the_freeze()
+        self.inst.sudo().project_id = False
+        self.inst.invalidate_recordset()
+        self.assertEqual(self.inst._archived_copy_extra_prefixes(), [self.PREFIX])
+
+    def test_a_chain_that_does_not_say_purges_nothing_computed_and_alerts(self):
+        """A path imported by hand: what is computed may be another's."""
+        self._before_the_freeze()
+        self.inst.sudo().custom_backup_dst = "boto3+s3://imported/elsewhere"
+        self.assertEqual(self.inst._archived_copy_extra_prefixes(), [])
+        self.inst.delete_archived()
+        alert = self._left_alerts()
+        self.assertEqual(len(alert), 1)
+        self.assertFalse(alert.host_id)
+        self.assertFalse(alert.instance_id)
+        self.assertIn("pitr-inst-pitr", alert.message)
+        self.assertIn("boto3+s3://imported/elsewhere", alert.message)
+        self.assertNotIn("s3://False", alert.message)
+
+    def test_with_no_chain_nor_prefix_the_record_goes_and_alerts(self):
+        self._before_the_freeze()
+        self.inst.sudo().custom_backup_dst = False
+        self.assertEqual(self.inst.delete_archived(), [])
+        self.assertFalse(self.inst.exists())
+        self.assertEqual(len(self._left_alerts()), 1)
+
+    def test_one_that_never_archived_raises_nothing(self):
+        self.inst.pitr_cluster_id = False
+        self._before_the_freeze()
+        self.inst.sudo().custom_backup_dst = "boto3+s3://imported/elsewhere"
+        self.inst.delete_archived()
+        self.assertFalse(self._left_alerts())
 
     def test_an_instance_that_never_archived_has_one_prefix_only(self):
         self.inst.write({"pitr_enabled": False, "pitr_cluster_id": False})
@@ -709,6 +808,43 @@ class TestTheActions(_PitrCase):
         with self.assertRaisesRegex(UserError, "PostgreSQL 12"):
             self.inst.action_pitr_enable()
         self.assertFalse(self.inst.pitr_enabled)
+
+    def _named(self, name, project):
+        """An instance named *name*, as one created before core refused it.
+
+        :rtype: cloud.instance
+        """
+        other = self.env["cloud.instance"].create({
+            "name": "pitr-namesake", "project_id": project.id,
+            "environment": "staging",
+        })
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET name = jsonb_build_object('en_US', %s)"
+            " WHERE id = %s", [name, other.id],
+        )
+        self.env.invalidate_all()
+        return other
+
+    def test_where_another_instance_keeps_its_backups_it_is_refused(self):
+        """``pitr-inst-pitr``'s chain is where the archive would go."""
+        self._named("pitr-inst-pitr", self.project)
+        with self.assertRaisesRegex(UserError, "pitr-inst-pitr"):
+            self.inst.action_pitr_enable()
+        self.assertFalse(self.inst.pitr_enabled)
+
+    def test_an_archived_namesake_counts(self):
+        other = self._named("pitr-inst-pitr", self.project)
+        other.with_context(ic_archive_instance=True).sudo().active = False
+        with self.assertRaises(UserError):
+            self.inst.action_pitr_enable()
+
+    def test_a_namesake_in_another_folder_does_not(self):
+        elsewhere = self.env["cloud.project"].create({
+            "name": "pitr-proj-2", "remote_folder": "elsewhere",
+        })
+        self._named("pitr-inst-pitr", elsewhere)
+        codes, _steps = self._chain(self.inst.action_pitr_enable)
+        self.assertEqual(codes, ["rebuild_instance", "pitr_enable"])
 
     def test_a_copy_switched_on_gets_a_key_of_its_own(self):
         self.inst.pitr_key = False

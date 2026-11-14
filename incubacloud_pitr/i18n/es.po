@@ -103,6 +103,11 @@ msgid "Archived Cluster"
 msgstr "Clúster archivado"
 
 #. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_archived_prefix
+msgid "Archived Recovery Prefix"
+msgstr "Prefijo de recuperación archivado"
+
+#. module: incubacloud_pitr
 #: model:ir.model.fields.selection,name:incubacloud_pitr.selection__cloud_instance__pitr_state__ok
 msgid "Archiving"
 msgstr "Archivando"
@@ -168,6 +173,18 @@ msgstr "Vigilancia de recuperación continua"
 #: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
 msgid "Continuous recovery"
 msgstr "Recuperación continua"
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid ""
+"Continuous recovery cannot be switched on for %(name)s: its archive would be"
+" kept where the instance %(other)s, in the same backup folder, keeps its "
+"backups. Rename one of the two first."
+msgstr ""
+"No se puede activar la recuperación continua en %(name)s: su archivo se "
+"guardaría donde la instancia %(other)s, en la misma carpeta de copias, "
+"guarda sus copias. Cambie antes el nombre de una de las dos."
 
 #. module: incubacloud_pitr
 #. odoo-python
@@ -599,6 +616,19 @@ msgstr "Escriba el nombre de la instancia para confirmar la restauración."
 #: code:addons/incubacloud_pitr/models/cloud_instance.py:0
 msgid "Unknown recovery objective: %s"
 msgstr "Objetivo de recuperación desconocido: %s"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_archived_prefix
+msgid ""
+"Where the recovery archive was when the instance was archived "
+"(s3://bucket/path), emptied when it is deleted for good. Frozen as the "
+"duplicity path is: the computed one follows the project, which may change or"
+" go meanwhile."
+msgstr ""
+"Dónde estaba el archivo de recuperación cuando se archivó la instancia "
+"(s3://bucket/ruta), que se vacía cuando se elimina definitivamente. Se fija "
+"como la ruta de duplicity: la calculada sigue al proyecto, que puede cambiar"
+" o desaparecer entretanto."
 
 #. module: incubacloud_pitr
 #. odoo-javascript
