@@ -6,9 +6,10 @@ import {formatNumber} from "./formatters";
 /**
  * The fleet as the panel draws it, in Monitoring: how many servers
  * report and how many are short of disk, memory or time, the instances
- * deployed and running, the active alerts, the ten busiest servers by
- * load, memory, root disk and disk activity, and which servers went
- * silent in the window.
+ * deployed and running, the active alerts, the servers' security in
+ * figures with the panel's own servers to look at, the ten busiest
+ * servers by load, memory, root disk and disk activity, and which
+ * servers went silent in the window.
  *
  * The server decides whose servers these are (``scope``): every
  * account's on the panel that deployed the central, the panel's own
@@ -46,10 +47,106 @@ export class FleetBoard extends ChartBoard {
    * @returns {Array<Object>}
    */
   series(key) {
+    if (key === "security_ssh") {
+      const kinds = {failed: _t("failed SSH logins"), bans: _t("addresses banned")};
+      return super.series(key).map((s) => ({...s, label: kinds[s.role] || s.label}));
+    }
     return super.series(key).map((s) => ({
       ...s,
       name: this.isOperator && !s.own && s.account ? `${s.name} (${s.account})` : s.name,
     }));
+  }
+
+  /**
+   * The Security block of the answer: ``unavailable`` on a panel whose
+   * servers may not send their security logs yet, ``ready`` with the
+   * figures the panel keeps and its own servers to look at, or empty
+   * from an answer without it.
+   *
+   * @returns {Object}
+   */
+  get security() {
+    return this.state.board?.security || {};
+  }
+
+  /**
+   * The Security figures, each with its tone: the central's (every
+   * account's on the operator's board) and the panel's own.
+   *
+   * @returns {Array<{key: string, label: string, value: string, tone: string}>}
+   */
+  get securityTiles() {
+    const v = this.panel("security").value || {};
+    const sec = this.security;
+    const count = (n) => (n === undefined ? "—" : formatNumber(n));
+    const toneIf = (n, tone) => (n ? tone : "ok");
+    return [
+      {key: "ssh_failed_1h", label: _t("Failed SSH logins in the last hour"), value: count(v.ssh_failed_1h), tone: "ok"},
+      {key: "ssh_bruteforce", label: _t("Servers under SSH brute force now"), value: count(v.ssh_bruteforce),
+        tone: toneIf(v.ssh_bruteforce, "warn")},
+      {key: "bans_1h", label: _t("Addresses banned in the last hour"), value: count(v.bans_1h), tone: "ok"},
+      {key: "weblogin_bruteforce", label: _t("Instances under web-login brute force now"),
+        value: count(v.weblogin_bruteforce), tone: toneIf(v.weblogin_bruteforce, "warn")},
+      {key: "alerts_hosts", label: _t("Servers with security alerts"), value: count(sec.alerts_hosts),
+        tone: toneIf(sec.alerts_hosts, "bad")},
+      {key: "silent", label: _t("Servers whose security logs are not arriving"), value: count(v.silent),
+        tone: toneIf(v.silent, "warn")},
+      {key: "off", label: _t("Servers with security logs off"), value: count(sec.off), tone: toneIf(sec.off, "warn")},
+      {key: "unhardened", label: _t("Servers without hardening"), value: count(sec.unhardened),
+        tone: toneIf(sec.unhardened, "warn")},
+    ];
+  }
+
+  /** The chart card of the Security block, its words translated here. */
+  get securityCard() {
+    return {
+      key: "security_ssh", title: _t("Failed SSH logins and bans"), hint: _t("per hour · every server"),
+      palette: "role", label: _t("Failed SSH logins and addresses banned on the servers per hour"),
+      empty: _t("No failed SSH login on the servers in this window."),
+    };
+  }
+
+  /** This panel's servers with something to look at, the worst first. */
+  get securityRows() {
+    return this.security.rows || [];
+  }
+
+  /** The line under the servers about those left out. */
+  get securityHiddenText() {
+    return _t("%s more servers with something to look at.", this.security.hidden || 0);
+  }
+
+  /**
+   * What a server of the Security block has to look at, in words, each
+   * with its tone.
+   *
+   * @param {Object} row a row of ``security.rows``
+   * @returns {Array<{key: string, text: string, tone: string}>}
+   */
+  securityFlags(row) {
+    const flags = [];
+    if (row.alerts) {
+      flags.push({key: "alerts", tone: row.level === "critical" ? "bad" : "warn",
+        text: _t("Security alerts: %s", formatNumber(row.alerts))});
+    }
+    if (row.ssh_bruteforce) {
+      flags.push({key: "ssh_bruteforce", tone: "warn",
+        text: _t("SSH brute force: %s failed in 10 min", formatNumber(row.ssh_bruteforce))});
+    }
+    if (row.weblogin_bruteforce) {
+      flags.push({key: "weblogin_bruteforce", tone: "warn",
+        text: _t("Web-login brute force, instances: %s", formatNumber(row.weblogin_bruteforce))});
+    }
+    if (row.silent) {
+      flags.push({key: "silent", tone: "warn", text: _t("Security logs not arriving")});
+    }
+    if (row.off) {
+      flags.push({key: "off", tone: "muted", text: _t("Security logs off")});
+    }
+    if (row.unhardened) {
+      flags.push({key: "unhardened", tone: "muted", text: _t("Not hardened")});
+    }
+    return flags;
   }
 
   /**

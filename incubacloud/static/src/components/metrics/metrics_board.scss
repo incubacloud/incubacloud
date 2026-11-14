@@ -425,6 +425,75 @@
   }
 }
 
+// The fleet's Security block: its chart beside this panel's servers to
+// look at, one column on a narrow screen.
+.ic-fb-sec-grid {
+  display: grid;
+  grid-template-columns: #{"repeat(auto-fit, minmax(min(100%, 420px), 1fr))"};
+  gap: 12px;
+  margin-block-start: 12px;
+}
+
+.ic-fb-sec-off p {
+  margin: 0;
+}
+
+.ic-fb-sec-title {
+  color: var(--rl-fg);
+  font-weight: 600;
+}
+
+.ic-fb-sec-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ic-fb-sec-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding-block: 8px;
+  border-block-start: 1px solid var(--rl-line);
+
+  &:first-child {
+    border-block-start: 0;
+  }
+}
+
+.ic-fb-sec-name {
+  flex: 0 1 180px;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+
+.ic-fb-sec-flags {
+  display: flex;
+  flex: 1 1 220px;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.ic-fb-sec-flag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--rl-surf2);
+  color: var(--rl-fg2);
+  font-size: 12px;
+
+  &.is-warn {
+    background: var(--rl-amber-soft);
+    color: var(--rl-amber-text);
+  }
+
+  &.is-bad {
+    background: var(--rl-red-soft);
+    color: var(--rl-red-text);
+  }
+}
+
 // ── Readings on demand ───────────────────────────────────────────────
 .ic-od {
   margin-block-end: 12px;
