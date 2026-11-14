@@ -1,10 +1,19 @@
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
+
+from odoo import fields
 
 from .abstract_executor import AbstractSSHExecutor
 
 _logger = logging.getLogger(__name__)
+
+#: Hours without a new backup set before ``backup_stale`` is raised. The
+#: backup container takes one a day and the daily listing checks it some
+#: hours later: 48 h is one missed night plus that gap, so a single late
+#: run pages nobody, and a second one does (14-nov-2026).
+BACKUP_STALE_HOURS = 48
+BACKUP_STALE_ALERT_CODE = 'backup_stale'
 
 # Cap the S3 listing per instance.  Backup chains for typical instances
 # come in well below this; the cap is a defence against pointing the
@@ -220,6 +229,7 @@ class BackupListExecutor(AbstractSSHExecutor):
             f" with {total_sets} backup set(s)."
         )
         self._sync_backup_records(parsed)
+        self._check_backup_freshness()
         # Best-effort S3 size pass — never fails the job.
         self._populate_sizes_from_s3()
 
@@ -269,6 +279,38 @@ class BackupListExecutor(AbstractSSHExecutor):
         )
         if stale:
             stale.unlink()
+
+    def _check_backup_freshness(self):
+        """Raise or resolve ``backup_stale`` from the sets just synced.
+
+        Only the scheduled duplicity sets count (``kind == 'chain'``): a ZIP
+        made by hand is not the copy the container takes. An instance with
+        no set yet is measured from its creation, so a new one is not
+        flagged before its first nights. The alert closes on the first
+        listing that sees a set within :data:`BACKUP_STALE_HOURS`.
+        """
+        inst = self._inst()
+        Alert = self.env['cloud.alert'].sudo()
+        latest = self.env['cloud.instance.backup'].sudo().search(
+            [('instance_id', '=', inst.id), ('kind', '=', 'chain')],
+            order='backup_time desc', limit=1,
+        ).backup_time
+        since = latest or inst.create_date
+        limit = timedelta(hours=BACKUP_STALE_HOURS)
+        if not since or fields.Datetime.now() - since <= limit:
+            Alert.resolve_alert(BACKUP_STALE_ALERT_CODE, instance=inst)
+            return
+        if latest:
+            last = f"the last one is from {latest:%Y-%m-%d %H:%M}"
+        else:
+            last = "there is none yet"
+        Alert.raise_alert(
+            BACKUP_STALE_ALERT_CODE,
+            f"Production instance '{inst.name}' has had no new backup for"
+            f" more than {BACKUP_STALE_HOURS} hours: {last}.",
+            host=inst.host_id or None,
+            instance=inst,
+        )
 
     def _populate_sizes_from_s3(self):
         """List S3 objects under the backend and write per-set bytes

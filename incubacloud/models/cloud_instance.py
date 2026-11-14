@@ -32,6 +32,7 @@ from ._repo_requirements import (
     detect_addon_conflicts,
     detect_pip_conflicts,
 )
+from .backup_list_executor import BACKUP_STALE_ALERT_CODE
 from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
@@ -4617,13 +4618,18 @@ class CloudInstance(models.Model):
             ]
             + self._periodic_maintenance_domain()
         )
+        Alert = self.env["cloud.alert"].sudo()
         for inst in instances:
-            if not inst.host_id or not inst.instance_backup_dst:
-                continue
             services = {
                 s.strip() for s in (inst.compose_services or "").split(",") if s.strip()
             }
-            if "backup" not in services:
+            if (
+                not inst.host_id
+                or not inst.instance_backup_dst
+                or "backup" not in services
+            ):
+                # No backups scheduled any more: nothing can be stale.
+                Alert.resolve_alert(BACKUP_STALE_ALERT_CODE, instance=inst)
                 continue
             try:
                 inst.list_backups()
