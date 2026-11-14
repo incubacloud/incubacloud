@@ -10,7 +10,10 @@ There are two kinds:
 - **Events**, read from the logs every 5 minutes: a sign-in, a `sudo` command
   or a change that the panel did not make. They do not close by themselves:
   dismiss one once you know what it was. If the same thing happens again
-  while it is open, the alert says how many times and since when.
+  while it is open, the alert says how many times and since when, but you
+  are not notified again: only a rise from warning to critical notifies.
+  An open alert keeps the next ones of its kind on that server silent, so
+  dismiss it to be notified of the next.
 - **Rules**, measured on the servers' counters every 5 minutes, like the
   [other metric rules](monitoring.md#alerts). They close by themselves when
   the figure goes back under the threshold.
@@ -107,4 +110,5 @@ Observability** again from the server's page.
 **`security_events_backlog`** · warning. The servers send more sign-ins,
 `sudo` commands or changes than the panel reads in one pass, two passes in a
 row. Nothing is skipped: they are read in order, so their alerts come late.
-It closes once a pass reads to the end.
+It closes once a pass reads to the end, or when no server sends its
+security logs any more.
