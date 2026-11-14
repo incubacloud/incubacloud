@@ -103,6 +103,7 @@ from . import (
     test_host_hardening,
     test_job_type_gate_invariant,
     test_metric_rules,
+    test_metric_rule_security,
     test_host_metrics_handover,
     test_observability_wiring,
     test_form_error_accessibility,

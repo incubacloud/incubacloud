@@ -15,7 +15,9 @@ without a release, and the tests instantiate rules directly.
 covers "this host stopped reporting", which is what replaces the SSH
 probe's implicit liveness signal once the telemetry jobs retire.
 """
+import ipaddress
 import logging
+import re
 import time
 
 import requests
@@ -34,6 +36,25 @@ BACKEND_UNREACHABLE_CODE = "metrics_backend_unreachable"
 
 # Seconds to wait before asking again a central that answered 429.
 _BUSY_PAUSE = 1
+
+#: The rule whose alert names the addresses with the most attempts.
+WEBLOGIN_CODE = "security_weblogin_bruteforce"
+
+#: Minutes of lines those addresses are counted over: the rule's window.
+WEBLOGIN_MINUTES = 10
+
+#: Log reads one pass of the cron makes for those addresses at most, the
+#: instances with the most attempts first; the rest go out without them
+#: that pass (plan #84, C5, 14-nov-2026).
+WEBLOGIN_LOOKUPS_PER_PASS = 10
+
+#: Addresses an alert names.
+WEBLOGIN_TOP = 3
+
+#: What a rule's message may hold: its three markers and a literal ``%``.
+#: Anything else with a ``%`` is a marker broken by a translation or an
+#: edit, and the text falls back to English (review M6).
+_MARKERS = re.compile(r"%%|%\((host|value|sources)\)s")
 
 
 def central_busy(exc):
@@ -196,12 +217,60 @@ def promql_query(
     return samples
 
 
+def top_sources(counted, limit=WEBLOGIN_TOP):
+    """Return the *limit* sources with the most attempts, as an alert names them.
+
+    Each address goes through ``ipaddress`` and comes out in its normal
+    form; IPv6 is grouped by /64, since whoever holds one changes
+    address at every attempt. What is not an address or a /64 network,
+    or a count that is not a positive integer, is left out: what reaches
+    an alert's text is never what a line said.
+
+    :param counted: ``(address, count)`` pairs, or None.
+    :param int limit: sources kept.
+    :returns: ``(source, count)`` pairs, the most attempts first, a tie
+        by source.
+    :rtype: list[tuple[str, int]]
+    """
+    totals = {}
+    for item in counted or ():
+        try:
+            raw, count = item
+        except (TypeError, ValueError):
+            continue
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            continue
+        try:
+            network = ipaddress.ip_network(str(raw), strict=True)
+        except ValueError:
+            continue
+        mapped = (
+            network.version == 6 and network.prefixlen == 128
+            and network.network_address.ipv4_mapped
+        )
+        if mapped:
+            # An IPv4 visitor on a dual-stack socket.
+            network = ipaddress.ip_network(mapped)
+        if network.version == 6:
+            if network.prefixlen < 64:
+                continue
+            network = network.supernet(new_prefix=64)
+            source = str(network)
+        elif network.prefixlen == 32:
+            source = str(network.network_address)
+        else:
+            continue
+        totals[source] = totals.get(source, 0) + count
+    ranked = sorted(totals.items(), key=lambda pair: (-pair[1], pair[0]))
+    return ranked[:limit]
+
+
 class CloudMetricRule(models.Model):
     _name = "cloud.metric.rule"
     _description = "Metric Threshold Rule"
     _order = "sequence, id"
 
-    name = fields.Char(required=True)
+    name = fields.Char(required=True, translate=True)
     sequence = fields.Integer(default=10)
     active = fields.Boolean(default=True)
     code = fields.Char(
@@ -234,8 +303,13 @@ class CloudMetricRule(models.Model):
     )
     message = fields.Char(
         required=True,
-        help="Text shown in the alert. '%(host)s' and '%(value)s' are "
-             "substituted.",
+        translate=True,
+        help="Text shown in the alert, in the language the rules are "
+             "evaluated in. '%(host)s' and '%(value)s' are substituted, "
+             "and '%(sources)s' by what a rule adds (the web-login rule: "
+             "the addresses with the most attempts); '%%' is a percent "
+             "sign. A translation with any other marker falls back to the "
+             "English text.",
     )
     scope = fields.Selection(
         [("host", "Host"), ("instance", "Instance")],
@@ -373,8 +447,13 @@ class CloudMetricRule(models.Model):
             return
 
         Alert.resolve_alert(BACKEND_UNREACHABLE_CODE)
+        # What a rule that reads more than its PromQL (the web-login
+        # rule's log read) needs to reach the same central.
+        central = {
+            "base_url": base, "token": token, "user": user, "verify": verify,
+        }
         for rule in rules:
-            rule._sync_alerts(results[rule.id])
+            rule._sync_alerts(results[rule.id], central=central)
 
     @api.model
     def _confirm_window(self):
@@ -419,12 +498,25 @@ class CloudMetricRule(models.Model):
             return value > self.threshold
         return value < self.threshold
 
-    def _sync_alerts(self, samples):
+    def _sync_alerts(self, samples, central=None):
         """Raise alerts for breaching hosts and resolve the rest.
 
         Only hosts this rule actually reported on are touched: a host
         missing from the result set is not silently declared healthy —
         that case belongs to an ``absent()`` rule, which is explicit.
+
+        Each target is judged once, on its worst sample, and the targets
+        are taken the furthest past the threshold first, so a rule that
+        reads more for each breach within a budget a pass
+        (:meth:`_message_extra`) spends it on the worst ones. The text is
+        written in this environment's language (the cron's), and in
+        English when the translation's markers are broken
+        (:meth:`_render_message`).
+
+        :param list samples: ``[(labels, value), ...]`` from :meth:`_query`.
+        :param dict central: ``base_url``, ``token``, ``user`` and
+            ``verify`` of the central the samples came from, for a rule
+            that reads its logs too; None reads nothing more.
         """
         self.ensure_one()
         Alert = self.env["cloud.alert"].sudo()
@@ -434,45 +526,191 @@ class CloudMetricRule(models.Model):
             "confirm_after": self.confirm_cycles,
             "confirm_window": self._confirm_window(),
         }
+        # One verdict a target, on its worst sample: a server renamed
+        # within a window answers twice for one host, and the second
+        # sample would resolve what the first raised.
+        worst = {}
         for labels, value in samples:
             if self.scope == "instance":
                 target = self._resolve_instance(Instance, labels)
-                if not target:
-                    continue
-                # An instance can be legitimately silent — a layer that
-                # sleeps it on idle stops every container, so cAdvisor
-                # stops reporting and "down" is exactly what a naive
-                # rule would conclude. Core has no notion of sleeping,
-                # so it asks the instance and a layer that has it answers.
-                if target._metric_alerts_suppressed():
-                    Alert.resolve_alert(self.code, instance=target)
-                    continue
-                text = self.message % {
-                    "host": target.name,
-                    "value": ("%g" % value),
-                }
-                if self._breached(value):
-                    Alert.raise_alert(
-                        self.code, text, level=self.level, instance=target,
-                        **confirm,
-                    )
-                else:
-                    Alert.resolve_alert(self.code, instance=target)
-                continue
-
-            host = self._resolve_host(Host, labels)
-            if not host:
-                continue
-            text = self.message % {
-                "host": host.name,
-                "value": ("%g" % value),
-            }
-            if self._breached(value):
-                Alert.raise_alert(
-                    self.code, text, level=self.level, host=host, **confirm,
-                )
             else:
-                Alert.resolve_alert(self.code, host=host)
+                target = self._resolve_host(Host, labels)
+            if not target:
+                continue
+            rank = value if self.comparator == "gt" else -value
+            if target.id not in worst or rank > worst[target.id][0]:
+                worst[target.id] = (rank, target, labels, value)
+        # What the hook has spent this pass (its log reads), the targets
+        # the furthest past the threshold first.
+        budget = {"lookups": 0}
+        ordered = sorted(worst.values(), key=lambda item: -item[0])
+        for _rank, target, labels, value in ordered:
+            scope = (
+                {"instance": target} if self.scope == "instance"
+                else {"host": target}
+            )
+            # An instance can be legitimately silent — a layer that
+            # sleeps it on idle stops every container, so cAdvisor
+            # stops reporting and "down" is exactly what a naive rule
+            # would conclude. Core has no notion of sleeping, so it
+            # asks the instance and a layer that has it answers.
+            if self.scope == "instance" and target._metric_alerts_suppressed():
+                Alert.resolve_alert(self.code, **scope)
+                continue
+            if not self._breached(value):
+                Alert.resolve_alert(self.code, **scope)
+                continue
+            sources, payload = self._message_extra(
+                target, labels, central, budget,
+            )
+            Alert.raise_alert(
+                self.code, self._render_message(target.name, value, sources),
+                level=self.level, payload=payload, **scope, **confirm,
+            )
+
+    def _render_message(self, name, value, sources=""):
+        """Return this rule's message for one sample, in the env's language.
+
+        The markers are filled by name, never with ``%``: a translation
+        whose markers are broken (one the rule does not know, a ``%``
+        left alone) is not used, and the English text is (review M6).
+        An English text broken too, by an operator's edit, goes out with
+        the markers it knows filled and the rest as written, logged: an
+        alert with a stray marker beats a pass of the cron lost.
+
+        :param str name: the host's or the instance's name, ``%(host)s``.
+        :param float value: the sample, ``%(value)s``.
+        :param str sources: ``%(sources)s``, what :meth:`_message_extra`
+            added (empty for most rules).
+        :rtype: str
+        """
+        self.ensure_one()
+        values = {"host": name or "", "value": "%g" % value, "sources": sources}
+        template = self.message or ""
+        if not self._markers_ok(template):
+            english = self.with_context(lang="en_US").message or ""
+            if not self._markers_ok(english):
+                _logger.warning(
+                    "[metrics] rule %s: its message has a marker it does "
+                    "not know; sent as written", self.code,
+                )
+            template = english
+        return _MARKERS.sub(
+            lambda match: "%" if match.group(0) == "%%" else values[match.group(1)],
+            template,
+        )
+
+    @staticmethod
+    def _markers_ok(template):
+        """Whether every ``%`` of *template* is one of :data:`_MARKERS`.
+
+        :param str template: a rule's message.
+        :rtype: bool
+        """
+        return "%" not in _MARKERS.sub("", template)
+
+    def _message_extra(self, target, labels, central, budget):
+        """Return what this rule adds to a breach's alert: text and payload.
+
+        The hook of the rules that say more than their figure; most say
+        nothing more. Called for a breaching sample only, so nothing is
+        read while no target is over its threshold.
+
+        :param target: the ``cloud.host`` or ``cloud.instance`` alerted on.
+        :param dict labels: the sample's labels.
+        :param dict central: as :meth:`_sync_alerts` takes it, or None.
+        :param dict budget: what this pass has spent, shared by the
+            rule's samples; ``lookups`` counts its log reads.
+        :returns: ``(sources, payload)``: the ``%(sources)s`` fragment,
+            already in the env's language (``""`` for none), and the
+            alert's payload (None leaves it alone).
+        :rtype: tuple[str, dict | None]
+        """
+        self.ensure_one()
+        if self.code == WEBLOGIN_CODE and self.scope == "instance":
+            return self._weblogin_extra(target, labels, central, budget)
+        return "", None
+
+    def _weblogin_extra(self, instance, labels, central, budget):
+        """The web-login rule's addresses: the most attempts, and how many.
+
+        Read from the central's logs for this instance and the rule's
+        window, at most :data:`WEBLOGIN_LOOKUPS_PER_PASS` reads a pass.
+        A server reached through a CDN is not read: its proxy sees the
+        CDN's addresses, not the visitors', and the text says so. No
+        data (a central busy or failing, the budget spent) sends the
+        alert without addresses. Nothing the attacker writes reaches the
+        text: the name is the panel's, the addresses go through
+        ``ipaddress`` (:func:`top_sources`), and the payload keeps
+        addresses and counts, never a line.
+
+        :param instance: the ``cloud.instance`` alerted on.
+        :param dict labels: the sample's labels (``host_id``).
+        :param dict central: as :meth:`_sync_alerts` takes it, or None.
+        :param dict budget: this pass's spending, ``lookups``.
+        :returns: ``(sources, payload)`` as :meth:`_message_extra`.
+        :rtype: tuple[str, dict]
+        """
+        self.ensure_one()
+        host = (
+            self._resolve_host(self.env["cloud.host"].sudo(), labels)
+            or instance.host_id
+        )
+        if host and host.behind_cdn:
+            return (
+                self.env._(
+                    " Its server is behind a CDN: its proxy sees only the "
+                    "CDN's addresses, so none is named.",
+                ),
+                {"sources": [], "behind_cdn": True},
+            )
+        top = []
+        if central and host and budget["lookups"] < WEBLOGIN_LOOKUPS_PER_PASS:
+            budget["lookups"] += 1
+            try:
+                counted = self._weblogin_top_sources(
+                    host, instance.id, WEBLOGIN_MINUTES, central,
+                )
+            except Exception as exc:  # noqa: BLE001 - the alert goes out anyway
+                # The reader answers None rather than raise; one that
+                # raises still must not cost the pass its other alerts.
+                _logger.warning(
+                    "[metrics] web-login addresses of instance %s not "
+                    "read: %s", instance.id, exc,
+                )
+                counted = None
+            top = top_sources(counted)
+        payload = {
+            "sources": [{"address": a, "count": n} for a, n in top],
+            "behind_cdn": False,
+        }
+        if not top:
+            return "", payload
+        listed = ", ".join(f"{address} ({count})" for address, count in top)
+        return self.env._(" Most attempts: %(sources)s.", sources=listed), payload
+
+    def _weblogin_top_sources(self, host, instance_id, minutes, central):
+        """Return the failed web logins' addresses of an instance, counted.
+
+        **The join with the log reader (plan #84, C2).** The reading is
+        ``logs.weblogin_top_sources``: the last lines (two pages of 500)
+        of ``{log_type="security", source="weblogin", host_id="…"} |=
+        " instance=<id> "`` in the window, through the account's ``/lr``
+        route with the credential in *central*, never raising. Until it
+        joins this tree there is nothing to read with, and the alert
+        goes out with its figure alone; once it does, this body becomes
+        that call, its answer reduced to ``(address, count)`` pairs.
+
+        :param host: the ``cloud.host`` whose proxy counted the attempts.
+        :param int instance_id: the ``cloud.instance`` id.
+        :param int minutes: the window, up to now.
+        :param dict central: ``base_url``, ``token``, ``user``, ``verify``.
+        :returns: ``(address, count)`` pairs, in any order and with IPv6
+            addresses on their own or as /64 networks, or None when there
+            is nothing to say (no lines, a central busy or failing).
+        :rtype: list[tuple[str, int]] | None
+        """
+        return None
 
     def _resolve_instance(self, Instance, labels):
         """Map a sample's labels back to a ``cloud.instance``, or False."""
