@@ -1096,3 +1096,26 @@ describe("HostDetail — a password host on a panel without sshpass", () => {
         expect(warns.call(stand(false, "ssh_key"))).toBe(false);
     });
 });
+
+describe("HostDetail — the save bar", () => {
+    test("the form and the tags count; Discard keeps what is typed in the whitelist box", () => {
+        const comp = Object.create(HostDetail.prototype);
+        comp.state = {
+            form: { name: "pool-1", port: 22, newWhitelistEntry: "", generated_key: "k" },
+            selectedTags: [{ id: 1, name: "eu" }],
+            allTags: [{ id: 1, name: "eu" }, { id: 2, name: "big" }],
+        };
+        comp.validator = { clearErrors() {} };
+        comp._snapshotForm();
+        comp.state.form.port = 2222;
+        comp.state.form.newWhitelistEntry = "typing.example";
+        comp.state.selectedTags = [{ id: 2, name: "big" }];
+        expect(comp.unsavedCount).toBe(2);
+        comp.discard();
+        expect(comp.state.form.port).toBe(22);
+        expect(comp.state.form.newWhitelistEntry).toBe("typing.example");
+        expect(comp.state.form.generated_key).toBe("k");
+        expect(comp.state.selectedTags).toEqual([{ id: 1, name: "eu" }]);
+        expect(comp.hasUnsavedChanges).toBe(false);
+    });
+});

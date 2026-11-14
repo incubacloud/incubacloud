@@ -4,6 +4,7 @@ import {_t} from "@web/core/l10n/translation";
 import {PasswordInput} from "../password_input/password_input";
 import {IcConfirmDialog} from "../ic_confirm_dialog/ic_confirm_dialog";
 import {RlSelect} from "../rl_select/rl_select";
+import {restoreForm, SaveBar, unsavedCount} from "../settings_form/save_bar";
 import {useNavGuard} from "../../utils/use_nav_guard";
 import {useFormValidation} from "../../utils/use_form_validation";
 import {required, email, retention} from "../../utils/validators";
@@ -33,7 +34,7 @@ const EMPTY_FORM = () => ({
 export class BackupBackendDetail extends Component {
   static props = {backend_id: {type: Number, optional: true}};
   static template = "incubacloud.BackupBackendDetail";
-  static components = {PasswordInput, IcConfirmDialog, RlSelect};
+  static components = {PasswordInput, IcConfirmDialog, RlSelect, SaveBar};
 
   setup() {
     this.env = useEnv();
@@ -90,6 +91,18 @@ export class BackupBackendDetail extends Component {
 
   _snapshotForm() {
     this._savedForm = JSON.stringify(this.state.form);
+  }
+
+  /** @returns {number} how many fields of the form are unsaved */
+  get unsavedCount() {
+    return this._savedForm ? unsavedCount(this.state.form, JSON.parse(this._savedForm)) : 0;
+  }
+
+  /** Put the form back as it was loaded or last saved. */
+  discard() {
+    if (!this._savedForm) return;
+    restoreForm(this.state.form, JSON.parse(this._savedForm));
+    this.validator.clearErrors();
   }
 
   async loadBackend() {

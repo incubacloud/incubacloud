@@ -1156,3 +1156,30 @@ describe("InstanceDetail — save", () => {
         expect(comp.state.inst.config_dirty).toBe(true);
     });
 });
+
+describe("InstanceDetail — the save bar", () => {
+    test("tags and dependencies count, and Discard puts the page back", () => {
+        const comp = Object.create(InstanceDetail.prototype);
+        comp.state = {
+            form: { name: "web", domains: [{ name: "a.example" }] },
+            selectedTags: [],
+            pipDeps: "",
+            aptDeps: "",
+            langs: [],
+        };
+        comp.validator = { clearErrors() {} };
+        comp._savedForm = JSON.stringify(comp._editedValues());
+        expect(comp.unsavedCount).toBe(0);
+        comp.state.form.domains.push({ name: "b.example" });
+        comp.state.selectedTags.push({ id: 3 });
+        comp.state.aptDeps = "curl";
+        expect(comp.unsavedCount).toBe(3);
+        const form = comp.state.form;
+        comp.discard();
+        expect(comp.state.form).toBe(form);
+        expect(form.domains).toEqual([{ name: "a.example" }]);
+        expect(comp.state.selectedTags).toEqual([]);
+        expect(comp.state.aptDeps).toBe("");
+        expect(comp.hasUnsavedChanges).toBe(false);
+    });
+});

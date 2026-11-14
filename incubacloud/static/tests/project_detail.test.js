@@ -530,3 +530,50 @@ describe("ProjectDetail — what the page offers is what the server takes", () =
         expect(page({ can_deploy: true, can_manage_backups: false }).canReviveArchived).toBe(false);
     });
 });
+
+describe("ProjectDetail — the save bar", () => {
+    /**
+     * A stand-in with what the page edits, taken as saved.
+     *
+     * @returns {object} the stand-in
+     */
+    function page() {
+        const comp = Object.create(ProjectDetail.prototype);
+        comp.state = {
+            form: { name: "shop", odoo_initial_lang: null },
+            selectedTags: [{ id: 1, name: "eu" }],
+            repos: [{ _key: "srv_4", id: 4, url: "https://x/y.git", commit_sha: "" }],
+            pipDeps: "requests",
+            aptDeps: "",
+            members: [],
+            langs: [],
+        };
+        comp.validator = { clearErrors() {} };
+        comp._snapshotForm();
+        return comp;
+    }
+
+    test("tags, repositories and dependencies count, and Discard puts them back", () => {
+        const comp = page();
+        expect(comp.unsavedCount).toBe(0);
+        comp.state.form.name = "shop2";
+        comp.state.selectedTags.push({ id: 2, name: "prod" });
+        comp.state.pipDeps = "requests\nlxml";
+        expect(comp.unsavedCount).toBe(3);
+        expect(comp.hasUnsavedChanges).toBe(true);
+        comp.discard();
+        expect(comp.state.form.name).toBe("shop");
+        expect(comp.state.selectedTags).toEqual([{ id: 1, name: "eu" }]);
+        expect(comp.state.pipDeps).toBe("requests");
+        expect(comp.hasUnsavedChanges).toBe(false);
+    });
+
+    test("a pin the server stored is not an unsaved change", () => {
+        const comp = page();
+        comp.onRepoChange("srv_4", "commit_sha", "abc123");
+        expect(comp.state.repos[0].commit_sha).toBe("abc123");
+        expect(comp.unsavedCount).toBe(0);
+        comp.onRepoChange("srv_4", "addons", "sale_x");
+        expect(comp.unsavedCount).toBe(1);
+    });
+});

@@ -932,9 +932,12 @@
 
                 </div>
 
-                <!-- Footer: purge (activity tab) or save/delete (config tabs); hidden on overview and metrics -->
+                <!-- Footer: purge (activity tab), or Delete at the end of the
+                     page and, for a new host, the button that creates it;
+                     hidden on overview and metrics -->
                 <t t-if="state.tab !== 'overview' and state.tab !== 'metrics'">
-                    <div class="rl-formfoot">
+                    <div t-if="state.tab === 'activity' or isNew or env.permissions?.can_manage_hosts"
+                         class="rl-formfoot">
                         <t t-if="state.tab === 'activity'">
                             <button class="ic-audit-purge-btn"
                                     t-att-disabled="state.auditPurging"
@@ -944,12 +947,7 @@
                                 Purge old logs
                             </button>
                         </t>
-                        <t t-else="">
-                            <t t-if="!isNew and env.permissions?.can_manage_hosts">
-                                <button class="rl-btn rl-btn-danger ic-formfoot-delete" t-on-click="deleteHost">
-                                    <t t-out="env.icon('trash', 15)"/> Delete
-                                </button>
-                            </t>
+                        <t t-elif="isNew">
                             <span class="rl-ff-hint">Fill in the required fields *</span>
                             <button class="rl-btn rl-btn-primary"
                                     t-att-disabled="state.saving"
@@ -957,16 +955,22 @@
                                 <t t-if="state.saving">
                                     <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>
                                     <t t-if="isNew">Creating…</t>
-                                    <t t-else="">Saving…</t>
                                 </t>
                                 <t t-else="">
                                     <t t-if="isNew">Create Host</t>
-                                    <t t-else="">Save changes</t>
                                 </t>
+                            </button>
+                        </t>
+                        <t t-else="">
+                            <button class="rl-btn rl-btn-danger ic-formfoot-delete" t-on-click="deleteHost">
+                                <t t-out="env.icon('trash', 15)"/> Delete
                             </button>
                         </t>
                     </div>
                 </t>
+                <!-- Saving an existing host is the save bar's, on every tab -->
+                <SaveBar t-if="!isNew" count="unsavedCount" saving="state.saving"
+                         onSave.bind="save" onDiscard.bind="discard" reserveSpace="true"/>
 
             </t>
 

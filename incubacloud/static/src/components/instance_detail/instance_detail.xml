@@ -916,15 +916,11 @@
 
                     </div>
 
-                    <!-- Footer (hidden for stakeholders) — edit mode, non-overview.
-                         Mails is excluded: it is a reader, and a Save button
-                         under a mailbox offers to save something that was
-                         never a form. -->
-                    <t
-            t-if="env.permissions?.can_edit_instance and state.tab !== 'overview' and state.tab !== 'mails'"
-          >
-                        <div class="rl-formfoot">
-                            <t t-if="state.tab === 'activity'">
+                    <!-- Footer (hidden for stakeholders) — edit mode, Activity:
+                         purging acts at once. Saving is the save bar's, on
+                         every tab while something is unsaved. -->
+                    <t t-if="env.permissions?.can_edit_instance">
+                        <div t-if="state.tab === 'activity'" class="rl-formfoot">
                                 <button
                   class="ic-audit-purge-btn"
                   t-att-disabled="state.auditPurging"
@@ -936,24 +932,9 @@
                   />
                                     Purge old logs
                                 </button>
-                            </t>
-                            <t t-if="hasUnsavedChanges">
-                                <span class="ic-unsaved-hint">Unsaved changes</span>
-                            </t>
-                            <button
-                class="rl-btn rl-btn-primary"
-                t-att-disabled="state.saving"
-                t-on-click="save"
-              >
-                                <t t-if="state.saving">
-                                    <i
-                    class="fa fa-spinner fa-spin"
-                    style="margin-right:5px"
-                  /> Saving…
-                                </t>
-                                <t t-else="">Save changes</t>
-                            </button>
                         </div>
+                        <SaveBar count="unsavedCount" saving="state.saving"
+                                 onSave.bind="save" onDiscard.bind="discard" reserveSpace="true"/>
                     </t>
 
                 </t>

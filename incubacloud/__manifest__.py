@@ -144,6 +144,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
             "incubacloud/static/src/components/repo_editor/repo_editor.xml",
             "incubacloud/static/src/components/ic_menu/ic_menu.xml",
             "incubacloud/static/src/components/settings_form/settings_form.xml",
+            "incubacloud/static/src/components/settings_form/save_bar.xml",
             "incubacloud/static/src/components/alert_history/alert_history.xml",
             "incubacloud/static/src/components/ic_modal/ic_modal.xml",
             "incubacloud/static/src/components/ic_pager/ic_pager.xml",

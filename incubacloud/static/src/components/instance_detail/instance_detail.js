@@ -27,6 +27,7 @@ import {IcConfirmDialog} from "../ic_confirm_dialog/ic_confirm_dialog";
 import {IcModal} from "../ic_modal/ic_modal";
 import {SearchSelect} from "../search_select/search_select";
 import {RlSelect} from "../rl_select/rl_select";
+import {restoreForm, SaveBar, unsavedCount} from "../settings_form/save_bar";
 import {IcPager} from "../ic_pager/ic_pager";
 import {MetricsBoard} from "../metrics/metrics_board";
 import {JobsMixin} from "./instance_detail_jobs";
@@ -241,6 +242,7 @@ export class InstanceDetail extends JobsMixin(
     RlSelect,
     IcPager,
     MetricsBoard,
+    SaveBar,
   };
 
   get isCreate() {
@@ -293,7 +295,43 @@ export class InstanceDetail extends JobsMixin(
   }
 
   get hasUnsavedChanges() {
-    return this._savedForm && JSON.stringify(this.state.form) !== this._savedForm;
+    return this._savedForm && JSON.stringify(this._editedValues()) !== this._savedForm;
+  }
+
+  /**
+   * What the person edits and a save sends: the form, and the tags and
+   * dependencies kept beside it.
+   *
+   * @returns {object} one entry per thing the save bar counts
+   */
+  _editedValues() {
+    return {
+      ...this.state.form,
+      selectedTags: this.state.selectedTags,
+      pipDeps: this.state.pipDeps,
+      aptDeps: this.state.aptDeps,
+    };
+  }
+
+  /** @returns {number} how many things on the page are unsaved */
+  get unsavedCount() {
+    return this._savedForm
+      ? unsavedCount(this._editedValues(), JSON.parse(this._savedForm))
+      : 0;
+  }
+
+  /** Put the page back as it was loaded or last saved. */
+  discard() {
+    if (!this._savedForm) return;
+    const {selectedTags, pipDeps, aptDeps, ...form} = JSON.parse(this._savedForm);
+    restoreForm(this.state.form, form);
+    Object.assign(this.state, {selectedTags, pipDeps, aptDeps});
+    this.validator.clearErrors();
+    // The language box shows a name, not the id the form keeps.
+    if (this.state.langs.length) {
+      const lang = this.state.langs.find((l) => l.id === this.state.form.odoo_initial_lang);
+      this.state.langSearch = lang ? `${lang.name} (${lang.code})` : "";
+    }
   }
 
   /**
@@ -608,7 +646,7 @@ export class InstanceDetail extends JobsMixin(
     this.state.allTags = [...(inst.all_tags || [])];
     this.state.backupsData = null;
     this.state.backupsError = null;
-    this._savedForm = JSON.stringify(this.state.form);
+    this._savedForm = JSON.stringify(this._editedValues());
   }
 
   /**
@@ -703,7 +741,7 @@ export class InstanceDetail extends JobsMixin(
           // form has nothing to show and nothing to send.
           whitelist: [],
         };
-        this._savedForm = JSON.stringify(this.state.form);
+        this._savedForm = JSON.stringify(this._editedValues());
       } else {
         // Try the project store first — instant switch when
         // navigating between instances of the same project.
@@ -1310,7 +1348,7 @@ export class InstanceDetail extends JobsMixin(
         // Clear the dirty baseline before navigating so the nav
         // guard doesn't fire on the programmatic transition from
         // the create route to the new instance's detail route.
-        this._savedForm = JSON.stringify(this.state.form);
+        this._savedForm = JSON.stringify(this._editedValues());
         // Force-reload the store so the new instance shows up
         // in the sidebar at the destination route.
         await this.env.projectStore?.load(this.props.project_id);
@@ -1334,7 +1372,7 @@ export class InstanceDetail extends JobsMixin(
         if (saved?.warning) {
           this.env.toast?.warning(saved.warning);
         }
-        this._savedForm = JSON.stringify(this.state.form);
+        this._savedForm = JSON.stringify(this._editedValues());
       }
     } catch (e) {
       // The server's reason only when Odoo refused the save on purpose

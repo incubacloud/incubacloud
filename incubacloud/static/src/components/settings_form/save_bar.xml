@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- The save bar: only with something unsaved, or wrong, on the page -->
+    <t t-name="incubacloud.SaveBar">
+        <t t-if="shown">
+            <div t-if="props.reserveSpace" class="ic-set-savebar-room" aria-hidden="true"/>
+            <div class="ic-set-savebar" role="region" aria-label="Unsaved changes">
+                <span t-att-class="'ic-set-savebar__dot' + (props.errors ? ' ic-set-savebar__dot--err' : '')" aria-hidden="true"/>
+                <span class="ic-set-savebar__text" aria-live="polite" t-esc="text"/>
+                <span class="ic-set-savebar__count"><t t-esc="countText"/> · Ctrl S saves</span>
+                <span class="ic-set-savebar__gap"/>
+                <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm ic-set-savebar__discard"
+                        t-att-disabled="props.saving || null" t-on-click="() => props.onDiscard()">Discard</button>
+                <button type="button" class="rl-btn rl-btn-primary rl-btn-sm"
+                        t-att-disabled="saveDisabled || null" t-on-click="() => props.onSave()">
+                    <t t-if="props.saving"><i class="fa fa-spinner fa-spin" aria-hidden="true"/> Saving…</t>
+                    <t t-else="">Save changes</t>
+                </button>
+            </div>
+        </t>
+    </t>
+
+</templates>
