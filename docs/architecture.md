@@ -1134,7 +1134,30 @@ A production with `smtp_relay_host` runs the template's `smtp` service, a docker
 
 **Provider alerts are inventoried.** `cloud_alert.PROVIDER_ALERT_CODES` lists every code core raises with `audience='provider'`; `test_provider_alert_inventory` reads the source (every call or dict that can set the audience to `'provider'`, conditionally or not) and fails on one missing from the list or listed but no longer raised. `encrypted_value_unreadable` reached customers' panels before anybody knew it was one (18-oct-2026).
 
-Alert codes in use: `secret_key_not_escrowed`, `boot_test_skipped`, `job_failed`, `disk_critical`, `host_unreachable`, `instance_down`, `instance_unresponsive`, `instance_high_cpu`, `instance_high_memory`, `instance_memory_recycling`, per-service container-down codes, `instance_error_logs`, `pip_conflict`, `addon_conflict`, `move_stuck`, `secret_rotation_stranded:<field>`. `pip_conflict`/`addon_conflict` are *actionable*: they block re-enqueue of the affected operation and are excluded from bulk dismiss.
+Alert codes in use (besides the security ones below): `secret_key_not_escrowed`, `boot_test_skipped`, `job_failed`, `disk_critical`, `host_unreachable`, `instance_down`, `instance_unresponsive`, `instance_high_cpu`, `instance_high_memory`, `instance_memory_recycling`, per-service container-down codes, `instance_error_logs`, `pip_conflict`, `addon_conflict`, `move_stuck`, `secret_rotation_stranded:<field>`. `pip_conflict`/`addon_conflict` are *actionable*: they block re-enqueue of the affected operation and are excluded from bulk dismiss.
+
+### Security alerts and their thresholds (#84, 1.0.231)
+
+Two producers read what the servers' security logs say, only for servers whose *Send security logs* is on; the operations guide (*Security logs*, *Tuning alerts*) has the mechanics, the user guide (`reference/security-alerts.md`) what each means to its reader, RB-43 the triage.
+
+- **Events** (`cloud_security_events.py`, every 5 minutes, over Loki): `security_ssh_login_foreign` and `security_ssh_login_panel_key_elsewhere` (critical, the only two with an address and a user in the text), `security_ssh_login_unconfirmed` (warning, no address), `security_sudo_foreign` (warning, the program without arguments), `security_sensitive_change` (critical; `root` outside the panel's work, a warning) and `security_events_backlog` (warning, global). They do not resolve themselves; a repeat refreshes the open one with its count.
+- **Rules** (`data/metric_rule_data.xml`, over Fluent Bit's counters): `security_ssh_bruteforce`, `security_f2b_ineffective` (critical), `security_weblogin_bruteforce` (per instance, its text with the three addresses with the most attempts, read from Loki only when it fires) and `security_logs_silent`. They resolve when the figure falls, and each ends in a 0 per target so a restart of Fluent Bit, whose counters vanish, still resolves them.
+- **No country in any text, and nothing a client wrote**: names come from the panel's database, addresses through `ipaddress`, users and programs cut to a closed set (`logs.py`).
+
+**Every threshold below is provisional (14-nov-2026).** Step M of plan #84 measures the fleet before they are fixed; until then each is a reasoned guess, and the row is replaced with the measurement, its date and where it was taken.
+
+| Value | Now | Why this value | Fixed by |
+| --- | --- | --- | --- |
+| `security_ssh_bruteforce` | > 100 failed SSH connections in 10 min, 2 cycles | Ten a minute: a person who mistypes makes a few; a scanner hundreds (F0's burst, 9-nov-2026: 600 a minute) | M-a: failed connections per server in normal use |
+| `security_f2b_ineffective` | > 20 `already banned` in 30 min, 2 cycles, critical | An address that keeps arriving once banned means the ban is not applied; a few repeats while a ban is set may be normal under a heavy attack | M-b: `increase(ic_f2b_total{action="already_banned"}[30m])` on the fleet, several days |
+| `security_weblogin_bruteforce` | > 50 failed web logins per instance in 10 min, 2 cycles | Five a minute against one instance: more than a forgotten password, under what the jail bans one address for (ten in ten minutes) | M-e: failed web logins per instance in 10 min in normal use |
+| `ROOT_CHANGE_LEVEL` | warning | `root`'s crontab writes with login uid 0 too, so a critical would page on every scheduled task that edits a watched file | M-b: `ic_audit_events_total{who=~"root\|user"}` on the fleet |
+| Pages a read of the events cron | 10 × 500 lines | Enough for a pass of a busy fleet; `security_events_backlog` says when it is not | M-a: `Accepted`, `COMMAND=` and auditd lines per hour and server, in normal use and during a deploy |
+| `ic_weblogin_per_minute` | 600 lines a minute per server | Bounds what an attack on the open web port can put in the buffer SSH and auditd share (64 MB, about seven hours at that rate) | M-e: the proxy's lines per second on the busiest server, Fluent Bit's CPU and memory reading them |
+| `ic_loki_max_query_series` | 5000 (Loki's default is 500) | Set for top addresses during a distributed attack (review M4, 13-nov-2026); the tables now count on the panel over lines, so none depends on it, and it bounds any other aggregation | M-c: series of a top-addresses query under thousands of source addresses |
+| `READ_MAX_CONCURRENT` | 8 reads in flight for a rotated read credential | A board runs its queries 4 at a time and the cron 3: one of each fits, with room; vmauth answers the next one 429 at once | M-d: p95 of the board's and the cron's LogQL over 24 h, and Loki's memory |
+
+The cost of being wrong differs by side: too low, an alert fires on normal traffic and trains its readers to dismiss it; too high, an attack runs for a window before anyone hears of it, while fail2ban bans each address meanwhile. So the guesses lean high, and every rule is data an operator can tune without a release.
 
 ### Notification channels
 

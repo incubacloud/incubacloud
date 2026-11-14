@@ -93,8 +93,8 @@ user:
 | Path | Rule |
 | --- | --- |
 | `/w/api/v1/write` metrics write | the route forces `extra_label=ic_account=<user>`; a client's own copy is **dropped** for colliding |
-| `/r/api/v1/{query,query_range,series,labels,label/<n>/values,…}` metrics read | the route forces `extra_filters[]={ic_account="<user>"}` the same way, so a client cannot widen the result |
-| `/lw/loki/api/v1/push`, `/lr/loki/api/v1/{query,query_range,…}` logs | the `X-Scope-OrgID` header is **set** from the user, replacing whatever the sender supplied |
+| `/r/api/v1/{query,query_range}` metrics read | the route forces `extra_filters[]={ic_account="<user>"}` the same way, so a client cannot widen the result |
+| `/lw/loki/api/v1/push`, `/lr/loki/api/v1/{query,query_range}` logs | the `X-Scope-OrgID` header is **set** from the user, replacing whatever the sender supplied |
 
 None of that is caution. Measured against real VictoriaMetrics + Loki
 (2026-08-10): vmauth drops a client's query arg that collides with the
@@ -203,7 +203,8 @@ instance would train everyone to ignore the alert that matters.
 |---|---|
 | Agents per host | ~50 MB RAM total, and Fluent Bit ~61 MB idle, 81–87 MB under 600 failed SSH attempts a minute, where the server sends its security logs (F0, 9-nov-2026); its container is capped at 128 MB |
 | VictoriaMetrics | ~0.5–1 GB RAM; disk grows with series × retention |
-| Loki | the hosts' security logs: tens of lines a minute under attack, units at rest |
+| Loki | the hosts' security logs: tens of lines a minute under SSH attack, units at rest; a host's failed web logins up to 600 lines a minute (`ic_weblogin_per_minute`) |
+| Reading them back | the security events' cron: sign-ins, sudo (one read per user the panel signs in as) and auditd, 10 pages of 500 at most each, plus one instant query, every 5 minutes per panel; a Security view: 10 PromQL queries and, for a manager, six log reads, kept 60 s; the web-login alert: one read per firing instance, 10 a pass |
 
 The panel's own charts cost the central one PromQL query per panel each
 time a board is read: an instance's Metrics tab is ten (`metrics_charts.
@@ -497,6 +498,13 @@ itself and its counters never expire).
     an address; none carries a country. The texts are translated in the
     language of the cron's context, a broken translation giving the
     English one.
+- **For whoever reads the alerts and runs the servers.** What leaves a
+  server, who sees what and what the logs cannot prove, in the user guide's
+  *Security logs* (`docs/user/docs/hosts/security.md`); each alert and what
+  to do, in *Security alerts* (`reference/security-alerts.md`); the
+  operator's triage in [RB-43](runbooks/RB-43-security-alert-on-a-host.md).
+  The thresholds and what step M measures to fix them are in
+  `architecture.md`, *Security alerts and their thresholds*.
 
 ## The panel's own charts
 
