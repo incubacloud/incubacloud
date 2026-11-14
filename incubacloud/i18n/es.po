@@ -9263,6 +9263,7 @@ msgstr "Instancia:"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__instance_ids
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__instance_ids
 msgid "Instances"
@@ -17440,13 +17441,6 @@ msgstr "Alternar «página pública de información del sitio web»"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-msgid "Toggle pull request and merge request previews"
-msgstr ""
-"Activar o desactivar las vistas previas de pull requests y merge requests"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Toggle the boot test"
 msgstr "Activar/desactivar la prueba de arranque"
@@ -19928,21 +19922,6 @@ msgstr "de"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "on"
 msgstr "en"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-msgid ""
-"opening a pull request (GitHub) or a merge request (GitLab) on a repository "
-"a production instance follows creates a staging on the same host, with the "
-"request's branch and a neutralized copy of production data. It is rebuilt on"
-" every push and deleted when the request closes."
-msgstr ""
-"abrir un pull request (GitHub) o un merge request (GitLab) en un repositorio"
-" que sigue una instancia de producción crea un staging en el mismo host, con"
-" la rama de la solicitud y una copia neutralizada de los datos de "
-"producción. Se reconstruye con cada push y se elimina cuando la solicitud se"
-" cierra."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -24811,3 +24790,30 @@ msgstr "Reconstrucción"
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 msgid "Instance › Email, on each instance"
 msgstr "Instancia › Correo electrónico, en cada instancia"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid ""
+"Opening a pull request (GitHub) or a merge request (GitLab) on a repository "
+"a production instance follows creates a staging on the same host, with the "
+"request's branch and a neutralized copy of production data. It is rebuilt on"
+" every push and deleted when the request closes."
+msgstr ""
+"Abrir un pull request (GitHub) o un merge request (GitLab) en un repositorio"
+" que sigue una instancia de producción crea un staging en el mismo host, con"
+" la rama de la solicitud y una copia neutralizada de los datos de "
+"producción. Se reconstruye con cada push y se elimina cuando la solicitud se"
+" cierra."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Project template"
+msgstr "Plantilla del proyecto"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Pull request previews"
+msgstr "Vistas previas de pull requests"

@@ -358,3 +358,21 @@
         .ic-set-found { inset-block-start: 6px; }
     }
 }
+
+// ── A record's page: group cards on the record grid (§2, §3) ────────────────
+// A project's fields sit in group cards no wider than 920 px, on the
+// 12-column record grid an instance's page brought (`.ic-rgrid`,
+// instance_detail.scss): S takes 3 columns, M 6, L the row.
+
+.ic-rec-col {
+    max-inline-size: 920px;
+
+    // A group without a title opens with its fields.
+    .ic-set-block__body:first-child { padding-block-start: 16px; }
+
+    // A switch heading its group has no rule above it.
+    .ic-set-block__body > .rl-ftoggle:first-child {
+        border-block-start: 0;
+        padding-block-start: 4px;
+    }
+}

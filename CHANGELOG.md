@@ -123,6 +123,19 @@ panel's assets and the Spanish catalogue change.
   on an instance or a project, is not an unsaved change, and *Discard*
   keeps it: the next save no longer sends the repository unpinned.
 
+- **A project's General tab is one page of groups (#13).** Its fields sit
+  in group cards on the form standard's 12-column grid, no wider than
+  920 px: name, Odoo version, tags and description first; then
+  «Instances», with the initial language and the backup destination;
+  «Pull request previews», whose explanation is folded under «How it
+  works» instead of running under the switch; and «Project template»,
+  with the author and the license. The switch takes its name from its
+  label (`aria-labelledby`). The twelve labels of the page and its
+  dialogs name their control: by `for`/`id`, or by holding it (the
+  dialogs' typed name and pip choices). The new-project form is the same
+  page and still creates the project from its footer. `TagSelector`
+  takes an optional `id` for its input.
+
 ### Fixed
 
 - **A relay's hidden secret is no longer sent by Save (#121).** In an

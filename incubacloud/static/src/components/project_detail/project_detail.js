@@ -7,6 +7,7 @@ import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { IcModal } from "../ic_modal/ic_modal";
 import { RlSelect } from "../rl_select/rl_select";
 import { restoreForm, SaveBar, unsavedCount } from "../settings_form/save_bar";
+import { SettingsBlock } from "../settings_form/settings_form";
 import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
 import { required } from "../../utils/validators";
@@ -158,7 +159,7 @@ export class ProjectDetail extends Component {
         pipFocus:   { type: Object, optional: true },
     };
     static template = "incubacloud.ProjectDetail";
-    static components = { TagSelector, RepoEditor, IcConfirmDialog, IcModal, RlSelect, SaveBar };
+    static components = { TagSelector, RepoEditor, IcConfirmDialog, IcModal, RlSelect, SaveBar, SettingsBlock };
 
     get isCreate() { return !this.props.project_id; }
 
