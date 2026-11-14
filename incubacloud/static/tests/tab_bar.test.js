@@ -248,6 +248,45 @@ describe("InstanceDetail — tabs and marks", () => {
         expect(more).toEqual([]);
     });
 
+    test("the new-instance page: a section per tab, the advanced ones folded", () => {
+        const comp = page({ create: true });
+        comp.state.openSections = {};
+        expect(comp.newSections.map((s) => [s.key, s.folded])).toEqual([
+            ["general", false], ["database", true], ["networking", false], ["email", true],
+            ["repos", false], ["deps", true], ["resources", true], ["backups", false],
+        ]);
+        expect(comp.sectionOpen("general")).toBe(true);
+        expect(comp.sectionOpen("resources")).toBe(false);
+        comp.toggleSection("resources");
+        expect(comp.sectionOpen("resources")).toBe(true);
+        comp.toggleSection("resources");
+        expect(comp.sectionOpen("resources")).toBe(false);
+    });
+
+    test("the new-instance page: a field to fix opens its section and is counted", () => {
+        const comp = page({ create: true });
+        comp.state.openSections = {};
+        expect(comp.newErrorCount).toBe(0);
+        comp.validator = {
+            fieldError: (f) => (["smtp_relay_port", "name"].includes(f) ? "bad" : null),
+        };
+        expect(comp.sectionOpen("email")).toBe(true);
+        expect(comp.sectionOpen("database")).toBe(false);
+        expect(comp.newErrorCount).toBe(2);
+        expect(comp.newErrorText).toBe("2 fields need attention");
+        // Folding it by hand does not hide the field to fix.
+        comp.toggleSection("email");
+        expect(comp.sectionOpen("email")).toBe(true);
+    });
+
+    test("the new-instance page: a folded section says it holds a change", () => {
+        const comp = page({ create: true });
+        expect(comp.sectionChanged("resources")).toBe(false);
+        comp.state.form.odoo_cpus = 4;
+        expect(comp.sectionChanged("resources")).toBe(true);
+        expect(comp.sectionChanged("database")).toBe(false);
+    });
+
     test("a change marks the tab that holds the field", () => {
         const comp = page();
         expect(comp.markedTabs).toEqual([]);

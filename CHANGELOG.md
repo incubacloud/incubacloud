@@ -53,6 +53,7 @@ bot token or signing secret. Deleting an archived instance for good
 empties its continuous recovery archive too, and a delete that cannot
 empty it says so with an alert. Switching continuous recovery off keeps
 the archive for the backup window, then empties it.
+A new instance is created on one page.
 
 The update adds five columns on instances, `pitr_archived_prefix`,
 `pitr_off_at`, `pitr_purge_at`, `pitr_rendered_prefix` and
@@ -104,9 +105,7 @@ then. The rest is the panel's assets and the Spanish catalogue.
   Backups before its first deploy, to choose the destination, and lists
   its backups there once that deploy ends with the tab open. Each tab's fields sit in
   group cards on the form standard's 12-column grid, no wider than
-  920 px, and on a phone each domain is a card. The new-instance form
-  has General, Database, Networking, Email and Backups (production),
-  Repos, Dependencies and Resources. Links that open a tab by its key
+  920 px, and on a phone each domain is a card. Links that open a tab by its key
   («Edit Manually» opens Dependencies) work as before, and the settings
   search sends the SMTP host to Instance › Email and an instance's backup
   destination to Instance › Backups.
@@ -258,6 +257,20 @@ then. The rest is the panel's assets and the Spanish catalogue.
   tokens already saved without a chat ID and the secrets without a URL
   (migration 1.0.229). The MCP tool's confirmation for emptying the
   Telegram chat says the bot token goes with it.
+
+- **A new instance is created on one page (#13).** The new-instance
+  form had a tab bar; it is now a single page with a section for each of
+  those tabs, in the same order and with the same name, the instance's
+  page's: General, Database, Networking, Email (production), Repos,
+  Dependencies, Resources and Backups (production). Database, Email,
+  Dependencies and Resources, whose defaults serve most instances, start
+  folded as a bar with their name and «Advanced», which a click opens,
+  and say «Changed» when a field in them was changed; a section with a
+  field to fix opens by itself and stays open. The footer with *Cancel*
+  and *Create Instance* stays at the bottom of the window. When *Create
+  Instance* finds fields to fix, the footer says «1 field needs
+  attention» or how many, and the focus goes to the first of them, in
+  view. No label, field or check changes.
 
 ### Fixed
 
