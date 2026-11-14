@@ -374,10 +374,10 @@ itself and its counters never expire).
   `_security_logs_available`, `_security_logs_default`).
 - **Reading them.** Through `/lr/` with the account's credential, which
   no server holds once it is rotated.
-- **The panel's addresses and uid.** The agents' install and the
-  hardening read `SSH_CONNECTION` without `become` (sudo clears it) and
-  the panel keeps, per server, the last five addresses it came from, each
-  forgotten 30 days after it was last seen, IPv6 by its /64
+- **The panel's addresses and uid.** The agents' install reads
+  `SSH_CONNECTION` without `become` (sudo clears it) and the panel keeps,
+  per server, the last five addresses it came from, each forgotten 30
+  days after it was last seen, IPv6 by its /64
   (`cloud.host.security_panel_sources`, for whoever manages servers, and
   out of every MCP read). The address a change of the panel's address
   left is forgotten everywhere when its alert closes. Nothing learns one

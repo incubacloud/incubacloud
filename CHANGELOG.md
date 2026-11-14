@@ -47,10 +47,7 @@ rotated once no server holds it. The security logs carry the server's id,
 and the instances' failed web logins are counted per instance and sent as
 a line of their own. The panel learns its own addresses from the servers.
 Every server's agents are installed again (revision 4), five servers a
-pass, and the central is deployed again (revision 2). The hardening's
-recipe changes (it hands the panel the address it connected from), so
-hardened servers read as hardened with an older recipe until it is
-re-applied.
+pass, and the central is deployed again (revision 2).
 
 The update adds columns and no data migration: the agents' user is minted
 by the central's next deployment or account sync.
@@ -88,9 +85,9 @@ by the central's next deployment or account sync.
   counted and not sent. fail2ban's `Found` lines of that jail stay on the
   server, as repeats without the instance.
 - **The panel's addresses and uid on each server (#84).** The agents'
-  install and the hardening read `SSH_CONNECTION` without `become`, and
-  the panel keeps the last five addresses it came from per server, each
-  forgotten 30 days after it was last seen, IPv6 by its /64
+  install reads `SSH_CONNECTION` without `become`, and the panel keeps
+  the last five addresses it came from per server, each forgotten 30
+  days after it was last seen, IPv6 by its /64
   (`cloud.host.security_panel_sources`, for whoever manages servers);
   the old address is forgotten when the alert of a change of the panel's
   address closes, and none is ever learned from that notice. The install

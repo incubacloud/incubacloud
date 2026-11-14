@@ -1205,13 +1205,6 @@
           ic_effective_allowlist: >-
             {{ [ic_effective_allowlist_v4, ic_effective_allowlist_v6]
                | select | join(', ') }}
-          # The address this play connected from, read without become in
-          # phase 4: the panel keeps it among its addresses for this host,
-          # which tell its own sign-ins from others' (plan #84, A1). The
-          # list above is not changed by it.
-          ic_panel_source: >-
-            {{ ((ic_ssh_connection | default({})).stdout | default('')).split(' ')
-               | first | truncate(64, true, '') }}
 
   handlers:
     # Bounce services only when their config changed. Handlers run at the
