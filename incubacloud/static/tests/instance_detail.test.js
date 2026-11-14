@@ -1108,6 +1108,46 @@ describe("InstanceDetail — save", () => {
         expect(comp.state.inst.config_dirty).toBe(true);
     });
 
+    /**
+     * Save a production's form and return the values the panel sent.
+     *
+     * @param {object} fields what the form holds besides the saved basics
+     * @returns {Promise<object>} the ``vals`` of the save request
+     */
+    async function sentOnSave(fields) {
+        let sent = null;
+        patchWithCleanup(rpc, {
+            _rpc: (route, params) => {
+                sent = params.vals;
+                return Promise.resolve({ ok: true });
+            },
+        });
+        const comp = formOf();
+        Object.assign(comp.state.form, { environment: "production" }, fields);
+        await InstanceDetail.prototype.save.call(comp);
+        return sent;
+    }
+
+    test("a password typed before choosing OAuth2 is not sent by the save", async () => {
+        const vals = await sentOnSave({
+            smtp_relay_auth: "oauth2_microsoft",
+            smtp_relay_password: "typed-password",
+            smtp_relay_oauth_client_secret: "typed-secret",
+        });
+        expect(vals.smtp_relay_password).toBe("");
+        expect(vals.smtp_relay_oauth_client_secret).toBe("typed-secret");
+    });
+
+    test("a client secret typed before going back to Password is not sent by the save", async () => {
+        const vals = await sentOnSave({
+            smtp_relay_auth: "password",
+            smtp_relay_password: "typed-password",
+            smtp_relay_oauth_client_secret: "typed-secret",
+        });
+        expect(vals.smtp_relay_password).toBe("typed-password");
+        expect(vals.smtp_relay_oauth_client_secret).toBe("");
+    });
+
     test("a save whose answer says nothing keeps the pill as it was", async () => {
         patchWithCleanup(rpc, { _rpc: () => Promise.resolve({ ok: true }) });
         const comp = formOf();
