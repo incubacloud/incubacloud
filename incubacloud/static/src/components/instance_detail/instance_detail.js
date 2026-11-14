@@ -945,17 +945,37 @@ export class InstanceDetail extends JobsMixin(
    * @returns {string[]} their keys
    */
   get markedTabs() {
+    const changed = this._fieldChanged();
+    return Object.keys(this._fieldsByTab(
+      (field) => changed(field) || this.validator.fieldError(field)
+    ));
+  }
+
+  /**
+   * A test of whether a field differs from what was loaded or last saved.
+   *
+   * @returns {(field: string) => boolean}
+   */
+  _fieldChanged() {
     const saved = this._savedForm ? JSON.parse(this._savedForm) : null;
     const edited = this._editedValues();
-    const marked = new Set();
+    return (field) => !!saved
+      && JSON.stringify(edited[field]) !== JSON.stringify(saved[field]);
+  }
+
+  /**
+   * How many fields each tab holds that the test picks, by the field each
+   * one holds (``FIELD_TABS``).
+   *
+   * @param {(field: string) => *} picks truthy for a field to count
+   * @returns {Object<string, number>} the count of each tab that has any
+   */
+  _fieldsByTab(picks) {
+    const counts = {};
     for (const [field, tab] of Object.entries(FIELD_TABS)) {
-      const changed = saved
-        && JSON.stringify(edited[field]) !== JSON.stringify(saved[field]);
-      if (changed || this.validator.fieldError(field)) {
-        marked.add(tab);
-      }
+      if (picks(field)) counts[tab] = (counts[tab] || 0) + 1;
     }
-    return [...marked];
+    return counts;
   }
 
   /**
@@ -984,9 +1004,7 @@ export class InstanceDetail extends JobsMixin(
     if (!NEW_FOLDED_SECTIONS.includes(key) || this.state.openSections[key]) {
       return true;
     }
-    return Object.entries(FIELD_TABS).some(
-      ([field, tab]) => tab === key && this.validator.fieldError(field)
-    );
+    return key in this._fieldsByTab((field) => this.validator.fieldError(field));
   }
 
   /**
@@ -1000,20 +1018,27 @@ export class InstanceDetail extends JobsMixin(
   }
 
   /**
-   * Whether a field of a section differs from what the new-instance page
-   * started with, so a folded section says it holds a change.
+   * How many fields of a section differ from what the new-instance page
+   * started with, so a folded section says how many it holds changed.
    *
    * @param {string} key the section's key
-   * @returns {boolean}
+   * @returns {number}
    */
-  sectionChanged(key) {
-    const saved = this._savedForm ? JSON.parse(this._savedForm) : null;
-    if (!saved) return false;
-    const edited = this._editedValues();
-    return Object.entries(FIELD_TABS).some(
-      ([field, tab]) => tab === key
-        && JSON.stringify(edited[field]) !== JSON.stringify(saved[field])
-    );
+  sectionChangedCount(key) {
+    return this._fieldsByTab(this._fieldChanged())[key] || 0;
+  }
+
+  /**
+   * What a folded section of the new-instance page says of its changed
+   * fields, empty when it holds none.
+   *
+   * @param {string} key the section's key
+   * @returns {string}
+   */
+  sectionChangedText(key) {
+    const count = this.sectionChangedCount(key);
+    if (!count) return "";
+    return count === 1 ? _t("1 changed") : _t("%s changed", count);
   }
 
   /** @returns {number} how many fields of the form show an error */
@@ -1578,8 +1603,10 @@ export class InstanceDetail extends JobsMixin(
     if (this.state.saving) return;
     const {isValid, firstError} = this.validator.validate(this.state.form);
     if (!isValid) {
-      this.env.toast?.error(firstError);
+      // The new-instance page announces the error once, by taking the
+      // focus to the field, which names it; a toast would say it again.
       if (this.isCreate) this.state.focusErrorAsk += 1;
+      else this.env.toast?.error(firstError);
       return;
     }
     this.state.saving = true;

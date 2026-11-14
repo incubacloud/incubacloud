@@ -233,12 +233,15 @@ then. The rest is the panel's assets and the Spanish catalogue.
   Dependencies, Resources and Backups (production). Database, Email,
   Dependencies and Resources, whose defaults serve most instances, start
   folded as a bar with their name and «Advanced», which a click opens,
-  and say «Changed» when a field in them was changed; a section with a
-  field to fix opens by itself and stays open. The footer with *Cancel*
-  and *Create Instance* stays at the bottom of the window. When *Create
-  Instance* finds fields to fix, the footer says «1 field needs
-  attention» or how many, and the focus goes to the first of them, in
-  view. No label, field or check changes.
+  and say how many of their fields were changed («1 changed»); a
+  section with a field to fix opens by itself and stays open. The footer
+  with *Cancel* and *Create Instance* stays at the bottom of the window.
+  When *Create Instance* finds fields to fix, the footer says «1 field
+  needs attention» or how many, and the focus goes to the first of them,
+  in view, which is how a screen reader hears it, once; a field that
+  showed an error and is corrected takes it from the footer on leaving
+  it. Every field of the page is named by its label for a screen
+  reader. No label text, field or check changes.
 
 ### Fixed
 

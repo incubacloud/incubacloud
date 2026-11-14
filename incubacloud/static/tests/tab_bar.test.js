@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { click, press, queryAll, queryOne, waitFor } from "@odoo/hoot-dom";
+import { click, edit, press, queryAll, queryOne, waitFor } from "@odoo/hoot-dom";
 import { animationFrame } from "@odoo/hoot-mock";
 import { Component, useState, xml } from "@odoo/owl";
 import {
@@ -8,6 +8,7 @@ import {
     patchWithCleanup,
 } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
+import { relayIcon } from "@incubacloud/utils/icons";
 
 import { TabBar } from "@incubacloud/components/tab_bar/tab_bar";
 import { FIELD_TABS, InstanceDetail } from "@incubacloud/components/instance_detail/instance_detail";
@@ -279,12 +280,17 @@ describe("InstanceDetail — tabs and marks", () => {
         expect(comp.sectionOpen("email")).toBe(true);
     });
 
-    test("the new-instance page: a folded section says it holds a change", () => {
+    test("the new-instance page: a folded section says how many fields hold a change", () => {
         const comp = page({ create: true });
-        expect(comp.sectionChanged("resources")).toBe(false);
+        expect(comp.sectionChangedCount("resources")).toBe(0);
+        expect(comp.sectionChangedText("resources")).toBe("");
         comp.state.form.odoo_cpus = 4;
-        expect(comp.sectionChanged("resources")).toBe(true);
-        expect(comp.sectionChanged("database")).toBe(false);
+        expect(comp.sectionChangedCount("resources")).toBe(1);
+        expect(comp.sectionChangedText("resources")).toBe("1 changed");
+        comp.state.form.db_memory_limit = "3g";
+        expect(comp.sectionChangedText("resources")).toBe("2 changed");
+        expect(comp.sectionChangedCount("database")).toBe(0);
+        expect(comp.markedTabs).toEqual(["resources"]);
     });
 
     test("a change marks the tab that holds the field", () => {
@@ -331,5 +337,76 @@ describe("InstanceDetail — tabs and marks", () => {
         for (const tab of Object.values(FIELD_TABS)) {
             expect(all.has(tab)).toBe(true);
         }
+    });
+});
+
+describe("InstanceDetail — the new-instance page, mounted", () => {
+    beforeEach(() => allowTranslations());
+
+    /** Mount the page of a new instance; resolves with the toasts it raised. */
+    async function mountNew() {
+        const toasts = [];
+        patchWithCleanup(rpc, {
+            _rpc(url) {
+                if (url === "/cloud/get_odoo_versions") {
+                    return Promise.resolve({
+                        odoo_versions: ["19.0"],
+                        facts: { "19.0": { postgres: ["17"], postgres_default: "17" } },
+                    });
+                }
+                if (url === "/cloud/get_hosts") {
+                    return Promise.resolve({ hosts: [], autoassign_enabled: true });
+                }
+                if (url === "/cloud/get_project") return Promise.resolve({ repos: [] });
+                if (url === "/cloud/get_backup_backends") return Promise.resolve({ items: [] });
+                if (url === "/cloud/get_tags") return Promise.resolve({ tags: [] });
+                return Promise.resolve({});
+            },
+        });
+        await mountWithCleanup(InstanceDetail, {
+            props: { project_id: 1 },
+            env: {
+                icon: relayIcon,
+                navigate: () => {},
+                services: { orm: {}, bus_service: { subscribe() {}, unsubscribe() {} } },
+                permissions: { can_edit_instance: true, can_manage_backups: true },
+                toast: { error: (msg) => toasts.push(msg), success() {}, warning() {} },
+            },
+            noMainContainer: true,
+        });
+        await waitFor(".ic-new-page .rl-formfoot");
+        return toasts;
+    }
+
+    test("every label of a section names a field: its for finds an element", async () => {
+        await mountNew();
+        const sections = ["general", "database", "networking", "email", "resources", "backups"];
+        const labels = sections.flatMap((key) => queryAll(`#idet-sb-${key} label`));
+        expect(labels.length > 20).toBe(true);
+        const unnamed = labels.filter((l) => {
+            const target = l.getAttribute("for");
+            return target ? !document.getElementById(target) : !l.querySelector("input");
+        });
+        expect(unnamed.map((l) => l.textContent.trim())).toEqual([]);
+        const ids = queryAll(".ic-new-page [id]").map((el) => el.id);
+        expect(ids.length).toBe(new Set(ids).size);
+    });
+
+    test("Create with a field to fix takes the focus to it, says so once, and corrects on leaving", async () => {
+        const toasts = await mountNew();
+        await click(".rl-formfoot button.rl-btn-primary");
+        await animationFrame();
+        expect("#idet-name").toBeFocused();
+        expect("#idet-name").toHaveAttribute("aria-invalid", "true");
+        expect(".ic-new-foot__err").toHaveText("1 field needs attention");
+        expect(".ic-new-foot__err").not.toHaveAttribute("role");
+        expect(toasts).toEqual([]);
+
+        // Fixing the field and leaving it takes the footer's count away.
+        await edit("myproject");
+        queryOne("#idet-name").blur();
+        await animationFrame();
+        expect(".ic-new-foot__err").toHaveCount(0);
+        expect("#idet-name").not.toHaveAttribute("aria-invalid");
     });
 });
