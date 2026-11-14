@@ -55,18 +55,6 @@ _psql() {
     docker compose exec -T db psql -U "$pg_user" -d "$db" -tAc "$1" 2>/dev/null
 }
 
-# Run a command in a session of its own, where a stop's TERM, sent to
-# this shell's session and to its process group, does not reach it. The
-# docker client sets its own signal handlers: a TERM this shell ignores
-# still kills it. Without ``setsid`` (util-linux), as it is.
-_apart() {
-    if command -v setsid >/dev/null 2>&1; then
-        setsid -w "$@"
-    else
-        "$@"
-    fi
-}
-
 # Put the paused crons back and drop their list. One ``psql -c`` runs both
 # statements in one transaction: both are done or neither is, and a list
 # that is kept is what the next run restores the crons from.
