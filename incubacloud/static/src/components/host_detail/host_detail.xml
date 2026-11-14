@@ -479,31 +479,33 @@
                                                       t-att-value="state.form.description"
                                                       t-on-input="(ev) => this.onInput('description', ev)"/>
                                         </div>
+                                        <div class="rl-frow ic-w-l">
+                                            <label for="hd-exclude_from_autoassign">Auto-assignment</label>
+                                            <div class="ic-host-check">
+                                                <input id="hd-exclude_from_autoassign" type="checkbox"
+                                                       aria-describedby="hd-exclude_from_autoassign-help"
+                                                       t-att-checked="state.form.exclude_from_autoassign"
+                                                       t-on-change="(ev) => { this.state.form.exclude_from_autoassign = ev.target.checked; }"/>
+                                                <span>Exclude from auto-assignment</span>
+                                            </div>
+                                            <span class="ic-form-note" id="hd-exclude_from_autoassign-help">
+                                                When checked, this host will not be selected automatically for new instances.
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             </section>
 
-                            <!-- Where new instances go. Keeps `ic-form-grid`, a
-                                 direct child of this tab, so a layer's patches
-                                 (xpath on this grid) add their rows, a host pool
-                                 or warm spares, to this group. -->
+                            <!-- Where new instances go: a layer's rows, a host pool
+                                 or warm spares, added by xpath on this grid, which
+                                 stays a direct child of this tab with `ic-form-grid`.
+                                 Empty, as here alone and on New Host, it is not
+                                 shown (host_detail.scss); Auto-assignment, a single
+                                 field, is in Details (form standard §3). -->
                             <div class="ic-set-block ic-host-group ic-host-placement ic-form-grid"
                                  role="group" aria-labelledby="hd-g-placement">
                                 <div class="ic-set-block__head">
                                     <h3 class="ic-set-block__title" id="hd-g-placement">Placement</h3>
-                                </div>
-                                <div class="rl-frow rl-full">
-                                    <label for="hd-exclude_from_autoassign">Auto-assignment</label>
-                                    <div class="ic-host-check">
-                                        <input id="hd-exclude_from_autoassign" type="checkbox"
-                                               aria-describedby="hd-exclude_from_autoassign-help"
-                                               t-att-checked="state.form.exclude_from_autoassign"
-                                               t-on-change="(ev) => { this.state.form.exclude_from_autoassign = ev.target.checked; }"/>
-                                        <span>Exclude from auto-assignment</span>
-                                    </div>
-                                    <span class="ic-form-note" id="hd-exclude_from_autoassign-help">
-                                        When checked, this host will not be selected automatically for new instances.
-                                    </span>
                                 </div>
                             </div>
 
@@ -519,6 +521,8 @@
                                     </button>
                                     <div id="hd-g-edge-how" class="ic-set-how__text" t-if="state.edgeHowOpen">
                                         <p>The rate limit counts a visitor by the address that opened the connection or, with Reached through a CDN on, by the forwarded client, so one CDN edge is not one bucket shared by everyone behind it. Turning Reached through a CDN on for a host the world reaches directly is the worse mistake of the two: a direct request carries no forwarded chain, so every visitor collapses into a single shared bucket.</p>
+                                        <p>The HTTP connection-rate cap is enforced by the host firewall and applies on the next hardening run. Behind a CDN it is not applied: the CDN's allowlist replaces it.</p>
+                                        <p>Every instance on this host shares a network with the proxy. With Proxy network on, the host's firewall keeps one instance from reaching another directly, past the proxy and the CDN. Full Setup applies it, or removes it.</p>
                                         <p>Traefik believes X-Forwarded-For only on connections from the ranges applied to this host, and strips it from every other, which is what makes the header unspoofable and lets the per-client rate limit key on the real visitor instead of a handful of edge addresses. The ranges are whatever the platform supplies, unless this host's override pins it to a different proxy than the rest.</p>
                                         <p>Direct access is ignored while no range is applied, where it would lock out every visitor. An empty override does not mean that, since the platform may be supplying the list.</p>
                                         <p>The CDN's addresses are shared by all its customers; only your zone's client certificate tells your traffic apart. Leave the certificate authority empty to accept any connection the firewall lets in; it is applied by Full Setup or Push Trusted Proxy Settings.</p>
@@ -534,7 +538,7 @@
                                                    t-on-input="(ev) => this.onInput('http_conn_rate', ev)"/>
                                         </div>
                                         <span class="ic-form-note ic-w-l ic-rgrid__note" id="hd-http_conn_rate-help">
-                                            Per-source new-connection cap (per second) on ports 80/443, enforced by the host firewall. 0 disables it. Not applied behind a CDN, where the CDN's allowlist replaces it. Applies on the next hardening run.
+                                            New connections per second one source may open on ports 80/443. 0 turns it off.
                                         </span>
                                         <div class="rl-frow ic-w-l">
                                             <label for="host-shared-guard">Proxy network</label>
@@ -546,7 +550,7 @@
                                                 <span>Only the proxy may open connections to the instances</span>
                                             </div>
                                             <span class="ic-form-note" id="host-shared-guard-help">
-                                                Every instance on this host shares a network with the proxy. With this on, the host's firewall keeps one instance from reaching another directly, past the proxy and the CDN. Applied, or removed, by Full Setup.
+                                                Keeps one instance from reaching another directly, past the proxy. Applied by Full Setup.
                                             </span>
                                         </div>
                                         <div class="rl-frow ic-w-l">

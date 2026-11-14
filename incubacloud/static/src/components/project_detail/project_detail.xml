@@ -170,7 +170,7 @@
                                                 </div>
                                                 <div class="rl-frow ic-w-s"
                                                      t-att-class="validator.fieldError('odoo_version') ? 'has-error' : ''">
-                                                    <label for="pd-odoo_version">Odoo version <span class="rl-req">*</span></label>
+                                                    <label for="pd-odoo_version">Odoo version<span class="rl-req"> *</span></label>
                                                     <RlSelect id="'pd-odoo_version'"
                                                               options="odooVersions"
                     ariaInvalid="validator.fieldError('odoo_version') ? true : false"

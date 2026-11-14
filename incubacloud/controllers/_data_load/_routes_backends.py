@@ -170,7 +170,9 @@ class BackendsMixin:
             return {"ok": False, "error": _("Backend not found")}
         safe = {k: v for k, v in vals.items() if k in self._BACKUP_BACKEND_ALLOWED}
         b.write(safe)
-        return {"ok": True}
+        # Writing the retention owner confirms it (see the model's write):
+        # the page drops its «Unconfirmed» note on this answer.
+        return {"ok": True, "retention_owner_declared": b.retention_owner_declared}
 
     @http.route(["/cloud/delete_backup_backend"], type="json", auth="user")
     def cloud_delete_backup_backend(self, backend_id):

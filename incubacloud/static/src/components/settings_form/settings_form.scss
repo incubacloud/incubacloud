@@ -359,10 +359,41 @@
     }
 }
 
+// ── The record grid (§2, §3, §9) ─────────────────────────────────────────────
+// An instance's, a host's, a project's and a backup destination's fields sit
+// on a 12-column grid with the label above: S takes 3 columns, M 6 and L the
+// whole row. At 900 px and under S fields go two by two, M and L take the
+// row, and the empty cells that kept a row's shape are dropped.
+.ic-rgrid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 14px 18px;
+
+    > .ic-w-s { grid-column: span 3; }
+    > .ic-w-m { grid-column: span 6; }
+    > .ic-w-l { grid-column: 1 / -1; }
+
+    .rl-frow { margin: 0; min-width: 0; }
+
+    input:disabled,
+    select:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+}
+
+@media (max-width: 900px) {
+    .ic-rgrid {
+        > .ic-w-s { grid-column: span 6; }
+        > .ic-w-m { grid-column: 1 / -1; }
+        > .ic-rgrid__gap { display: none; }
+    }
+}
+
 // ── A record's page: group cards on the record grid (§2, §3) ────────────────
 // A project's or a backup destination's fields sit in group cards no wider
-// than 920 px, on the 12-column record grid an instance's page brought
-// (`.ic-rgrid`, instance_detail.scss): S takes 3 columns, M 6, L the row.
+// than 920 px, on the record grid above.
 
 .ic-rec-col {
     max-inline-size: 920px;

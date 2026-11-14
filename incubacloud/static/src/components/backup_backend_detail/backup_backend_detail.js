@@ -33,7 +33,8 @@ const EMPTY_FORM = () => ({
 });
 
 // Folded under Advanced at the end of General: their defaults serve nearly
-// every destination (form standard §4).
+// every destination (form standard §4). The template hands the same list to
+// the fold, through ``advancedFields``.
 const ADVANCED_FIELDS = ["backup_retention", "backup_tz", "retention_owner"];
 
 export class BackupBackendDetail extends Component {
@@ -101,6 +102,11 @@ export class BackupBackendDetail extends Component {
   /** @returns {number} how many fields of the form are unsaved */
   get unsavedCount() {
     return this._savedForm ? unsavedCount(this.state.form, JSON.parse(this._savedForm)) : 0;
+  }
+
+  /** @returns {string[]} the fields folded under Advanced, for the fold to count */
+  get advancedFields() {
+    return ADVANCED_FIELDS;
   }
 
   /** @returns {number} how many of the fields folded under Advanced are unsaved */
@@ -288,11 +294,16 @@ export class BackupBackendDetail extends Component {
         // What was sent is what is saved; an edit made while the save
         // was out stays unsaved.
         const sent = JSON.stringify(vals);
-        await rpc("/cloud/save_backup_backend", {
+        const result = await rpc("/cloud/save_backup_backend", {
           backend_id: this.props.backend_id,
           vals,
         });
         this.state.backend.name = vals.name;
+        // Saving the retention owner confirms it: the note and the open
+        // fold go with the answer, not with the next load.
+        if (result?.retention_owner_declared !== undefined) {
+          this.state.retention_owner_declared = result.retention_owner_declared;
+        }
         this._savedForm = sent;
         this.env.toast?.success(_t("Changes saved"));
       }

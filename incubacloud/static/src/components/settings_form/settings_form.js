@@ -18,7 +18,7 @@
  * the save bar.
  */
 
-import { Component, useEffect, useState } from "@odoo/owl";
+import { Component, onWillUpdateProps, useEffect, useState } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 import { RlSelect } from "../rl_select/rl_select";
 import { fieldProblem, settingField } from "../settings/settings_registry";
@@ -315,6 +315,20 @@ export class SettingAdvanced extends Component {
         this.form = this.props.form ? useState(this.props.form) : null;
         this.state = useState({ open: false });
         this.panelId = `ic-set-adv-${++nextBlockId}`;
+        onWillUpdateProps((next) => this.keepOpenOnRelease(next));
+    }
+
+    /**
+     * Once the page stops forcing the fold open (the error fixed, the owner
+     * confirmed), leave it open as it is, for the toggle to fold it: it
+     * does not snap shut under the field just looked at.
+     *
+     * @param {object} next the props the fold is about to get
+     */
+    keepOpenOnRelease(next) {
+        if (this.props.forceOpen && !next.forceOpen) {
+            this.state.open = true;
+        }
     }
 
     /** @returns {boolean} open by hand, or for a field found or in error */

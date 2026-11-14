@@ -127,7 +127,7 @@
                                 <!-- Who deletes old backups and when: the
                                      defaults serve nearly everyone -->
                                 <SettingAdvanced
-                  fields="['backup_retention', 'backup_tz', 'retention_owner']"
+                  fields="advancedFields"
                   changed="advancedChanged"
                   forceOpen="advancedNeedsLook"
                 >
@@ -214,12 +214,12 @@
                           t-att-style="'width:' + usagePct + '%'"
                         />
                                             </div>
+                                            <!-- The share in a span of its own: each «GB» is then
+                                                 a term alone, whatever the line breaks around it. -->
                                             <div class="rl-rmeta">
-                                                <t
-                          t-out="state.last_measured_gb.toFixed(2)"
-                        /> GB /
+                                                <t t-out="state.last_measured_gb.toFixed(2)" /> GB /
                                                 <t t-out="state.form.quota_gb" /> GB
-                                                (<t t-out="usagePct.toFixed(1)" />%)
+                                                <span>(<t t-out="usagePct.toFixed(1)" />%)</span>
                                             </div>
                                         </t>
                                         <t t-else="">

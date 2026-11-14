@@ -5495,19 +5495,6 @@ msgid "Every account on the central"
 msgstr "Todas las cuentas de la central"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-msgid ""
-"Every instance on this host shares a network with the proxy. With this on, "
-"the host's firewall keeps one instance from reaching another directly, past "
-"the proxy and the CDN. Applied, or removed, by Full Setup."
-msgstr ""
-"Todas las instancias de este host comparten una red con el proxy. Con esta "
-"opción, el firewall del host impide que una instancia llegue directamente a "
-"otra, saltándose el proxy y la CDN. Lo aplica, o lo quita, la configuración "
-"completa."
-
-#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_collect_pg
 msgid ""
 "Every minute, each instance's database connections, running queries, lock "
@@ -12562,19 +12549,6 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__instance_backup_dst
 msgid "Per-instance duplicity DST: {backend_dst}/{project}/{instance}"
 msgstr "DST de duplicity por instancia: {backend_dst}/{project}/{instance}"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-msgid ""
-"Per-source new-connection cap (per second) on ports 80/443, enforced by the "
-"host firewall. 0 disables it. Not applied behind a CDN, where the CDN's "
-"allowlist replaces it. Applies on the next hardening run."
-msgstr ""
-"Límite de conexiones nuevas por origen (por segundo) en los puertos 80/443, "
-"aplicado por el firewall del host. 0 lo desactiva. No se aplica detrás de "
-"una CDN, donde lo sustituye la lista de direcciones de la CDN. Se aplica en "
-"la próxima ejecución del hardening."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__http_conn_rate
@@ -24731,16 +24705,6 @@ msgstr "Acceso y cifrado"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
-msgid ""
-"GB\n"
-"                                                ("
-msgstr ""
-"GB\n"
-"                                                ("
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid ""
 "Opening a pull request (GitHub) or a merge request (GitLab) on a repository "
@@ -24877,3 +24841,48 @@ msgid ""
 msgstr ""
 "Con el acceso directo rechazado, exigir además en cada conexión TLS un "
 "certificado de cliente firmado por esta autoridad."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"New connections per second one source may open on ports 80/443. 0 turns it "
+"off."
+msgstr ""
+"Conexiones nuevas por segundo que un mismo origen puede abrir en los puertos"
+" 80/443. Con 0 no hay límite."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"Keeps one instance from reaching another directly, past the proxy. Applied "
+"by Full Setup."
+msgstr ""
+"Impide que una instancia llegue directamente a otra, saltándose el proxy. Lo"
+" aplica la configuración completa."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"The HTTP connection-rate cap is enforced by the host firewall and applies on"
+" the next hardening run. Behind a CDN it is not applied: the CDN's allowlist"
+" replaces it."
+msgstr ""
+"El límite de tasa de conexiones HTTP lo aplica el firewall del host a partir"
+" de la próxima ejecución del hardening. Detrás de una CDN no se aplica: lo "
+"sustituye la lista de direcciones de la CDN."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"Every instance on this host shares a network with the proxy. With Proxy "
+"network on, the host's firewall keeps one instance from reaching another "
+"directly, past the proxy and the CDN. Full Setup applies it, or removes it."
+msgstr ""
+"Todas las instancias de este host comparten una red con el proxy. Con «Red "
+"del proxy» activada, el firewall del host impide que una instancia llegue "
+"directamente a otra, saltándose el proxy y la CDN. La configuración completa"
+" la aplica o la quita."

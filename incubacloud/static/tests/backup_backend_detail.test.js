@@ -298,4 +298,32 @@ describe("BackupBackendDetail — Advanced", () => {
     expect(fold.open).toBe(false);
     expect(fold.changedCount).toBe(0);
   });
+
+  test("the fold stays open once the page stops forcing it, and then folds by hand", () => {
+    const fold = Object.create(SettingAdvanced.prototype);
+    fold.state = {open: false};
+    fold.store = {found: null, errors: {}};
+    fold.props = {fields: ["retention_owner"], forceOpen: true};
+    fold.keepOpenOnRelease({fields: ["retention_owner"], forceOpen: false});
+    fold.props = {fields: ["retention_owner"], forceOpen: false};
+    expect(fold.open).toBe(true);
+    fold.toggle();
+    expect(fold.open).toBe(false);
+  });
+
+  test("hands the fold the same fields it counts", () => {
+    expect(loaded().advancedFields).toEqual(["backup_retention", "backup_tz", "retention_owner"]);
+  });
+
+  test("saving confirms the retention owner, so the fold is no longer forced open", async () => {
+    patchWithCleanup(rpc, {_rpc: async () => ({ok: true, retention_owner_declared: true})});
+    const comp = loaded({retention_owner_declared: false, saving: false, backend: {name: "r2"}});
+    comp.props = {backend_id: 5};
+    comp.validator = {validate: () => ({isValid: true, firstError: ""}), fieldError: () => null};
+    comp.env = {toast: {success: () => {}}};
+    expect(comp.advancedNeedsLook).toBe(true);
+    await comp.save();
+    expect(comp.state.retention_owner_declared).toBe(true);
+    expect(comp.advancedNeedsLook).toBe(false);
+  });
 });
