@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Empty an archived instance's backup prefix, with no stack to run in.
 #
-# Usage: backup_purge_archived.sh <env_file> <image>
+# Usage: backup_purge_archived.sh <env_file> <image> [<env_file>...]
 #
 # An archived instance has already been torn down: its compose project,
 # its containers and its directory are gone, and only the chain in the
@@ -23,6 +23,16 @@
 # container runs. The file is removed on the way out, including when
 # this script fails.
 #
+# Each further file is one more prefix of the same copy, emptied the
+# same way in a container of its own: an addon that keeps part of an
+# instance's copy beside the duplicity prefix (continuous recovery's
+# ``<name>-pitr``) hands it here, with its own ``DST`` and the same
+# ``PURGE_BEFORE``. They run in order and the first that fails stops the
+# others, with its exit code: the record stays, and the next run finds
+# the ones before it empty. The result is 0 when any of them removed
+# something, 10 when every one was already empty. All of them must have
+# arrived before anything is deleted.
+#
 # Exit codes are the contract with the executor:
 #
 #   0   purged — the prefix is empty and was verified empty
@@ -36,31 +46,48 @@ source "$(dirname "$0")/lib/common.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/purge_prefix.sh
 source "$(dirname "$0")/lib/purge_prefix.sh"
 
-ic_require_args 2 "$#" "backup_purge_archived.sh <env_file> <image>"
+ic_require_args 2 "$#" "backup_purge_archived.sh <env_file> <image> [<env_file>...]"
 
 env_file="$1"
 image="$2"
+shift 2
+env_files=("$env_file" "$@")
 
-# Removed whatever happens: it holds the destination's credentials, and
+# Removed whatever happens: they hold the destination's credentials, and
 # a failed run must not leave them on the host's /tmp. The directory
 # goes too, with a plain rmdir — it is empty by then, and a recursive
 # delete of a path that arrived as an argument is not a thing this
 # script should be able to do.
-trap 'rm -f "$env_file"; rmdir "$(dirname "$env_file")" 2>/dev/null || true' EXIT
+trap 'rm -f "${env_files[@]}"; rmdir "$(dirname "$env_file")" 2>/dev/null || true' EXIT
 
-if [ ! -f "$env_file" ]; then
-    ic_warn "environment file not found: $env_file"
-    exit 20
-fi
+for file in "${env_files[@]}"; do
+    if [ ! -f "$file" ]; then
+        ic_warn "environment file not found: $file"
+        exit 20
+    fi
+done
 
 ic_log "purging archived backup prefix via an ephemeral container"
 
-set +e
-ic_purge_prefix_program \
-    | docker run --rm -i --env-file "$env_file" --entrypoint python3 \
-        "$image" -
-rc=$?
-set -e
+rc=10
+pass=0
+for file in "${env_files[@]}"; do
+    pass=$((pass + 1))
+    if [ "${#env_files[@]}" -gt 1 ]; then
+        ic_log "prefix ${pass} of ${#env_files[@]}"
+    fi
+    set +e
+    ic_purge_prefix_program \
+        | docker run --rm -i --env-file "$file" --entrypoint python3 \
+            "$image" -
+    one=$?
+    set -e
+    case "$one" in
+        0)  rc=0 ;;
+        10) ;;
+        *)  rc="$one"; break ;;
+    esac
+done
 
 case "$rc" in
     0)  ic_log "archived backup prefix purged." ;;

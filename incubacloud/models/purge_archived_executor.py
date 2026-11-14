@@ -70,7 +70,42 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         """Remote path of the uploaded environment file, in the job's directory."""
         return self._job_path("purge.env")
 
-    def _env_content(self):
+    def _extra_prefixes(self):
+        """The other prefixes of the copy, emptied with the chain.
+
+        What the instance answers (``_archived_copy_extra_prefixes``):
+        nothing in core, where the copy is the duplicity chain alone; an
+        addon that keeps part of the copy beside it names its prefix.
+
+        :return: one DST per further prefix, in the order they are emptied
+        :rtype: list
+        """
+        return list(self._inst()._archived_copy_extra_prefixes())
+
+    def _env_paths(self):
+        """Remote paths of every environment file, the chain's first.
+
+        :return: ``purge.env``, then ``purge-<n>.env`` per further prefix
+        :rtype: list
+        """
+        return [self._env_path()] + [
+            self._job_path(f"purge-{n}.env")
+            for n in range(1, len(self._extra_prefixes()) + 1)
+        ]
+
+    def _env_contents(self):
+        """Render one environment per prefix, in ``_env_paths``'s order.
+
+        :return: ``{remote path: content}``
+        :rtype: dict
+        """
+        dsts = [None, *self._extra_prefixes()]
+        return {
+            path: self._env_content(dst)
+            for path, dst in zip(self._env_paths(), dsts)
+        }
+
+    def _env_content(self, dst=None):
         """Render the environment the ephemeral container needs.
 
         Deliberately the same variable names the ``backup`` service was
@@ -87,10 +122,18 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         it a job that lands late — a retry, a queue that drained slowly —
         would empty whatever holds the prefix by the time it runs, and
         after "start from scratch" that is the customer's new instance.
+
+        A further prefix of the copy (*dst*) gets the same environment
+        with its own ``DST``: the same destination's credentials, and the
+        same cutoff, for the same reason.
+
+        :param str dst: a further prefix (``_extra_prefixes``), or None
+            for the chain's frozen one
+        :rtype: str
         """
         inst = self._inst()
         backend = inst.effective_backup_backend.sudo()
-        lines = [f"DST={inst.custom_backup_dst}"]
+        lines = [f"DST={dst or inst.custom_backup_dst}"]
         if inst.purge_cutoff_at:
             lines.append(f"PURGE_BEFORE={inst.purge_cutoff_at.isoformat()}")
         if backend.s3_access_key_id:
@@ -113,12 +156,11 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         random, created by this job): no moment when another account
         could read it, and no directory of another account to land in —
         the per-job name this used, ``install -d`` unchecked, was one
-        anybody could create first. The script removes the file on its
-        way out, and the job its directory, failure included.
+        anybody could create first. The script removes the files on its
+        way out, and the job its directory, failure included. One file
+        per prefix of the copy (``_env_contents``).
         """
-        await self._upload_private_files(
-            transport, {self._env_path(): self._env_content()},
-        )
+        await self._upload_private_files(transport, self._env_contents())
 
     def get_commands(self):
         image = (
@@ -127,7 +169,8 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         return [(
             PURGE_ARCHIVED_LABEL,
             self.run_script(
-                "backup_purge_archived.sh", [self._env_path(), image],
+                "backup_purge_archived.sh",
+                [self._env_path(), image, *self._env_paths()[1:]],
             ),
             {"stop_on_failure": True},
         )]

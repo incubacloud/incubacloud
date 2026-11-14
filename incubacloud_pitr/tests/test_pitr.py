@@ -37,6 +37,10 @@ from odoo.addons.incubacloud.models.cloud_host import CloudHost
 from odoo.addons.incubacloud.models.delete_instance_executor import (
     DeleteInstanceExecutor,
 )
+from odoo.addons.incubacloud.models.purge_archived_executor import (
+    PURGE_ARCHIVED_LABEL,
+    PurgeArchivedBackupsExecutor,
+)
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
 from odoo.addons.incubacloud.tests.test_executor_durable_writes import (
     JobEndAssertions,
@@ -45,8 +49,11 @@ from odoo.addons.incubacloud_pitr import uninstall_hook
 from odoo.addons.incubacloud_pitr.models import pitr_executors as ex
 from odoo.addons.incubacloud_pitr.models._constants import (
     _RCLONE_OBSCURE_KEY,
+    ALERT_PREFIX_LEFT,
+    PREFIX_LEFT_MARK,
     rclone_obscure,
 )
+from odoo.addons.incubacloud_pitr.models.cloud_instance import PURGE_LABEL
 
 
 def _base(name, finish):
@@ -471,6 +478,135 @@ exit 0
         self.assertFalse(self.inst.removal_finalized)
 
 
+    def test_no_credentials_on_the_host_let_the_delete_go_on_with_an_alert(self):
+        """What it left in the bucket reaches a person, not a log line.
+
+        On the host, as the instance goes: an alert on the instance would
+        go with the record.
+        """
+        self.env_file.unlink()
+        self.assertEqual(self._run(self.first), 0)
+        self.assertIn(PREFIX_LEFT_MARK, self.output)
+        self.assertEqual(self._calls("docker run"), [])
+        executor = self._executor(DeleteInstanceExecutor, "delete_instance")
+        results = {PURGE_LABEL: {"stdout": self.output, "exit_status": 0}}
+        with patch.object(DeleteInstanceExecutor, "_sys", autospec=True) as log:
+            asyncio.run(executor.on_success(results))
+        lines = [call.args[1] for call in log.call_args_list]
+        warned = [line for line in lines if line.startswith("⚠")]
+        self.assertEqual(len(warned), 1)
+        self.assertIn("s3://bucket/backups/pp/pitr-inst-pitr", warned[0])
+        alert = self.env["cloud.alert"].search([
+            ("code", "=", ALERT_PREFIX_LEFT), ("state", "=", "active"),
+        ])
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.host_id, self.host)
+        self.assertFalse(alert.instance_id)
+        self.assertEqual(alert.dedup_key, "s3://bucket/backups/pp/pitr-inst-pitr")
+        self.assertIn("RB-23", alert.message)
+
+    def test_a_purge_that_ran_raises_nothing(self):
+        self.assertEqual(self._run(self.first, purge=3), 0)
+        results = {PURGE_LABEL: {"stdout": self.output, "exit_status": 0}}
+        self.assertEqual(
+            self.inst._teardown_pre_steps_left(results, self.env["cloud.job"]), [],
+        )
+        self.assertFalse(self.env["cloud.alert"].search([
+            ("code", "=", ALERT_PREFIX_LEFT),
+        ]))
+
+
+class TestDeletingAnArchivedInstancePurgesTheArchive(_PitrCase):
+    """An archived instance deleted for good takes its recovery archive too.
+
+    Archiving keeps the recovery prefix with the duplicity copy; the
+    deletion of the archived record empties the chain in a container of
+    its own (core's ``purge_archived_backups``), and the recovery prefix
+    is one more prefix of that copy: the same job, the same credentials,
+    the same cutoff, and the record only goes once both are empty.
+    """
+
+    PREFIX = "s3://bucket/backups/pp/pitr-inst-pitr"
+
+    def setUp(self):
+        super().setUp()
+        self.backend.s3_secret_access_key = "pitr-archived-secret"
+        self.inst.write({"pitr_enabled": True, "pitr_cluster_id": "7698"})
+
+    def _archive(self):
+        self.inst._finalize_removal(keep_in_panel=True)
+        return self.inst
+
+    def _purge(self):
+        """The archived instance's delete, as the job runs it.
+
+        :rtype: PurgeArchivedBackupsExecutor
+        """
+        job = self.env["cloud.job"].browse(self._archive().delete_archived()[0])
+        return PurgeArchivedBackupsExecutor(job, self.host)
+
+    def test_archiving_freezes_the_recovery_prefix(self):
+        self.assertFalse(self.inst.pitr_archived_prefix)
+        self._archive()
+        self.assertEqual(self.inst.pitr_archived_prefix, self.PREFIX)
+
+    def test_the_purge_empties_the_recovery_prefix_with_the_chain(self):
+        executor = self._purge()
+        contents = executor._env_contents()
+        chain, recovery = executor._env_paths()
+        cutoff = f"PURGE_BEFORE={self.inst.purge_cutoff_at.isoformat()}\n"
+        self.assertIn(f"DST={self.inst.custom_backup_dst}\n", contents[chain])
+        self.assertIn(f"DST={self.PREFIX}\n", contents[recovery])
+        for content in contents.values():
+            self.assertIn(cutoff, content)
+            self.assertIn("AWS_SECRET_ACCESS_KEY=pitr-archived-secret\n", content)
+            self.assertIn("AWS_ENDPOINT_URL=https://r2.example.com\n", content)
+        (label, command, opts), = executor.get_commands()
+        self.assertEqual(label, PURGE_ARCHIVED_LABEL)
+        self.assertTrue(opts["stop_on_failure"])
+        self.assertIn(chain, command)
+        self.assertIn(recovery, command)
+        self.assertNotIn("pitr-archived-secret", command)
+
+    def test_switched_off_the_archive_is_still_purged(self):
+        """Switching off leaves the archive in the bucket and the cluster
+        on the record (``pitr_disable``)."""
+        self.inst.pitr_enabled = False
+        self.assertEqual(self._purge()._extra_prefixes(), [self.PREFIX])
+
+    def test_the_frozen_prefix_outlives_the_project(self):
+        """The computed one would point at another folder, or ``default``."""
+        self._archive()
+        self.project.remote_folder = "elsewhere"
+        self.inst.invalidate_recordset()
+        self.assertEqual(self.inst._archived_copy_extra_prefixes(), [self.PREFIX])
+
+    def test_one_archived_before_the_freeze_purges_the_computed_prefix(self):
+        self._archive()
+        self.inst.sudo().pitr_archived_prefix = False
+        self.assertEqual(self.inst._archived_copy_extra_prefixes(), [self.PREFIX])
+
+    def test_an_instance_that_never_archived_has_one_prefix_only(self):
+        self.inst.write({"pitr_enabled": False, "pitr_cluster_id": False})
+        executor = self._purge()
+        self.assertFalse(self.inst.pitr_archived_prefix)
+        self.assertEqual(len(executor._env_paths()), 1)
+        (_label, command, _opts), = executor.get_commands()
+        self.assertNotIn("purge-1.env", command)
+
+    def test_an_instance_brought_back_forgets_the_frozen_prefix(self):
+        """Live again, it archives at the computed prefix; a frozen one
+        would be kept by the next archiving."""
+        self._archive()
+        core = next(
+            cls for cls in type(self.inst).__mro__
+            if cls.__module__ == "odoo.addons.incubacloud.models.cloud_instance"
+        )
+        with patch.object(core, "revive", autospec=True, return_value=[1]):
+            self.inst.revive()
+        self.assertFalse(self.inst.pitr_archived_prefix)
+
+
 # post_install: creating a user at_install trips over account's
 # ``res_partner.autopost_bills`` NOT NULL column (as in core's tests).
 @tagged("post_install", "-at_install")
@@ -496,6 +632,7 @@ class TestOnlyAManagerChangesIt(_PitrCase):
             {"pitr_enabled": False},
             {"pitr_previous_clusters": [{"id": "1", "until": "2000-01-01"}]},
             {"pitr_stack_external": True},
+            {"pitr_archived_prefix": "s3://bucket/elsewhere"},
         ):
             with self.assertRaisesRegex(AccessError, "group_cloud_manager"):
                 self.inst.with_user(self.dev).write(vals)
