@@ -156,6 +156,17 @@ columns: Odoo keeps what each holds as its English text.
   on every server. The installs, the reconciliation's revision pass and
   the read credential's rotation decide by the same check.
 
+### Documentation
+
+- The user guide gains *Security logs* (what leaves a server, the failed
+  web logins with their address, instance and time alone, 90 days, who
+  sees the tables and the addresses an alert's text carries, the country,
+  the Security view and what the logs cannot prove) and *Security alerts*
+  (each alert, what it means and what to do), and the runbook RB-43 the
+  operator's triage of a security alert.
+- `architecture.md` lists the security alerts and every provisional
+  threshold with why it was chosen and the measurement that fixes it.
+
 ## [1.0.230] — unreleased
 
 The servers' agents write to the metrics central with a user of their own
