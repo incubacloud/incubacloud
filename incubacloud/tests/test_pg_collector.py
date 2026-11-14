@@ -99,7 +99,11 @@ class TestTheCollectorCannotStopThePlaybook(BaseCase):
         self.assertIn("ansible_failed_result", rescue["ic_pg_collector_error"])
 
     def test_every_step_that_needs_root_is_in_the_block(self):
-        """No ``become`` outside a block that rescues it."""
+        """No ``become`` outside a block that rescues it.
+
+        ``become: false`` asks for no root: the read of the address the
+        panel connects from says so, because sudo would clear it.
+        """
         inside = {id(t) for t in _all_tasks(self.block["block"])}
         for name in ("Remove the database collector, switched off",
                      "Install cron when the server has none"):
@@ -107,7 +111,7 @@ class TestTheCollectorCannotStopThePlaybook(BaseCase):
             self.assertIn("rescue", block, name)
             inside |= {id(t) for t in _all_tasks(block["block"])}
         for task in _all_tasks(self.play["tasks"]):
-            if "become" in task:
+            if "become" in task and task["become"] is not False:
                 self.assertIn(id(task), inside, task["name"])
 
     def test_root_is_asked_for_only_when_not_connected_as_root(self):
