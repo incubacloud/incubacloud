@@ -1,4 +1,4 @@
-import { Component, useState, onWillStart, onMounted, onWillUnmount, useEnv, useRef } from "@odoo/owl";
+import { Component, useState, onWillStart, onMounted, onWillUnmount, useEnv, useRef, useSubEnv } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { useService } from "@web/core/utils/hooks";
 import { _t } from "@web/core/l10n/translation";
@@ -10,6 +10,7 @@ import { RlSelect } from "../rl_select/rl_select";
 import { IcPager } from "../ic_pager/ic_pager";
 import { IcMenu } from "../ic_menu/ic_menu";
 import { restoreForm, SaveBar, unsavedCount } from "../settings_form/save_bar";
+import { SettingAdvanced } from "../settings_form/settings_form";
 import { agoText, parseUTC } from "../../utils/dates";
 import { ACTIVE_STATES, announceJob, cancelPrompt, holdReason, jobStateText, jobTone } from "../../utils/job_queue";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
@@ -79,7 +80,7 @@ export class HostDetail extends Component {
     static template = "incubacloud.HostDetail";
     static components = {
         PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog, RlSelect, IcPager,
-        HostHardeningModal, IcMenu, HostBoard, SaveBar,
+        HostHardeningModal, IcMenu, HostBoard, SaveBar, SettingAdvanced,
     };
 
     /** Rows per page for the server-paginated audit log. */
@@ -116,6 +117,8 @@ export class HostDetail extends Component {
             // always be turned off.
             securityLogsSaved: false,
             directReachReason: "",
+            // Whether General's Network edge group shows its "How it works".
+            edgeHowOpen: false,
             traefik_file: "traefik_config_yml",
             loading: !this.isNew,
             saving: false,
@@ -175,6 +178,16 @@ export class HostDetail extends Component {
         // initial load flicker. Selected tags are tracked separately
         // in the snapshot because they live outside ``state.form``.
         this._savedForm = null;
+        // What Advanced counts as changed: a field that differs from what
+        // was loaded or last saved, as the save bar counts it. No field of
+        // the page reports its errors or a search result there.
+        useSubEnv({
+            settingsForm: {
+                store: useState({ saved: {}, errors: {}, found: null }),
+                isChanged: (field) => this.isFieldUnsaved(field),
+                setError: () => {},
+            },
+        });
 
         this.validator = useFormValidation(() => ({
             name: [required(_t("Host name is required"))],
@@ -282,6 +295,18 @@ export class HostDetail extends Component {
             form: persisted,
             tags: (this.state.selectedTags || []).map(t => t.id).sort(),
         });
+    }
+
+    /**
+     * Whether one field of the form differs from what was loaded or last saved.
+     *
+     * @param {string} field a key of ``state.form``
+     * @returns {boolean} false before the form is loaded
+     */
+    isFieldUnsaved(field) {
+        if (!this._savedForm) return false;
+        const saved = JSON.parse(this._savedForm).form;
+        return JSON.stringify(saved[field] ?? null) !== JSON.stringify(this.state.form[field] ?? null);
     }
 
     _snapshotForm() {

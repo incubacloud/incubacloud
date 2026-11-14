@@ -168,6 +168,72 @@
     }
 }
 
+// ── General: groups on the record grid (form standard §2–§4) ───────────────────
+// Each group is a card (settings_form's `.ic-set-block`) no wider than 920 px,
+// its fields on a 12-column grid with the label above: S takes 3 columns, M 6
+// and L the whole row. At 900 px and under S fields go two by two, M and L
+// take the row, and the empty cells that kept a row's shape are dropped.
+
+.ic-host-group {
+    max-inline-size: 920px;
+
+    .ic-set-how__text p { margin: 0 0 6px; }
+}
+
+.ic-host-detail .ic-rgrid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 14px 18px;
+
+    > .ic-w-s { grid-column: span 3; }
+    > .ic-w-m { grid-column: span 6; }
+    > .ic-w-l { grid-column: 1 / -1; }
+    > * { min-inline-size: 0; }
+
+    code { overflow-wrap: anywhere; }
+    .rl-frow { margin: 0; }
+}
+
+// The help of an S field, on the row under it, close to the field.
+.ic-host-detail .ic-rgrid > .ic-rgrid__note { margin-block-start: -8px; }
+
+// Placement keeps `ic-form-grid` for a layer's rows: one column, inside the card.
+.ic-host-detail .ic-host-placement.ic-form-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    max-inline-size: 920px;
+    padding: 0 20px 16px;
+
+    > .ic-set-block__head { padding-inline: 0; }
+    > .rl-frow { margin: 0; min-inline-size: 0; }
+}
+
+@media (max-width: 900px) {
+    .ic-host-detail .ic-rgrid {
+        > .ic-w-s { grid-column: span 6; }
+        > .ic-w-m { grid-column: 1 / -1; }
+        > .ic-rgrid__gap { display: none; }
+    }
+
+    .ic-host-detail .ic-host-placement.ic-form-grid { padding-inline: 16px; }
+}
+
+// A checkbox and the words beside it.
+.ic-host-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+// A row's caption over a value or a group of choices, not a single control:
+// set as a field's label, but no <label>, which names one control.
+.rl-frow > .ic-ro-label {
+    display: block;
+    @include rl-field-label;
+    margin-block-end: 6px;
+}
+
 // ── Connection: where the SSH key comes from, and its public half ─────────────
 
 .ic-key-source {
@@ -189,7 +255,7 @@
     flex-direction: column;
     gap: 6px;
 
-    > label { margin-block-end: 0; }
+    > .ic-ro-label { margin-block-end: 0; }
 }
 
 .ic-copy-field {
@@ -239,10 +305,17 @@
 
 // ── File sub-tabs ──────────────────────────────────────────────────────────────
 
+// On a phone the three names take less room and, should they still not
+// fit, scroll in their own row instead of widening the page.
 .ic-file-tabs {
     display: flex;
     gap: 0;
     margin-bottom: 0;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar { display: none; }
 }
 
 .ic-file-tab {
@@ -256,6 +329,8 @@
     color: rgba($code-text, 0.45);
     cursor: pointer;
     margin-right: 2px;
+    flex-shrink: 0;
+    white-space: nowrap;
     transition: color $duration-fast ease, background $duration-fast ease;
 
     &:hover { color: rgba($code-text, 0.75); }
@@ -265,6 +340,8 @@
         color: $code-text;
         border-color: rgba(var(--rl-fg-rgb), 0.12);
     }
+
+    @media (max-width: 600px) { padding: 6px 10px; }
 }
 
 // ── Code editor ────────────────────────────────────────────────────────────────
