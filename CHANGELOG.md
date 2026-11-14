@@ -6,6 +6,59 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.231] — unreleased
+
+The panel reads the servers' security logs back from the central and
+raises an alert for what it did not do: a sign-in that is not its own, its
+key used from an address it does not connect from, another user's sudo,
+and a change to the watched files outside its jobs and consoles. The
+country of an address is looked up on the panel; by default the panel
+downloads DB-IP's free country database once a month.
+
+The update adds two tables and columns, and no data migration. The new
+cron starts reading from the moment it first runs: nothing earlier is
+alerted on.
+
+### Added
+
+- **The alerts of the servers' security events (#84).** Every 5 minutes,
+  over the servers sending their security logs with agents of revision 4,
+  the *Read the servers' security events* cron reads sign-ins, sudo and
+  auditd's changes from Loki, each with its cursor, and raises
+  `security_ssh_login_foreign` (critical: a key that is not the panel's, a
+  password where the panel signs in with a key, or, where it signs in
+  with a password, another user), `security_ssh_login_panel_key_elsewhere`
+  (critical: the panel's key from an address it does not connect from,
+  once a connection of the panel's own to that server says so; a warning,
+  `security_ssh_login_unconfirmed`, when it cannot connect),
+  `security_sensitive_change` (a change to passwd, shadow, sudoers or the
+  SSH configuration by another user, critical, or by the panel's user or
+  root outside every job, console and terminal of the panel, critical
+  and, for root, a provisional warning) and `security_sudo_foreign` (a
+  warning, with the program and never its arguments). The panel's own sudo
+  is left out in LogQL. A cursor stays put when the central fails and
+  moves only to the last line read at the page limit, two passes in a row
+  of which raise `security_events_backlog`; a server back from a silence
+  is read again from where it went quiet, 24 hours at most. An event is
+  counted once (`cloud.security.event`, 7 days, never the line). The
+  alerts do not resolve themselves and count their repeats; only the two
+  sign-in alerts carry the address, none the country.
+- **The security logs read back from the central (#84).** `models/logs.py`:
+  LogQL over the account's `/lr` route, paged by time, closed templates,
+  parsers anchored at the start of the line whose user names and programs
+  are cut to a closed set before they can reach a message, auditd's
+  records joined by their stamp, and the instances' failed web logins:
+  `logs.weblogin_top_sources` counts the last 1 000 of one instance
+  by address on the panel, IPv6 by its /64, and gives no data, never an
+  error, when the central is busy or down.
+- **The country of an address, on the panel (#84).** `models/geoip.py`:
+  Odoo's `geoip_country_db` when it is there, otherwise DB-IP's IP to
+  Country Lite (CC BY 4.0), which the daily *Refresh the GeoIP database*
+  cron downloads at most once a month from `download.db-ip.com` and keeps
+  as an attachment. Turn off *Show the country of addresses*
+  (`security_geoip`) in the settings to stop both the lookup and the
+  download. No address leaves the panel.
+
 ## [1.0.230] — unreleased
 
 The servers' agents write to the metrics central with a user of their own

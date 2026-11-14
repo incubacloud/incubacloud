@@ -361,6 +361,55 @@ def logql_weblogin(host_id, instance_id):
     )
 
 
+#: A user name the sudo query may leave out in LogQL: written into the
+#: expression, so nothing a regular expression or a LogQL string reads
+#: as special.
+_LOGQL_SAFE_USER = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+
+
+def logql_sudo(host_ids, panel_user=None):
+    """Return the LogQL of the sudo commands, the panel's user's left out.
+
+    The panel's own sudo is most of what a server sends while a job
+    runs (plan #84, A3): it is left out in Loki, as ``classify.lua``
+    counts only the user, so it never fills the pages before another
+    user's command. *host_ids* are servers the panel signs in to as
+    *panel_user*. A user that cannot be written safely into LogQL is not
+    left out here; the caller skips its lines.
+
+    :param host_ids: ``cloud.host`` ids, at least one.
+    :param str panel_user: the user the panel signs in as on them.
+    :rtype: str
+    """
+    expression = logql_lines("sudo", host_ids)
+    if panel_user and _LOGQL_SAFE_USER.match(panel_user):
+        expression += rf' !~ "^\\s*{panel_user} : "'
+    return expression
+
+
+#: The sources the cron asks whether a server sends: the web logins can
+#: be hundreds a minute, and say nothing of whether the rest arrives.
+_SPEAKING = (
+    'sum by (host_id) (count_over_time({log_type="security", '
+    'source=~"sshd|sudo|fail2ban|auditd", %(hosts)s}[%(minutes)dm]))'
+)
+
+
+def logql_speaking(host_ids, minutes):
+    """Return the LogQL that counts each server's lines of the last minutes.
+
+    One instant query for every server: what tells the cron which ones
+    came back from a silence (plan #84, M1).
+
+    :param host_ids: ``cloud.host`` ids, at least one.
+    :param int minutes: the window.
+    :rtype: str
+    """
+    selector = logql_lines("lines", host_ids)
+    hosts = selector[selector.index("host_id"):-1]
+    return _SPEAKING % {"hosts": hosts, "minutes": int(minutes)}
+
+
 def _positive_int(value):
     """Return *value* as a positive int, or raise ValueError.
 

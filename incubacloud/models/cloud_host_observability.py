@@ -131,6 +131,32 @@ class CloudHost(models.Model):
              "notice or from a log line.",
     )
 
+    security_last_line_at = fields.Datetime(
+        string="Last security line read",
+        readonly=True,
+        copy=False,
+        help="When the security events' cron last saw this server send "
+             "security lines. A server silent for longer than the cron's "
+             "overlap, whose lines arrive late with their own time, has "
+             "them read again from here when it speaks again.",
+    )
+    security_previous_key_fingerprint = fields.Char(
+        string="Panel's previous key",
+        readonly=True,
+        copy=False,
+        groups="incubacloud.group_cloud_manager",
+        help="The fingerprint of the key the panel signed in with before "
+             "the last change of this server's key: a sign-in with it from "
+             "before the change, read late, is still the panel's.",
+    )
+    security_key_changed_at = fields.Datetime(
+        string="Panel's key changed",
+        readonly=True,
+        copy=False,
+        groups="incubacloud.group_cloud_manager",
+        help="When this server's key or way of signing in last changed.",
+    )
+
     @api.model
     def _security_logs_default(self):
         """Return the value Send security logs starts with on a new server.
@@ -381,11 +407,40 @@ class CloudHost(models.Model):
             before = {
                 host.id: tuple(host.sudo()[f] for f in watched) for host in self
             }
+        keys_before = {}
+        if "key_file" in vals or "login_type" in vals:
+            keys_before = {
+                host.id: host._panel_key_fingerprints() for host in self
+            }
         result = super().write(vals)
+        for host in self.filtered(lambda h: h.id in keys_before):
+            host._remember_previous_key(keys_before[host.id])
         for host in self.filtered(lambda h: h.id in before):
             if tuple(host.sudo()[f] for f in watched) != before[host.id]:
                 host._reapply_observability_now("server settings changed")
         return result
+
+    def _remember_previous_key(self, fingerprints_before):
+        """Keep the key the panel signed in with before a change of it.
+
+        Called by ``write`` after the key or the way of signing in
+        changed. The security events' cron reads sign-ins up to 15
+        minutes late, and a job that started before the change signs in
+        with the old key: a sign-in with it from before the change is the
+        panel's (plan #84, B1). After it, the old key is anyone's.
+
+        :param list fingerprints_before: what ``_panel_key_fingerprints``
+            gave before the change.
+        """
+        self.ensure_one()
+        if not fingerprints_before:
+            return
+        if fingerprints_before == self._panel_key_fingerprints():
+            return
+        self.sudo().write({
+            "security_previous_key_fingerprint": fingerprints_before[0],
+            "security_key_changed_at": fields.Datetime.now(),
+        })
 
     def _reapply_observability_now(self, reason):
         """Queue this host's agents' install now, installed or failed.

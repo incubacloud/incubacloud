@@ -3314,6 +3314,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__code
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__code
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__code
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_security_event__code
 msgid "Code"
 msgstr "Código"
 
@@ -4215,12 +4216,13 @@ msgstr "Creado"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__create_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_security_event__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__create_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__create_uid
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__create_uid
 msgid "Created by"
 msgstr "Creado por"
 
@@ -4255,12 +4257,13 @@ msgstr "Creado por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__create_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_security_event__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__create_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__create_date
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__create_date
 msgid "Created on"
 msgstr "Creado el"
 
@@ -5147,18 +5150,20 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_repo_mixin__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_security_event__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_security_events__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_security_mixin__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_guard__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_notice__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_queue_job__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_res_users__display_name
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__display_name
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_notice__display_name
 msgid "Display Name"
 msgstr "Nombre para mostrar"
 
@@ -8241,6 +8246,7 @@ msgstr "Clave del webhook"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__host_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_security_event__host_id
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_metric_rule__scope__host
 msgid "Host"
 msgstr "Host"
@@ -8664,18 +8670,20 @@ msgstr "Racha de fallos HTTP"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_repo_mixin__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_security_event__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_security_events__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_security_mixin__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_guard__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_notice__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__id
 #: model:ir.model.fields,field_description:incubacloud.field_queue_job__id
 #: model:ir.model.fields,field_description:incubacloud.field_res_users__id
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__id
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_notice__id
 msgid "ID"
 msgstr "ID"
 
@@ -9829,12 +9837,13 @@ msgstr "Última actividad en el panel el"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__write_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_security_event__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__write_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__write_uid
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__write_uid
 msgid "Last Updated by"
 msgstr "Última actualización por"
 
@@ -9870,12 +9879,13 @@ msgstr "Última actualización por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__write_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_security_event__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__write_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__write_date
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__write_date
 msgid "Last Updated on"
 msgstr "Última actualización el"
 
@@ -25079,3 +25089,324 @@ msgstr ""
 "Un resumen (digest) de cada credencial que el último despliegue o "
 "sincronización correctos puso en la central, uno por línea: lo que indica "
 "que una credencial nueva está en vigor sin guardarla dos veces."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid ""
+"%(host)s: SSH sign-in as %(user)s from %(ip)s at %(time)s %(reason)s. If it "
+"was not someone you know, see Metrics → Security of the server."
+msgstr ""
+"%(host)s: inicio de sesión SSH como %(user)s desde %(ip)s el %(time)s "
+"%(reason)s. Si no fue alguien que usted conozca, consulte Métricas → "
+"Seguridad del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid ""
+"%(host)s: %(count)s SSH sign-ins the panel did not make since %(since)s. The"
+" last: as %(user)s from %(ip)s at %(time)s %(reason)s. If they were not "
+"someone you know, see Metrics → Security of the server."
+msgstr ""
+"%(host)s: desde el %(since)s, %(count)s inicios de sesión SSH que no hizo el"
+" panel. El último: como %(user)s desde %(ip)s el %(time)s %(reason)s. Si no "
+"fueron personas que usted conozca, consulte Métricas → Seguridad del "
+"servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid ""
+"%(host)s: SSH sign-in as %(user)s with the panel's key from %(ip)s at "
+"%(time)s, an address the panel does not connect from (checked with a "
+"connection of its own). The key may have been copied: see Metrics → Security"
+" of the server."
+msgstr ""
+"%(host)s: inicio de sesión SSH como %(user)s con la clave del panel desde "
+"%(ip)s el %(time)s, una dirección que el panel no usa para conectarse "
+"(comprobado con una conexión propia). Puede que la clave se haya copiado: "
+"consulte Métricas → Seguridad del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid ""
+"%(host)s: %(count)s SSH sign-ins with the panel's key from addresses the "
+"panel does not connect from since %(since)s (checked with a connection of "
+"its own). The last: as %(user)s from %(ip)s at %(time)s. The key may have "
+"been copied: see Metrics → Security of the server."
+msgstr ""
+"%(host)s: desde el %(since)s, %(count)s inicios de sesión SSH con la clave "
+"del panel desde direcciones que el panel no usa para conectarse (comprobado "
+"con una conexión propia). El último: como %(user)s desde %(ip)s el %(time)s."
+" Puede que la clave se haya copiado: consulte Métricas → Seguridad del "
+"servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid ""
+"%(host)s: SSH sign-in at %(time)s from an address the panel was not seen "
+"using, and the panel could not connect to the server to check whether it is "
+"its own. See Metrics → Security of the server."
+msgstr ""
+"%(host)s: inicio de sesión SSH el %(time)s desde una dirección que no se ha "
+"visto usar al panel, y el panel no pudo conectarse al servidor para "
+"comprobar si es la suya. Consulte Métricas → Seguridad del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid ""
+"%(host)s: %(count)s SSH sign-ins since %(since)s from addresses the panel "
+"was not seen using, and the panel could not connect to the server to check "
+"whether they are its own; the last at %(time)s. See Metrics → Security of "
+"the server."
+msgstr ""
+"%(host)s: desde el %(since)s, %(count)s inicios de sesión SSH desde "
+"direcciones que no se ha visto usar al panel, y el panel no pudo conectarse "
+"al servidor para comprobar si son suyas; el último, el %(time)s. Consulte "
+"Métricas → Seguridad del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid "a watched file whose name did not arrive"
+msgstr "un archivo vigilado cuyo nombre no llegó"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid "an unknown program"
+msgstr "un programa desconocido"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid ""
+"%(host)s: %(file)s was changed at %(time)s by %(who)s with %(program)s. See "
+"Metrics → Security of the server."
+msgstr ""
+"%(host)s: %(file)s fue modificado el %(time)s por %(who)s con %(program)s. "
+"Consulte Métricas → Seguridad del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid ""
+"%(host)s: %(count)s changes to watched files the panel did not make since "
+"%(since)s. The last: %(file)s at %(time)s by %(who)s with %(program)s. See "
+"Metrics → Security of the server."
+msgstr ""
+"%(host)s: desde el %(since)s, %(count)s cambios en archivos vigilados que no"
+" hizo el panel. El último: %(file)s el %(time)s, por %(who)s con "
+"%(program)s. Consulte Métricas → Seguridad del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid "a command that cannot be read for sure"
+msgstr "un comando que no se puede leer con certeza"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid ""
+"%(host)s: %(count)s sudo commands by users the panel does not sign in as "
+"since %(since)s. The last: %(user)s, %(program)s, at %(time)s. See Metrics →"
+" Security of the server."
+msgstr ""
+"%(host)s: desde el %(since)s, %(count)s comandos sudo de usuarios con los "
+"que no entra el panel. El último: %(user)s, %(program)s, el %(time)s. "
+"Consulte Métricas → Seguridad del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid ""
+"%(host)s: sudo refused %(program)s to %(user)s, who is not the user the "
+"panel signs in as, at %(time)s. See Metrics → Security of the server."
+msgstr ""
+"%(host)s: sudo denegó %(program)s a %(user)s, que no es el usuario con el "
+"que entra el panel, el %(time)s. Consulte Métricas → Seguridad del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid ""
+"%(host)s: %(user)s, who is not the user the panel signs in as, ran "
+"%(program)s with sudo at %(time)s. See Metrics → Security of the server."
+msgstr ""
+"%(host)s: %(user)s, que no es el usuario con el que entra el panel, ejecutó "
+"%(program)s con sudo el %(time)s. Consulte Métricas → Seguridad del "
+"servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid "with a password, while the panel signs in to it with a key"
+msgstr "con contraseña, cuando el panel entra en él con clave"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid "as a user the panel does not sign in as"
+msgstr "como un usuario con el que no entra el panel"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid ""
+"as the panel's user from an address that is not the panel's (checked with a "
+"connection of its own)"
+msgstr ""
+"como el usuario del panel desde una dirección que no es la del panel "
+"(comprobado con una conexión propia)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid "with a key that is not the panel's"
+msgstr "con una clave que no es la del panel"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid "a user other than the panel's (login uid %(auid)s)"
+msgstr "un usuario que no es el del panel (uid de inicio de sesión %(auid)s)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid "root, outside every job and console of the panel"
+msgstr "root, fuera de todo trabajo y consola del panel"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid "the panel's user, outside every job and console of the panel"
+msgstr "el usuario del panel, fuera de todo trabajo y consola del panel"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid "SSH sign-ins"
+msgstr "inicios de sesión SSH"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid "sudo commands"
+msgstr "comandos sudo"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid "changes to watched files"
+msgstr "cambios en archivos vigilados"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+#, python-format
+msgid ""
+"The servers send more %(what)s than the security events' check reads in a "
+"pass: two passes in a row stopped at %(lines)s lines, so their alerts come "
+"late. They are read in order and none is skipped."
+msgstr ""
+"Los servidores envían más %(what)s de lo que la comprobación de eventos de "
+"seguridad lee en una pasada: dos pasadas seguidas se detuvieron en %(lines)s"
+" líneas, así que sus alertas llegan tarde. Se leen en orden y no se salta "
+"ninguna línea."
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_security_event
+msgid "Security event that raised an alert"
+msgstr "Evento de seguridad que levantó una alerta"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_security_events
+msgid "Security events of the servers"
+msgstr "Eventos de seguridad de los servidores"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_security_events_ir_actions_server
+msgid "Read the servers' security events"
+msgstr "Leer los eventos de seguridad de los servidores"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__security_last_line_at
+msgid "Last security line read"
+msgstr "Última línea de seguridad leída"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__security_last_line_at
+msgid ""
+"When the security events' cron last saw this server send security lines. A "
+"server silent for longer than the cron's overlap, whose lines arrive late "
+"with their own time, has them read again from here when it speaks again."
+msgstr ""
+"Cuándo vio por última vez la tarea programada de eventos de seguridad que "
+"este servidor enviaba líneas de seguridad. Si un servidor calla más tiempo "
+"que el solape de la tarea, sus líneas llegan tarde con su propia hora y se "
+"vuelven a leer desde aquí cuando vuelve a enviar."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__security_previous_key_fingerprint
+msgid "Panel's previous key"
+msgstr "Clave anterior del panel"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__security_previous_key_fingerprint
+msgid ""
+"The fingerprint of the key the panel signed in with before the last change "
+"of this server's key: a sign-in with it from before the change, read late, "
+"is still the panel's."
+msgstr ""
+"La huella de la clave con la que entraba el panel antes del último cambio de"
+" la clave de este servidor: un inicio de sesión con ella anterior al cambio,"
+" leído tarde, sigue siendo del panel."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__security_key_changed_at
+msgid "Panel's key changed"
+msgstr "Cambio de la clave del panel"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__security_key_changed_at
+msgid "When this server's key or way of signing in last changed."
+msgstr ""
+"Cuándo cambiaron por última vez la clave de este servidor o su forma de "
+"iniciar sesión."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_security_event__identity
+msgid "Identity"
+msgstr "Identidad"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_security_event__identity
+msgid ""
+"The server and the line's instant and digest, or the server and auditd's "
+"stamp: never the line."
+msgstr ""
+"El servidor y el instante y el resumen de la línea, o el servidor y el sello"
+" de auditd: nunca la línea."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_security_event__event_at
+msgid "Event At"
+msgstr "Momento del evento"
