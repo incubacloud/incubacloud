@@ -458,6 +458,110 @@ class OpsMixin:
             began, lambda: host._metrics_board(range_key, start, end),
         )
 
+    def _security_host(self, host_id):
+        """Return the server a Security view asks about, or None.
+
+        Gated as the server's board: the Developer role (which raises)
+        and the record rules on the host. A host the caller cannot read,
+        and an archived one, is answered as one that does not exist.
+
+        :param int host_id: the server asked about.
+        :rtype: cloud.host | None
+        """
+        self._sec()._check_can_view_metrics()
+        if isinstance(host_id, bool) or not isinstance(host_id, int):
+            return None
+        host = request.env["cloud.host"].browse(host_id)
+        try:
+            if not host.exists() or not host.active:
+                return None
+            host.check_access("read")
+        except AccessError:
+            return None
+        return host
+
+    @staticmethod
+    def _security_instance_param(host, instance_id):
+        """Check the instance filter of a Security view: an id of this server.
+
+        :param host: the ``cloud.host`` asked about.
+        :param instance_id: what the browser sent: None or an int.
+        :returns: ``(id or None, error or None)``; the error when it is
+            not an instance of this server the caller can read.
+        :rtype: tuple
+        """
+        if instance_id in (None, False, 0):
+            return None, None
+        if isinstance(instance_id, bool) or not isinstance(instance_id, int) or instance_id < 0:
+            return None, _("Instance not found")
+        found = request.env["cloud.instance"].search_count([
+            ("id", "=", instance_id), ("host_id", "=", host.id),
+        ])
+        return (instance_id, None) if found else (None, _("Instance not found"))
+
+    @http.route(["/cloud/host/security_board"], type="json", auth="user")
+    def cloud_host_security_board(self, host_id, range_key="1h", start=None,
+                                  end=None, instance_id=None):
+        """Return a server's Security view (plan #84, C6, decision D4).
+
+        The charts, the defence, the HTTP of its instances and the web
+        logins' figures for the Developer role and above; the tables
+        with addresses, users and commands only for whoever manages
+        servers, decided here: without that group the answer has no
+        ``tables`` at all (``cloud.host._security_board``). The browser
+        sends ids and a range, never LogQL. Same per-user limit as the
+        other boards.
+
+        :param int host_id: the server.
+        :param str range_key: ``1h``, ``6h``, ``24h`` or ``7d``.
+        :param start: zoom window start, unix seconds.
+        :param end: zoom window end, unix seconds.
+        :param instance_id: the web-login tables of one instance of this
+            server, over 7 days.
+        """
+        began = time.monotonic()
+        host = self._security_host(host_id)
+        if not host:
+            return {"ok": False, "error": _("Host not found")}
+        instance_id, refused = self._security_instance_param(host, instance_id)
+        if refused:
+            return {"ok": False, "error": refused}
+        detail = self._sec()._has_cloud_group("group_cloud_manager")
+        return self._board_answer(began, lambda: host._security_board(
+            range_key, start, end, instance_id=instance_id, detail=detail,
+        ))
+
+    @http.route(["/cloud/host/security_lines"], type="json", auth="user")
+    def cloud_host_security_lines(self, host_id, source="all", range_key="24h",
+                                  instance_id=None):
+        """Return a server's last security lines of one kind, raw ("see lines").
+
+        Only for whoever manages servers (D4): the lines carry the users
+        an attacker tried, the commands given to sudo and the addresses
+        of the instances' visitors. A closed kind and an id, never
+        LogQL; at most 200 lines.
+
+        :param int host_id: the server.
+        :param str source: ``sshd``, ``sudo``, ``fail2ban``, ``auditd``,
+            ``weblogin`` or ``all``.
+        :param str range_key: how far back, at most 7 days.
+        :param instance_id: with ``weblogin``, one instance of this server.
+        """
+        self._sec()._check_can_manage_hosts()
+        host = self._security_host(host_id)
+        if not host:
+            return {"ok": False, "error": _("Host not found")}
+        instance_id, refused = self._security_instance_param(host, instance_id)
+        if refused:
+            return {"ok": False, "error": refused}
+        limited = rate_gate_json(self._log_read_rule(
+            "security_lines",
+            _("Too many log reads recently. Try again in a minute."),
+        ))
+        if limited:
+            return limited
+        return host._security_lines(source, range_key, instance_id=instance_id)
+
     @http.route(["/cloud/fleet/resource_series"], type="json", auth="user")
     def cloud_fleet_resource_series(self, range_key="1h", start=None, end=None):
         """Return the fleet's board of Monitoring.

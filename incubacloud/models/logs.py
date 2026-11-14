@@ -308,6 +308,14 @@ LOGQL_LINES = {
     # fail2ban's findings, bans and lifts.
     "fail2ban":
         '{log_type="security", source="fail2ban", %(hosts)s}',
+    # fail2ban's bans and lifts alone: whether an address is banned now
+    # (the Security view, C6). ``]`` outside a class is a plain ``]``.
+    "f2b_bans":
+        '{log_type="security", source="fail2ban", %(hosts)s}'
+        ' |~ "] (Restore )?(Ban|Unban) "',
+    # Every sshd line of a server: "see lines" of the SSH tables.
+    "sshd":
+        '{log_type="security", source="sshd", %(hosts)s}',
     # The instances' failed web logins (C1.9).
     "weblogin":
         '{log_type="security", source="weblogin", %(hosts)s}',

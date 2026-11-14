@@ -511,6 +511,135 @@ PANELS = {
             ),
         },
     ),
+    # A server's Security view (plan #84, C6): Fluent Bit's counters
+    # alone, no address and no user in any of them. ``%(range)d`` is the
+    # board's window in seconds, for the figures of the whole range.
+    "host_security": (
+        {
+            "key": "ssh_failed", "kind": "series", "unit": None,
+            "digits": 2, "legend": None,
+            "needs": "host",
+            "queries": (
+                _q("failed", "60 * sum(rate(ic_ssh_auth_failed_total{"
+                   + _HOST_SELECTOR + "}[%(window)ds]))"),
+            ),
+        },
+        {
+            "key": "f2b_bans", "kind": "series", "unit": None,
+            "digits": 2, "legend": "jail",
+            "needs": "host",
+            "queries": (
+                _q("ban", "60 * sum by (jail) (rate(ic_f2b_total{"
+                   + _HOST_SELECTOR + ', action="ban"}[%(window)ds]))'),
+            ),
+        },
+        {
+            "key": "accepted", "kind": "series", "unit": None,
+            "digits": 2, "legend": "kind",
+            "needs": "host",
+            "queries": (
+                _q("use", "3600 * sum by (kind) (rate(ic_ssh_accepted_total{"
+                   + _HOST_SELECTOR + "}[%(window)ds]))"),
+            ),
+        },
+        {
+            "key": "sudo", "kind": "series", "unit": None,
+            "digits": 2, "legend": "kind",
+            "needs": "host",
+            "queries": (
+                _q("use", "3600 * sum by (kind) (rate(ic_sudo_total{"
+                   + _HOST_SELECTOR + "}[%(window)ds]))"),
+            ),
+        },
+        {
+            "key": "audit", "kind": "series", "unit": None,
+            "digits": 2, "legend": "who",
+            "needs": "host",
+            "queries": (
+                _q("use", "3600 * sum by (who) (rate(ic_audit_events_total{"
+                   + _HOST_SELECTOR + "}[%(window)ds]))"),
+            ),
+        },
+        {
+            "key": "heartbeat", "kind": "series", "unit": None,
+            "digits": 1, "legend": "source",
+            "needs": "host",
+            "queries": (
+                _q("use", "3600 * sum by (source) (rate(ic_security_lines_total{"
+                   + _HOST_SELECTOR + "}[%(window)ds]))"),
+            ),
+        },
+        {
+            "key": "collector", "kind": "series", "unit": None,
+            "digits": 1, "legend": None,
+            "needs": "host",
+            "queries": (
+                # Lines the collector handed to the central and lines it
+                # dropped, a minute; the security output is Loki's.
+                _q("delivered", "60 * sum(rate(fluentbit_output_proc_records_total{"
+                   + _HOST_SELECTOR + ', name=~"loki.*"}[%(window)ds]))'),
+                _q("dropped", "60 * sum(rate(fluentbit_output_dropped_records_total{"
+                   + _HOST_SELECTOR + ', name=~"loki.*"}[%(window)ds]))'),
+            ),
+        },
+        {
+            "key": "weblogin", "kind": "series", "unit": None,
+            "digits": 2, "legend": "instance_id",
+            "needs": "host",
+            "queries": (
+                # Named by the panel from the id (``_security_board``):
+                # the counter carries the id alone.
+                _q("use", "60 * sum by (instance_id) (rate(ic_weblogin_failed_total{"
+                   + _HOST_SELECTOR + "}[%(window)ds]))"),
+            ),
+        },
+        {
+            "key": "http", "kind": "table", "unit": None,
+            "digits": 3, "legend": "instance_id",
+            "needs": "host",
+            "queries": (
+                # Means over the board's range, per second, and the
+                # failed web logins of the range; ``instance_id="0"`` is
+                # the attempts no instance was identified for.
+                _q("rps", "sum by (instance_id) (increase("
+                   "traefik_service_requests_total{" + _HOST_SELECTOR
+                   + ', instance_id!=""}[%(range)ds])) / %(range)d'),
+                _q("r4xx", "sum by (instance_id) (increase("
+                   "traefik_service_requests_total{" + _HOST_SELECTOR
+                   + ', instance_id!="", code=~"4.."}[%(range)ds])) / %(range)d'),
+                _q("r5xx", "sum by (instance_id) (increase("
+                   "traefik_service_requests_total{" + _HOST_SELECTOR
+                   + ', instance_id!="", code=~"5.."}[%(range)ds])) / %(range)d'),
+                _q("weblogin", "round(sum by (instance_id) (increase("
+                   "ic_weblogin_failed_total{" + _HOST_SELECTOR
+                   + "}[%(range)ds])))"),
+            ),
+        },
+        {
+            "key": "now", "kind": "stat", "unit": None,
+            "digits": 0, "legend": None,
+            "needs": "host",
+            "queries": (
+                # The SSH rule's window, so the board and the alert agree.
+                _q("ssh_failed_10m", "round(sum(increase(ic_ssh_auth_failed_total{"
+                   + _HOST_SELECTOR + "}[10m])))"),
+                _q("bans_1h", "round(sum(increase(ic_f2b_total{"
+                   + _HOST_SELECTOR + ', action="ban"}[1h])))'),
+                _q("collector_up", 'max(last_over_time(up{job="security", '
+                   + _HOST_SELECTOR + "}[5m]))"),
+                _q("lines_15m", "round(sum(increase(ic_security_lines_total{"
+                   + _HOST_SELECTOR + ', source=~"sshd|sudo|fail2ban|auditd"}[15m])))'),
+                # The web-login jail's bans and lifts over the range: the
+                # ban is of the whole server, not of one instance.
+                _q("weblogin_bans", "round(sum(increase(ic_f2b_total{"
+                   + _HOST_SELECTOR + ', jail="incubacloud-weblogin", '
+                   'action="ban"}[%(range)ds])))'),
+                _q("weblogin_unbans", "round(sum(increase(ic_f2b_total{"
+                   + _HOST_SELECTOR + ', jail="incubacloud-weblogin", '
+                   'action="unban"}[%(range)ds])))'),
+            ),
+        },
+    ),
     "fleet": (
         {
             "key": "summary", "kind": "stat", "unit": None,
