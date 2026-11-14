@@ -386,6 +386,58 @@ STUB
     [[ "$calls" != *"click-odoo-update"* ]]
 }
 
+@test "boot-test stopped as a detached step does, TERM after TERM, still runs its whole trap" {
+    # detached_step.sh stop sends TERM to the session, and the step's
+    # ``timeout`` sends it again to its process group: a TERM that landed
+    # while the trap ran used to kill it there, the rule left live and the
+    # volume kept (spike server, 13-nov-2026). The rule's removal is made
+    # slow here so the second TERM lands inside the trap.
+    hba="$TMP/pg_hba.conf"
+    printf 'local all all trust\n' > "$hba"
+    cp "$hba" "$TMP/pg_hba.before"
+    printf '#!/usr/bin/env bash\necho "sleep $*" >> "$CALLS"\n/bin/sleep 0.1\n' > "$TMP/bin/sleep"
+    chmod +x "$TMP/bin/sleep"
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    "compose exec -T db sh -c "*grep\ -vxF*) : > "$TMP/dropping"; /bin/sleep 1 ;;
+esac
+. "$BOOT_ANSWERS"
+case "$*" in
+    *"compose config --services"*)    printf 'odoo\ndb\nsmtp\n' ;;
+    *"compose ps -q --status running"*)    printf 'odoo\ndb\nsmtp\n' ;;
+    "inspect -f "*)    shift 3; printf '%s\n' "$@" ;;
+esac
+STUB
+    chmod +x "$TMP/bin/docker"
+    STUB_HBA_FILE="$hba" STUB_COPY_BLOCKS=1 \
+        setsid timeout --kill-after=60 60 bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod \
+        >"$TMP/out" 2>&1 </dev/null &
+    pid=$!
+    for _ in $(seq 100); do
+        [ -e "$TMP/copying" ] && break
+        /bin/sleep 0.1
+    done
+    [ -e "$TMP/copying" ]
+    pkill -TERM -s "$pid"
+    for _ in $(seq 100); do
+        [ -e "$TMP/dropping" ] && break
+        /bin/sleep 0.05
+    done
+    [ -e "$TMP/dropping" ]
+    pkill -TERM -s "$pid" || true
+    status=0
+    wait "$pid" || status=$?
+    [ "$status" -eq 143 ]
+    cmp "$hba" "$TMP/pg_hba.before"
+    calls="$(cat "$CALLS")"
+    drop_line="$(printf '%s\n' "$calls" | grep -nF 'grep -vxF' | head -1 | cut -d: -f1)"
+    volume_rm_line="$(printf '%s\n' "$calls" | grep -n 'volume rm ic_boot_42' | tail -1 | cut -d: -f1)"
+    [ -n "$drop_line" ] && [ "$volume_rm_line" -gt "$drop_line" ]
+    [[ "$calls" == *"compose start db odoo smtp"* ]]
+}
+
 @test "boot-test says what it measured and how long the copy should take" {
     STUB_DB_KB=$((50 * 1024 * 1024)) run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
     [ "$status" -eq 0 ]

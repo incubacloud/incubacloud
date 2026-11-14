@@ -301,6 +301,9 @@ case "$op" in
         # shellcheck disable=SC2317  # reached through the EXIT trap below
         ic_boot_restore() {
             ic_boot_rc=$?
+            # The TERMs a stop sends after the first one (below) must not
+            # cut the restore short.
+            trap '' TERM INT HUP
             # First of all: a stop gives the trap 60 s before its KILL
             # (``CANCEL_TERM_WAIT_S``), and removing a volume the size of
             # the database may take longer than that. Normally gone already,
@@ -330,6 +333,16 @@ case "$op" in
             fi
         }
         trap ic_boot_restore EXIT
+        # A stop sends TERM to the step's whole session
+        # (``detached_step.sh stop``), and the ``timeout`` that runs the
+        # step sends it once more to its process group: this shell gets
+        # it two or three times. Left to bash's default, one that lands
+        # while bash goes into the trap kills it there, mostly before the
+        # trap's first line: on a real server (13-nov-2026) the rule
+        # stayed live in pg_hba.conf, the copy went on to its end and its
+        # volume stayed, in most stops. Handled, the first TERM leaves
+        # through the trap and the others are ignored.
+        trap 'trap "" TERM INT HUP; exit 143' TERM INT HUP
 
         # ic_boot_stop MESSAGE: end the test with MESSAGE, on stdout, where
         # the panel reads it to say why the rebuild stopped
