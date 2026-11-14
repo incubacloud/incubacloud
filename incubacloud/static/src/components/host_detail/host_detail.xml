@@ -796,7 +796,7 @@
                                                t-att-checked="state.form.security_logs_enabled"
                                                t-att-disabled="!securityLogsSwitchable"
                                                t-on-change="(ev) => { this.state.form.security_logs_enabled = ev.target.checked; }"/>
-                                        <span>SSH sign-ins and failed attempts (address, user, key), sudo commands, fail2ban's blocks and changes to passwd, shadow, sudoers and the SSH configuration, sent to the metrics central and kept there 90 days. This server can add to them but cannot delete them. Off stops sending; what was sent expires on its own.</span>
+                                        <span>SSH sign-ins and failed attempts (address, user, key), sudo commands, fail2ban's blocks, changes to passwd, shadow, sudoers and the SSH configuration, and the failed sign-ins to its instances (address, instance and time), sent to the metrics central and kept there 90 days. This server can add to them but cannot delete them. Off stops sending; what was sent expires on its own.</span>
                                     </div>
                                     <span class="ic-form-note" t-if="state.securityLogsAvailable === false">
                                         Coming soon.

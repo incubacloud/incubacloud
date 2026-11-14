@@ -93,11 +93,12 @@ class CloudHost(models.Model):
         string="Send security logs",
         default=lambda self: self._security_logs_default(),
         help="SSH sign-ins and failed attempts (address, user, key), sudo "
-             "commands, fail2ban's blocks and changes to passwd, shadow, "
-             "sudoers and the SSH configuration, sent to the metrics central "
-             "and kept there 90 days. This server can add to them but cannot "
-             "delete them. Off stops sending; what was sent expires on its "
-             "own.",
+             "commands, fail2ban's blocks, changes to passwd, shadow, "
+             "sudoers and the SSH configuration, and the failed sign-ins to "
+             "its instances (address, instance and time), sent to the "
+             "metrics central and kept there 90 days. This server can add "
+             "to them but cannot delete them. Off stops sending; what was "
+             "sent expires on its own.",
     )
 
     metrics_write_user = fields.Selection(
