@@ -223,14 +223,17 @@ Re-running it is safe: every step checks the host before it changes anything.
 
 With observability on, each server sends its security logs to the metrics
 central: SSH sign-ins and failed attempts (address, user, key), `sudo`
-commands, fail2ban's blocks and changes to `passwd`, `shadow`, `sudoers`
-and the SSH configuration. The central keeps them 90 days; the server can
+commands, fail2ban's blocks, changes to `passwd`, `shadow`, `sudoers`
+and the SSH configuration, and the failed sign-ins to its instances'
+Odoo login form (address, instance and time only). The central keeps them 90 days; the server can
 add to them but cannot delete them. **Send security logs**, on the
 server's **Connection** tab, stops them for that server; what was sent
 expires on its own. With observability off, the agents already on a server
 keep running, and a change of the switch applies once it is on again. SSH and `sudo` come from the journal, so a server
 that keeps its journal in memory only (no `/var/log/journal`) sends
 fail2ban's and auditd's lines alone, and the agents' install says so.
+What is sent, who sees it and the alerts it raises:
+[Security logs](security.md).
 
 ## DNS for HTTPS
 
@@ -288,4 +291,5 @@ change.
 ## See also
 
 - [Hire a Hetzner VPS](hire.md) if you don't want to bring your own.
+- [Security logs](security.md) of your servers.
 - [Hosts overview](index.md).

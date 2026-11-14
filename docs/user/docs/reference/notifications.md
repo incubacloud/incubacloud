@@ -11,7 +11,10 @@ Job outcomes — a deploy, rebuild, backup or any other operation finishing
 (host unreachable, instance down, disk critical…) and **warning** (a container
 of an instance down, errors in an instance's log, a declined subscription
 payment…). Failed deploys and rebuilds are treated as **severe** and always
-delivered immediately.
+delivered immediately. The alerts from your servers' security logs, and
+what to do with each, are in [Security alerts](security-alerts.md); some of
+them carry IP addresses in their text, which every channel receives as it
+is.
 
 An open warning that turns critical is announced again, on every channel, to
 everyone whose level covers critical alerts.

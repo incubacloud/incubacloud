@@ -67,6 +67,11 @@ of its memory limit for thirty minutes raises a warning, and so do more
 than twelve Odoo workers recycled for memory in an hour. See [Memory and resources](../instances/resources.md)
 for what the panel sets so that Odoo stays below its limit.
 
+Servers that send their [security logs](../hosts/security.md) also raise
+security alerts: a sign-in, `sudo` command or change the panel did not
+make, SSH or web-login brute force, bans that do not hold, and logs that
+stop arriving. See [Security alerts](security-alerts.md).
+
 Alerts arrive through the same channels as everything else — in-app,
 email, Telegram or webhook, as configured.
 
