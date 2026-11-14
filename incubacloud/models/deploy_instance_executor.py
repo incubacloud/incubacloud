@@ -33,7 +33,7 @@ from ._odoo_versions import (
     image_git_safe,
     prefetch_repos,
 )
-from . import _relay_oauth
+from . import _relay_oauth, sftp_dst
 from ._pip_apt_map import resolve_apt_dependencies
 from ._repo_requirements import (
     _apply_excludes,
@@ -894,12 +894,23 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         # sudo: executor is trusted; secret fields are restricted to managers.
         bb = inst.effective_backup_backend.sudo()
         lines = []
-        if bb.s3_access_key_id:
+        if bb.backend_type == "sftp":
+            # The image without ``-s3`` has ``--metadata-sync-mode partial``
+            # only: without a weekly full the chain would grow for good
+            # when nobody deletes. No ``--file-prefix-*``: they carry the
+            # container's hostname, which follows the instance's domain,
+            # and a renamed domain would lose sight of its chain. The key
+            # files travel apart (``cloud.instance._backup_sftp_files``).
+            lines.append(
+                "OPTIONS_EXTRA=--metadata-sync-mode partial --full-if-older-than 1W"
+            )
+        elif bb.s3_access_key_id:
             lines.append(f"AWS_ACCESS_KEY_ID={bb.s3_access_key_id}")
-        if bb.s3_secret_access_key:
-            lines.append(f"AWS_SECRET_ACCESS_KEY={bb.s3_secret_access_key}")
-        if bb.s3_endpoint_url:
-            lines.append(f"AWS_ENDPOINT_URL={bb.s3_endpoint_url}")
+        if bb.backend_type == "s3":
+            if bb.s3_secret_access_key:
+                lines.append(f"AWS_SECRET_ACCESS_KEY={bb.s3_secret_access_key}")
+            if bb.s3_endpoint_url:
+                lines.append(f"AWS_ENDPOINT_URL={bb.s3_endpoint_url}")
         lines.append(f"PASSPHRASE={bb.passphrase or ''}")
         # What applies is the override's (``_backup_deletion_job``): the
         # template's own ``JOB_800_WHAT`` sits in the service's
@@ -2223,6 +2234,13 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         if router in allowed:
             services[router]["labels"].update(self._login_router_labels())
             services[router]["labels"].update(self._website_info_router_labels())
+        if "backup" in allowed and self._backup_ssh_shipped():
+            # Over the ``backup_cache`` volume mounted at /root: the key
+            # is read from the host's file and never lands in the volume.
+            # ``compose run`` (the purge) and ``exec`` inherit it.
+            services["backup"].setdefault("volumes", []).append(
+                sftp_dst.SSH_MOUNT,
+            )
         if "odoo" in allowed:
             services["odoo"]["command"] = self._odoo_command()
             services["odoo"]["volumes"] = [
@@ -2864,16 +2882,53 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             )
         return (("Remove the relay credentials", f"rm -rf {path}"),)
 
-    def _write_extra_env_step(self, d):
-        """Return the step moving the staged addon files into place, or ().
+    def _backup_ssh_shipped(self):
+        """Whether this build ships the ``backup`` service's SSH files.
+
+        Read from the files the instance lists, so the deploy, the
+        rebuild and a layer's own builds agree with what was staged.
+
+        :rtype: bool
+        """
+        return sftp_dst.SSH_KEY_FILE in self._addon_env_files()
+
+    def _backup_ssh_dir_step(self, d):
+        """Return the step that readies or removes the SSH directory.
+
+        With SFTP the directory is created 0700 before the files are
+        moved in. Without it, it goes: a destination changed to S3, or
+        removed, must not leave a key on the host. ``rm -rf`` names that
+        one path.
 
         :param str d: the instance directory
-        :return: a one-step tuple, empty when no addon ships a file
+        :return: a one-step tuple
         :rtype: tuple
         """
+        path = f"{d}/{sftp_dst.SSH_DIR}"
+        if self._backup_ssh_shipped():
+            return ((
+                "Ready the backup SSH directory",
+                f"mkdir -p {path} && chmod 700 {path}",
+            ),)
+        return (("Remove the backup SSH directory", f"rm -rf {path}"),)
+
+    def _write_extra_env_step(self, d):
+        """Return the steps moving the staged addon files into place.
+
+        The ``backup`` service's SSH directory is readied first, or
+        removed when the instance does not back up to SFTP
+        (:meth:`_backup_ssh_dir_step`): every build that writes the files
+        goes through here, a layer's included.
+
+        :param str d: the instance directory
+        :return: the SSH directory's step, then the move when there is a
+            file to move
+        :rtype: tuple
+        """
+        ssh_step = self._backup_ssh_dir_step(d)
         rels = sorted(self._addon_env_files())
         if not rels:
-            return ()
+            return ssh_step
         # One failed move fails the step, wherever it is in the list.
         moves = " && ".join(
             f'{{ f={self._extra_env_tmp(rel)}; if [ -f "$f" ]; then'
@@ -2881,7 +2936,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             f" && chmod 600 {d}/{rel}; fi; }}"
             for rel in rels
         )
-        return (("Write extra env files", moves),)
+        return (*ssh_step, ("Write extra env files", moves))
 
     def _preflight_tls_check(self):
         """Say how each domain will get its certificate; refuse the impossible.

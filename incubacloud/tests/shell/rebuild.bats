@@ -817,12 +817,18 @@ _instance_repo_with_secrets() {
     printf 'curl\n' > "$DIR/odoo/custom/dependencies/apt.txt"
     printf '[options]\nadmin_passwd = IC_FAKE_PASSWORD\n' > "$DIR/odoo/custom/conf.d/inst.conf"
     : > "$DIR/odoo/custom/conf.d/.empty"
+    # The backup service's SFTP key, which the template's /.docker ignore
+    # rule would keep out on its own; the fixture has no .gitignore, so
+    # this checks the second lock.
+    mkdir -p "$DIR/.docker/backup-ssh"
+    printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\nIC_FAKE_BACKUP_KEY\n' \
+        > "$DIR/.docker/backup-ssh/id_ed25519"
 }
 
 # Whether a secret of the fixture is in the repository: index or history.
 _repo_holds_secrets() {
-    git -C "$DIR" ls-files | grep -E '^odoo/custom/ssh/|repos\.yaml$|conf\.d/.*\.conf$|pip\.txt$' \
-        || git -C "$DIR" log --all -p | grep -E 'IC_FAKE_(KEY|PUB|TOKEN|PASSWORD|PIP_TOKEN)'
+    git -C "$DIR" ls-files | grep -E '^odoo/custom/ssh/|repos\.yaml$|conf\.d/.*\.conf$|pip\.txt$|^\.docker/backup-ssh/' \
+        || git -C "$DIR" log --all -p | grep -E 'IC_FAKE_(KEY|PUB|TOKEN|PASSWORD|PIP_TOKEN|BACKUP_KEY)'
 }
 
 @test "commit-dirty keeps the project's secrets out of the repository" {
@@ -842,6 +848,7 @@ _repo_holds_secrets() {
     grep -q IC_FAKE_KEY "$DIR/odoo/custom/ssh/id_rsa"
     grep -q IC_FAKE_TOKEN "$DIR/odoo/custom/src/repos.yaml"
     grep -q IC_FAKE_PASSWORD "$DIR/odoo/custom/conf.d/inst.conf"
+    grep -q IC_FAKE_BACKUP_KEY "$DIR/.docker/backup-ssh/id_ed25519"
     [ -z "$(git -C "$DIR" status --porcelain)" ]
 }
 
@@ -1099,7 +1106,8 @@ _instance_repo_with_trees() {
     [ "$(id -u)" -ne 0 ] || skip "root writes a read-only exclude file anyway"
     _instance_repo_with_trees
     rm -rf "$DIR/odoo/custom/ssh" "$DIR/odoo/custom/conf.d"/*.conf \
-        "$DIR/odoo/custom/src/repos.yaml" "$DIR/odoo/custom/dependencies/pip.txt"
+        "$DIR/odoo/custom/src/repos.yaml" "$DIR/odoo/custom/dependencies/pip.txt" \
+        "$DIR/.docker/backup-ssh"
     mkdir -p "$DIR/.git/info"
     : > "$DIR/.git/info/exclude"
     chmod 444 "$DIR/.git/info/exclude"
