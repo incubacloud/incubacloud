@@ -32,6 +32,7 @@ const MENU_CHROME_HEIGHT = 1;
  *   allowFreeText {boolean}                  accept values not in options
  *   emptyLabel   {string}                    label shown for null/empty value
  *   onOpen       {() => void}                called when dropdown opens (lazy-load hook)
+ *   id           {string}                    the input's id, so a <label for> names it
  */
 export class SearchSelect extends Component {
     static template = "incubacloud.SearchSelect";
@@ -45,6 +46,7 @@ export class SearchSelect extends Component {
         allowFreeText: { type: Boolean, optional: true },
         emptyLabel:    { type: String, optional: true },
         onOpen:        { type: Function, optional: true },
+        id:            { type: String, optional: true },
     };
     static defaultProps = {
         placeholder:   _t("Search…"),

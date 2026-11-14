@@ -171,6 +171,22 @@ panel's assets and the Spanish catalogue change.
   The English labels and checkbox words do not change; the Spanish
   writes CDN in the feminine throughout («una CDN», «la CDN»), the label
   of *Reached through a CDN* included.
+- **The dialogs' labels name their fields, and a notification Save that
+  stops says where (#13).** Every label of *Notification Preferences*,
+  of the hardening dialog's production check, of *Import project from
+  GitHub* and of continuous recovery's card and *Restore to a moment*
+  names its control by `for`/`id` (the hardening check by
+  `aria-labelledby` to its prompt). `SearchSelect` takes an `id` for its
+  input, and `PasswordInput` takes `ariaInvalid` and `ariaDescribedby`,
+  the row's error describing its input before the hint. When Save in
+  *Notification Preferences* stops on a chat ID without a bot token, a
+  token without a chat ID or a signing secret without a webhook URL, the
+  message also shows under that field, in its open card, the control
+  `aria-invalid` and described by it, and the focus goes there; typing
+  in those fields clears it. A branch fetch that fails on import marks
+  the repository URL `aria-invalid`, described by the message, now in
+  `--rl-red-text`. *Restore to a moment*'s field is described by the
+  range it accepts. No text changes.
 
 ### Fixed
 

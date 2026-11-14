@@ -147,10 +147,12 @@
                                         This host runs
                                         <strong><t t-esc="state.preflight.prod_running"/></strong>
                                         <t t-if="state.preflight.prod_running === 1"> production instance.</t>
-                                        <t t-else=""> production instances.</t> <t t-out="prodConfirmPrompt"/>
+                                        <t t-else=""> production instances.</t> <span id="ic-hm-prod-prompt"><t t-out="prodConfirmPrompt"/></span>
                                     </p>
                                     <div class="rl-frow ic-hm-prod-frow">
                                         <input type="text"
+                                               id="ic-hm-prod-input"
+                                               aria-labelledby="ic-hm-prod-prompt"
                                                class="ic-hm-prod-input"
                                                t-model="state.prodConfirmInput"
                                                t-att-placeholder="props.hostName"

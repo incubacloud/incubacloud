@@ -100,6 +100,17 @@ describe("PasswordInput — what it shows", () => {
         );
         expect(standIn({ hasValue: true, id: "pw" }, { replacing: true }).hintId).toBe(undefined);
     });
+
+    test("a row's error describes the input before the hint, and alone without one", () => {
+        expect(
+            standIn(
+                { hasValue: false, autoGenerate: true, id: "pw", ariaDescribedby: "pw-err" }, {},
+            ).inputDescribedby
+        ).toBe("pw-err pw-hint");
+        expect(standIn({ hasValue: false, id: "pw", ariaDescribedby: "pw-err" }, {}).inputDescribedby)
+            .toBe("pw-err");
+        expect(standIn({ hasValue: false, id: "pw" }, {}).inputDescribedby).toBe(undefined);
+    });
 });
 
 /**

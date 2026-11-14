@@ -29,6 +29,10 @@ describe("SearchSelect — class structure", () => {
     test("defaultProps sets allowFreeText to false", () => {
         expect(SearchSelect.defaultProps.allowFreeText).toBe(false);
     });
+
+    test("props takes an optional id, for the form's label", () => {
+        expect(SearchSelect.props.id).toEqual({ type: String, optional: true });
+    });
 });
 
 describe("SearchSelect — option normalisation logic", () => {

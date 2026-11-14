@@ -35,10 +35,14 @@
                         </p>
 
                         <div class="ic-frow">
-                            <label>GitHub repository URL <span class="ic-req">*</span></label>
+                            <label for="ic-import-url">GitHub repository URL <span class="ic-req">*</span></label>
                             <div class="ic-import-url-row">
                                 <input
+                                    id="ic-import-url"
                                     type="url"
+                                    aria-required="true"
+                                    t-att-aria-invalid="state.branchError ? 'true' : undefined"
+                                    t-att-aria-describedby="state.branchError ? 'ic-import-url-error' : undefined"
                                     t-model="state.repoUrl"
                                     placeholder="https://github.com/your-org/your-project"
                                     t-on-keydown="onUrlKeydown"
@@ -50,12 +54,14 @@
                                 </span>
                             </div>
                             <div t-if="state.branchError" class="ic-repo-fetch-error"
+                                 id="ic-import-url-error"
                                  t-esc="state.branchError"/>
                         </div>
 
                         <div class="ic-frow">
-                            <label>Branch</label>
+                            <label for="ic-import-branch">Branch</label>
                             <SearchSelect
+                                id="'ic-import-branch'"
                                 options="state.branches"
                                 value="state.branch"
                                 onChange="(v) => { state.branch = v; }"

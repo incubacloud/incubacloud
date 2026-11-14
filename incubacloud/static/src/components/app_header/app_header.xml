@@ -208,15 +208,17 @@
                     </div>
                     <div class="ic-notif-card-body">
                         <div class="ic-form-row">
-                            <label>What to receive</label>
-                            <RlSelect value="state.notifLevel"
+                            <label for="ic-notif-level">What to receive</label>
+                            <RlSelect id="'ic-notif-level'"
+                                      value="state.notifLevel"
                                       ariaLabel="'What to receive'"
                                       options="notifLevelOptions"
                                       onChange="(value) => { state.notifLevel = value; }"/>
                         </div>
                         <div class="ic-form-row" t-if="state.notifLevel !== 'none'">
-                            <label>Delivery mode</label>
-                            <RlSelect value="state.notifMode"
+                            <label for="ic-notif-mode">Delivery mode</label>
+                            <RlSelect id="'ic-notif-mode'"
+                                      value="state.notifMode"
                                       ariaLabel="'Delivery mode'"
                                       options="[
                                           { value: 'immediate',    label: 'Immediate (one notification per event)' },
@@ -225,7 +227,7 @@
                                       onChange="(value) => { state.notifMode = value; }"/>
                         </div>
                         <div class="ic-form-row">
-                            <label>Muted projects</label>
+                            <label for="ic-notif-muted">Muted projects</label>
                             <div t-if="state.notifMuted.length" class="ic-notif-chips">
                                 <t t-foreach="state.notifMuted" t-as="proj" t-key="proj.id">
                                     <span class="ic-notif-chip">
@@ -236,7 +238,8 @@
                                     </span>
                                 </t>
                             </div>
-                            <SearchSelect options="mutableProjects"
+                            <SearchSelect id="'ic-notif-muted'"
+                                          options="mutableProjects"
                                           value="null"
                                           placeholder.translate="Mute a project…"
                                           onChange="(value) => this.addMutedProject(value)"/>
@@ -297,21 +300,28 @@
                         <i t-att-class="state.expandedSection === 'telegram' ? 'fa fa-chevron-up ic-notif-card-chevron' : 'fa fa-chevron-down ic-notif-card-chevron'"/>
                     </div>
                     <div class="ic-notif-card-body" t-if="state.expandedSection === 'telegram'">
-                        <div class="ic-form-row">
+                        <div t-att-class="'ic-form-row' + (state.notifErrors?.telegramToken ? ' has-error' : '')">
                             <label for="ic-notif-telegram-token" id="ic-notif-telegram-token-label">Bot token</label>
                             <PasswordInput id="'ic-notif-telegram-token'"
+                                           ariaInvalid="!!state.notifErrors?.telegramToken"
+                                           ariaDescribedby="state.notifErrors?.telegramToken ? 'ic-notif-err-telegramToken' : undefined"
                                            value="state._telegramToken"
                                            hasValue="state.telegramTokenConfigured"
                                            emptyHint="'Get this from @BotFather on Telegram'"
                                            onChange="(v) => this.onTelegramTokenChange(v)"/>
+                            <span t-if="state.notifErrors?.telegramToken" class="ic-field-error"
+                                  id="ic-notif-err-telegramToken" t-esc="state.notifErrors.telegramToken"/>
                         </div>
-                        <div class="ic-form-row">
-                            <label>Chat ID</label>
+                        <div t-att-class="'ic-form-row' + (state.notifErrors?.telegramChatId ? ' has-error' : '')">
+                            <label for="ic-notif-telegram-chat">Chat ID</label>
                             <div class="ic-notif-inline">
-                                <input class="ic-notif-inline-input"
+                                <input id="ic-notif-telegram-chat"
+                                       class="ic-notif-inline-input"
                                        type="text"
+                                       t-att-aria-invalid="state.notifErrors?.telegramChatId ? 'true' : undefined"
+                                       t-att-aria-describedby="state.notifErrors?.telegramChatId ? 'ic-notif-err-telegramChatId' : undefined"
                                        t-att-value="state.telegramChatId"
-                                       t-on-input="(ev) => state.telegramChatId = ev.target.value"
+                                       t-on-input="(ev) => this.onTelegramChatIdInput(ev.target.value)"
                                        placeholder="e.g. 123456789 or @channelname"/>
                                 <button class="ic-notif-inline-btn"
                                         type="button"
@@ -321,6 +331,8 @@
                                     <t t-else="">Detect</t>
                                 </button>
                             </div>
+                            <span t-if="state.notifErrors?.telegramChatId" class="ic-field-error"
+                                  id="ic-notif-err-telegramChatId" t-esc="state.notifErrors.telegramChatId"/>
                         </div>
                         <button class="ic-notif-test-btn"
                                 type="button"
@@ -357,13 +369,18 @@
                             See <code>docs/webhooks.md</code> for payload format
                             and verification examples.
                         </p>
-                        <div class="ic-form-row">
-                            <label>Webhook URL</label>
-                            <input type="text"
+                        <div t-att-class="'ic-form-row' + (state.notifErrors?.webhookUrl ? ' has-error' : '')">
+                            <label for="ic-notif-webhook-url">Webhook URL</label>
+                            <input id="ic-notif-webhook-url"
+                                   type="text"
                                    class="ic-notif-url-input"
+                                   t-att-aria-invalid="state.notifErrors?.webhookUrl ? 'true' : undefined"
+                                   t-att-aria-describedby="state.notifErrors?.webhookUrl ? 'ic-notif-err-webhookUrl' : undefined"
                                    t-att-value="state.webhookUrl"
-                                   t-on-input="(ev) => state.webhookUrl = ev.target.value"
+                                   t-on-input="(ev) => this.onWebhookUrlInput(ev.target.value)"
                                    placeholder="https://hooks.example.com/cloud"/>
+                            <span t-if="state.notifErrors?.webhookUrl" class="ic-field-error"
+                                  id="ic-notif-err-webhookUrl" t-esc="state.notifErrors.webhookUrl"/>
                         </div>
                         <div class="ic-form-row">
                             <label for="ic-notif-webhook-secret" id="ic-notif-webhook-secret-label">Signing secret</label>
