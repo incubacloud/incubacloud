@@ -29,6 +29,59 @@
                     </p>
                 </section>
 
+                <!-- Security: figures only; the detail is in each server -->
+                <section t-if="security.state" class="ic-mb-section" aria-labelledby="ic-fb-security"
+                         t-att-data-security="security.state">
+                    <h3 class="ic-mb-h" id="ic-fb-security">Security</h3>
+                    <t t-if="security.state === 'unavailable'">
+                        <div class="ic-mb-empty ic-fb-sec-off">
+                            <p class="ic-fb-sec-title">Security logs are not available on this panel yet</p>
+                            <p>Its servers do not send their security logs until the panel's provider allows them.</p>
+                        </div>
+                    </t>
+                    <t t-else="">
+                        <p class="ic-mb-sub">Figures only: who tried and from where is in each server's Metrics tab, under Security.</p>
+                        <p t-if="isOperator" class="ic-mb-sub" data-note="operator">The central's figures count every account's servers; only this panel's servers are listed.</p>
+                        <p t-if="panelError('security')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('security')"/>
+                        <div class="ic-fb-tiles" data-panel="security">
+                            <t t-foreach="securityTiles" t-as="tile" t-key="tile.key">
+                                <div t-att-class="'rl-card ic-fb-tile is-' + tile.tone" t-att-data-tile="tile.key">
+                                    <span class="ic-fb-tile-value" t-esc="tile.value"/>
+                                    <span class="ic-fb-tile-label" t-esc="tile.label"/>
+                                </div>
+                            </t>
+                        </div>
+                        <div class="ic-fb-sec-grid">
+                            <t t-set="c" t-value="securityCard"/>
+                            <t t-call="incubacloud.ChartBoardCard"/>
+                            <div class="rl-card rl-card-pad" data-panel="security_hosts">
+                                <div class="ic-mb-cardhead">
+                                    <span class="rl-ovtitle">Servers to look at</span>
+                                    <span class="ic-mb-hint">this panel's own</span>
+                                </div>
+                                <ul t-if="securityRows.length" class="ic-fb-sec-list">
+                                    <t t-foreach="securityRows" t-as="row" t-key="row.host_id">
+                                        <li class="ic-fb-sec-row" t-att-data-host="row.host_id">
+                                            <span class="ic-fb-sec-name">
+                                                <a t-if="canOpenHost(row)" href="#" class="ic-hb-link"
+                                                   t-on-click.prevent="() => this.openHost(row)" t-esc="row.name"/>
+                                                <t t-else="" t-esc="row.name"/>
+                                            </span>
+                                            <span class="ic-fb-sec-flags">
+                                                <t t-foreach="securityFlags(row)" t-as="flag" t-key="flag.key">
+                                                    <span t-att-class="'ic-fb-sec-flag is-' + flag.tone" t-att-data-flag="flag.key" t-esc="flag.text"/>
+                                                </t>
+                                            </span>
+                                        </li>
+                                    </t>
+                                </ul>
+                                <p t-else="" class="ic-mb-empty">No server of this panel has anything to look at.</p>
+                                <p t-if="security.hidden" class="ic-mb-empty" t-esc="securityHiddenText"/>
+                            </div>
+                        </div>
+                    </t>
+                </section>
+
                 <!-- Busiest servers -->
                 <section class="ic-mb-section" aria-labelledby="ic-fb-busiest">
                     <h3 class="ic-mb-h" id="ic-fb-busiest">Busiest servers</h3>
