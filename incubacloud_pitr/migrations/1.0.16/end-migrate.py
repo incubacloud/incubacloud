@@ -11,9 +11,11 @@ the bucket for as long as the instance lived.
   its last rebuild rendered, unless its destination changed since, which
   nothing recorded.
 * Every instance switched off with a cluster gets its purge date
-  (``_pitr_schedule_leftover_purges``): from the end of the last
-  ``pitr_disable`` that ended well when no ``pitr_enable`` was asked for
-  after it, or from now.
+  (``_pitr_schedule_leftover_purges``), from now: whoever switched it off
+  did so when the archive stayed, and gets the whole window from the
+  update to switch it on again and keep it. Dated from the switch off, an
+  archive switched off longer than the window ago would go minutes after
+  the update.
 
 ``end`` and not ``post``: a layer's override of the window
 (``_pitr_window_days``, a plan's retention) has to be loaded
@@ -51,9 +53,7 @@ def migrate(cr, version):
                 "pitr_rendered_backend_id": backend.id,
             })
             rendered += 1
-    scheduled = Instance._pitr_schedule_leftover_purges(
-        from_jobs=True,
-    )
+    scheduled = Instance._pitr_schedule_leftover_purges()
     _logger.info(
         "incubacloud_pitr 1.0.16: %d rendered recovery prefix(es) recorded, "
         "%d archive(s) switched off given a purge date", rendered, scheduled,

@@ -259,8 +259,7 @@ at once. A run again is harmless: it finds nothing left before the cutoff
 and goes on. A stack configured outside the panel is not purged (its
 runbook), nor an archived instance, whose archive goes with its record
 (§5). An instance switched off before 1.0.229 got its dates from the
-update: from its last `pitr_disable`, or from the update when its jobs do
-not say.
+update.
 
 ## Rollback
 
