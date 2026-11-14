@@ -588,6 +588,30 @@ silence come first, twenty at most.
 The three routes share one budget per user (20 boards a minute,
 `_BOARD_READS_PER_MIN`).
 
+The Fleet view's **Security** block (plan #84 C7) is figures only, for
+the same `developer` role and above, with no address, user or alert text
+for anyone:
+
+- **From the central** (`PANELS["fleet"]` with `needs: "fleet_security"`,
+  every account's on the operator's route): failed SSH logins and bans of
+  the last hour and per hour over the window, the servers under SSH brute
+  force and the instances under web-login brute force now (over the rules'
+  10-minute windows and with the current thresholds of
+  `security_ssh_bruteforce` and `security_weblogin_bruteforce`, so the
+  board and the alerts agree; instance `0` left out), and the servers
+  whose security logs do not arrive, as `security_logs_silent` reads it.
+- **From the panel's database**: the servers with *Send security logs* off
+  and those not hardened, and the servers with active security alerts
+  the caller can read, by count and worst level.
+- **The servers to look at** are this panel's own the caller can read,
+  twenty at most, the worst first. The per-server rows of the central
+  (`kind: "hosts"`) are matched by account and `host_id`, so a server of
+  another account is never named on the operator's board even when its
+  id is one of this panel's; a server whose switch is off is not counted
+  as silent.
+- **Not asked at all** where `_security_logs_available()` is false: the
+  block says security logs are not available on this panel yet.
+
 ### A server's Security view
 
 The server's **Metrics** tab has two views, *Performance* (the board
