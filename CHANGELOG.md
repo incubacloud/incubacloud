@@ -126,6 +126,19 @@ panel's assets and the Spanish catalogue change.
   token or a webhook signing secret typed before Cancel is dropped, where
   the next Save sent it and replaced the stored one.
 
+### Tests
+
+- **A job scenario known to repeat a once-only call must still leave the
+  same world (#26).** The idempotency harness only asked a scenario
+  declared divergent not to converge, so a change to the database in one
+  (an alert, the job's result) went unseen. A reason given as
+  `RepeatsOnceCalls` declares the divergence confined to the calls that
+  must happen once: the scenario must still leave the reference world and
+  make no once-only call the reference did not. The two scenarios of
+  `relay_test_mail` that send the test mail twice are declared so, and a
+  test changes the host's row along with the second mail to see the
+  check fail.
+
 ---
 
 ## [1.0.228] — 2026-11-13

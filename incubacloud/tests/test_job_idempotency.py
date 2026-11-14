@@ -9,9 +9,12 @@ or exempted on purpose.
 Specified here: ``delete_instance`` and ``restore_instance``, and
 ``relay_test_mail``, which came with the relay's test mail. The rest wait.
 """
+import contextlib
+import dataclasses
 import json
 import shlex
 from pathlib import Path
+from unittest.mock import patch
 
 from odoo.tests.common import TransactionCase
 
@@ -21,6 +24,7 @@ from .idempotency_harness import (
     Call,
     IdempotencyCase,
     JobSpec,
+    RepeatsOnceCalls,
     uncovered_job_types,
 )
 
@@ -218,7 +222,7 @@ def _the_relay_takes_it(ledger, host, method, detail):
     return None
 
 
-_SENDS_IT_AGAIN = (
+_SENDS_IT_AGAIN = RepeatsOnceCalls(
     "the mail left before anything stores it: an attempt that dies after"
     " the relay took it and before on_success commits sends the person a"
     " second test mail, which says the same of the relay"
@@ -227,7 +231,8 @@ _SENDS_IT_AGAIN = (
 #: The relay's test mail. No retry on a lost connection
 #: (``_retry_on_connection_loss``), no point of no return (a stop removes
 #: the waiting mail from the relay's queue, ``relay_test.sh``), and a
-#: failure holds no queue. What it may not repeat is the mail itself.
+#: failure holds no queue. What it may not repeat is the mail itself; the
+#: two scenarios that do repeat it must still leave the reference world.
 RELAY_TEST_SPEC = JobSpec(
     code="relay_test_mail",
     setup=_relay_test_setup,
@@ -252,6 +257,36 @@ class TestCoreJobTypesRunTwice(IdempotencyCase):
     def test_relay_test_mail(self):
         """A test whose commit is lost does not send its mail again."""
         self.check_spec(RELAY_TEST_SPEC)
+
+
+def _the_relay_takes_it_and_the_host_changes(ledger, host, method, detail):
+    """As ``_the_relay_takes_it``; a second mail also changes the host's row.
+
+    A world that diverges in the very scenarios known to repeat the mail.
+    """
+    answer = _the_relay_takes_it(ledger, host, method, detail)
+    if len(ledger.of("mail")) > 1:
+        host.env.cr.execute(
+            'UPDATE cloud_host SET "user" = %s WHERE id = %s',
+            ("changed", host.id),
+        )
+    return answer
+
+
+class TestARepeatedOnceCallKeepsTheWorld(IdempotencyCase):
+    """A scenario known to repeat a once-only call is still held to the world."""
+
+    def test_a_world_behind_the_repeated_mail_fails(self):
+        """The test mail sent twice may not hide a change to the database."""
+        spec = dataclasses.replace(
+            RELAY_TEST_SPEC, answer=_the_relay_takes_it_and_the_host_changes,
+        )
+        # Raise the subtest's failure here instead of recording it.
+        with patch.object(
+            type(self), "subTest",
+            lambda _self, **_kw: contextlib.nullcontext(),
+        ), self.assertRaisesRegex(AssertionError, "left another world"):
+            self.check_spec(spec)
 
 
 class TestEveryCoreJobTypeIsSpecified(TransactionCase):
