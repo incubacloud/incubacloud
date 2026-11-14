@@ -158,8 +158,17 @@ class TestTheHeadersSent(HttpCase):
         )
 
     def test_the_web_client_is_never_framed(self):
-        """``/odoo`` sends X-Frame-Options DENY; its CSP says ``'none'`` too."""
-        self.authenticate("framing-user", "framing-user-pw")
+        """``/odoo`` sends X-Frame-Options DENY; its CSP says ``'none'`` too.
+
+        Read as an administrator: a module on top may send any other
+        user from the web client to the panel, and the redirect is not
+        the page whose headers this test reads.
+        """
+        new_test_user(
+            self.env, login="framing-admin", password="framing-admin-pw",
+            groups="base.group_user,base.group_system",
+        )
+        self.authenticate("framing-admin", "framing-admin-pw")
         self.assertFraming(self._get("/odoo"), "frame-ancestors 'none'", "DENY")
 
     def test_an_svg_keeps_default_src_none_and_gains_the_frame(self):
