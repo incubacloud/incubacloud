@@ -191,7 +191,8 @@ class TestSecurityBoard(HttpCase):
             })
         self.lookup = create_autospec(geoip.CountryLookup, instance=True)
         self.lookup.return_value = "DE"
-        self.lookup.attribution.return_value = geoip.ATTRIBUTION
+        # A property on the real class: a value, never a call.
+        self.lookup.attribution = geoip.ATTRIBUTION
         country = patch.object(geoip, "resolver", return_value=self.lookup)
         country.start()
         self.addCleanup(country.stop)
