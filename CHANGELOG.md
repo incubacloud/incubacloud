@@ -105,6 +105,13 @@ columns: Odoo keeps what each holds as its English text.
   instance once, on its worst sample: a server renamed within a window
   answered twice and the second sample could resolve what the first
   raised.
+- **The agents' user is in force by its credential, not by its name
+  (#84).** The agents write with it only while the last list put on the
+  central carries it with the token the panel holds; a token minted again
+  while the user's name is still on the list keeps them on the account's
+  credential until the next sync puts the new one there, instead of a 401
+  on every server. The installs, the reconciliation's revision pass and
+  the read credential's rotation decide by the same check.
 
 ## [1.0.230] — unreleased
 

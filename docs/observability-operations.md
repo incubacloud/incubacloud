@@ -138,9 +138,11 @@ values, metadata, the log index) until 1.0.230.
 plan #84 A2):
 
 - The agents write with it only while the central's list carries it
-  (`metrics_accounts_deployed`), or where a module that extends the panel
-  hands it over only once its central knows it
-  (`cloud.settings._metrics_credentials_injected`); otherwise with the
+  with the token the panel holds (its digest in
+  `metrics_credentials_deployed`, not the user's name alone: a token
+  minted again is not in force until a sync puts it there), or where a
+  module that extends the panel hands it over only once its central knows
+  it (`cloud.settings._metrics_credentials_injected`); otherwise with the
   account's credential, as before. A credential vmauth does not know is
   a 401 loop on every server.
 - The moment it comes into force, every server's agents are applied
