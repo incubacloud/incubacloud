@@ -312,12 +312,16 @@ class CloudInstance(models.Model):
         because the computed one follows the project; the recovery prefix
         follows it too (``_pitr_bucket_path``), and an archived instance
         whose project changed or went would have its archive purged at a
-        prefix that is not its own, or not at all. Only for an instance
-        that had an archive, on a destination with a bucket; a frozen one
-        is kept.
+        prefix that is not its own, or not at all. The prefix its server
+        was last given (``pitr_rendered_prefix``) when there is one: that
+        is where it archived. Only for an instance that had an archive, on
+        a destination with a bucket; a frozen one is kept.
         """
         super()._freeze_backup_dst()
         if self.pitr_archived_prefix or not self._pitr_had_archive():
+            return
+        if self.pitr_rendered_prefix:
+            self.sudo().write({"pitr_archived_prefix": self.pitr_rendered_prefix})
             return
         bucket, path = self._pitr_bucket_path()
         if not (bucket and path):
@@ -921,8 +925,14 @@ class CloudInstance(models.Model):
         if self.move_origin_host_id or self.pitr_stack_external or not self.host_id:
             return None
         if self._pitr_active():
-            # Wanted on again (a plan raised, the field set): the archive
-            # is kept, and a purge still waiting would hold the switch.
+            if self._pitr_purge_due():
+                # Wanted on again once its archive's date came: the watch
+                # empties it first (``_pitr_queue_due_purges``), and the
+                # pass after switches it on from nothing.
+                return None
+            # Wanted on again before then (a plan raised, the field set):
+            # the archive is kept, and a purge still waiting would hold
+            # the switch.
             self._pitr_cancel_purge()
         if self._pitr_job_in_flight(PITR_JOBS):
             return None
@@ -980,9 +990,20 @@ class CloudInstance(models.Model):
         destination, leaves what was archived before where it was, with
         nothing that empties it: ``pitr_prefix_changed`` says where
         (``_pitr_alert_prefix_changed``).
+
+        Switched off with a prefix kept, it is left as it is: nothing
+        archives at the new one, and the purge of the archive switched
+        off empties the one it was archived at. So while it waits for that
+        purge, wanted on again once its date came. Switched on again, the
+        rebuild that renders the new one raises the alert; after the
+        purge, which forgets the prefix, it is only kept.
         """
         self.ensure_one()
         if not self._pitr_writes_env():
+            return
+        if self.pitr_rendered_prefix and (
+            not self._pitr_renders() or self._pitr_purge_due()
+        ):
             return
         backend = self.effective_backup_backend
         prefix = self._pitr_prefix_base()
@@ -1050,23 +1071,24 @@ class CloudInstance(models.Model):
             return backend, ""
         return backend, self._pitr_prefix_base()
 
-    def _pitr_schedule_purge(self, off_at=None):
+    def _pitr_schedule_purge(self, again=False):
         """Fix the day the archive of an instance switched off is emptied.
 
-        The moment it stopped archiving plus the backup window it has
-        then: fixed now, never recalculated, as a plan that lowers the
-        retention also switches it off. Only for an instance with an
-        archive (a cluster recorded, or a prefix rendered); a date already
-        fixed is kept.
+        Now plus the backup window it has now: fixed, never recalculated,
+        as a plan that lowers the retention also switches it off. Only for
+        an instance with an archive (a cluster recorded, or a prefix
+        rendered); a date already fixed is kept unless *again*.
 
-        :param datetime off_at: when it stopped archiving (now by default)
+        :param bool again: date it from now even with a date fixed: what
+            ``pitr_disable`` does, as archiving went on until it ran (a
+            switch on that did not clear the dates, such as a move's)
         """
         self.ensure_one()
-        if self.pitr_purge_at or not (
+        if (self.pitr_purge_at and not again) or not (
             self.pitr_cluster_id or self.pitr_rendered_prefix
         ):
             return
-        off_at = off_at or fields.Datetime.now()
+        off_at = fields.Datetime.now()
         self.sudo().write({
             "pitr_off_at": off_at,
             "pitr_purge_at": off_at + timedelta(days=self._pitr_window_days()),
@@ -1075,13 +1097,15 @@ class CloudInstance(models.Model):
     def _pitr_cancel_purge(self):
         """Keep the archive: the instance is to archive again.
 
-        Clears the purge date and cancels a ``pitr_purge`` still waiting
-        in the queue. One already running goes on: its cutoff keeps it to
-        what was archived before the switch off, and it leaves the record
-        alone (``_pitr_purge_pending``).
+        Before the purge date only: clears it and cancels a ``pitr_purge``
+        still waiting in the queue. Once the date came, nothing: the purge
+        may have started, and the program deletes the oldest base copies
+        first, so a purge cut short leaves deltas without their base, on
+        which a switch on would take its first copy. That archive is
+        emptied first, then switched on from nothing (``_pitr_reconcile``).
         """
         self.ensure_one()
-        if not (self.pitr_off_at or self.pitr_purge_at):
+        if not (self.pitr_off_at or self.pitr_purge_at) or self._pitr_purge_due():
             return
         self.sudo().write({"pitr_off_at": False, "pitr_purge_at": False})
         waiting = self._pitr_jobs_in_flight(("pitr_purge",)).filtered(
@@ -1096,19 +1120,32 @@ class CloudInstance(models.Model):
             ALERT_PURGE_FAILED, instance=self,
         )
 
-    def _pitr_purge_pending(self, before=None):
-        """Whether the archive is still to be emptied as switched off.
+    def _pitr_purge_due(self):
+        """Whether the purge date of the archive switched off has come.
 
-        Not archiving, nor wanted to, with a purge date; with *before*,
-        switched off at that moment, the cutoff a purge was queued with.
+        :rtype: bool
+        """
+        self.ensure_one()
+        return bool(
+            self.pitr_purge_at and self.pitr_purge_at <= fields.Datetime.now()
+        )
+
+    def _pitr_purge_pending(self, before=None):
+        """Whether the archive is to be emptied as switched off, now.
+
+        Not archiving, with a purge date that came: also when wanted on
+        again since, as a switch on waits for the purge then
+        (``_pitr_cancel_purge``). With *before*, switched off at that
+        moment, the cutoff a purge was queued with. The job checks it
+        too: one queued by hand before the date empties nothing.
 
         :param str before: ``pitr_off_at`` as a string, or None
         :rtype: bool
         """
         self.ensure_one()
-        if not (self.pitr_purge_at and self.pitr_off_at):
+        if not (self.pitr_off_at and self._pitr_purge_due()):
             return False
-        if (self.pitr_state or "off") != "off" or self._pitr_active():
+        if (self.pitr_state or "off") != "off":
             return False
         return before is None or fields.Datetime.to_string(self.pitr_off_at) == before
 
@@ -1294,12 +1331,14 @@ class CloudInstance(models.Model):
         The rebuild renders the agent and the archive command into the
         stack; ``pitr_enable`` then installs wal-g, turns archiving on
         (one restart of the database) and takes the first base copy. An
-        archive switched off and not emptied yet is kept
-        (``_pitr_cancel_purge``).
+        archive switched off is kept before its purge date
+        (``_pitr_cancel_purge``); once it came, the switch waits for the
+        purge, which may have started.
 
         :param str objective: optional new objective (minutes)
         :return: the first job's id
         :rtype: int
+        :raise UserError: while the archive switched off is past its date
         """
         self.ensure_one()
         self._pitr_check_manager()
@@ -1312,6 +1351,12 @@ class CloudInstance(models.Model):
                 "S3 backup backend.",
             ))
         self._pitr_refuse_busy()
+        if self._pitr_purge_due():
+            raise UserError(_(
+                "The archive kept when continuous recovery was switched off "
+                "is past its date and is being emptied. Switch it on again "
+                "once that is done: it starts a new archive.",
+            ))
         if objective and str(objective) not in dict(OBJECTIVES):
             raise UserError(_("Unknown recovery objective: %s", objective))
         self._pitr_refuse_name_taken()

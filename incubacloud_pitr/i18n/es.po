@@ -577,6 +577,18 @@ msgstr ""
 "es más antiguo que la ventana de backups."
 
 #. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid ""
+"The archive kept when continuous recovery was switched off is past its date "
+"and is being emptied. Switch it on again once that is done: it starts a new "
+"archive."
+msgstr ""
+"El archivo que se conservó al desactivar la recuperación continua ha pasado "
+"su fecha y se está vaciando. Vuelva a activarla cuando termine: empezará un "
+"archivo nuevo."
+
+#. module: incubacloud_pitr
 #: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_rendered_backend_id
 msgid "The backup destination of the rendered recovery prefix."
 msgstr "El destino de backups del prefijo de recuperación aplicado."

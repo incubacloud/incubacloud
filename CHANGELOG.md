@@ -405,20 +405,30 @@ then. The rest is the panel's assets and the Spanish catalogue.
   `backup_purge_archived.sh`; then it removes `.docker/pitr.env` and the
   panel forgets the clusters, base copies and dates. Switching on again
   before the date, from the card or with a plan that has it, clears the
-  dates and cancels a purge still waiting; one already running is held to
-  its cutoff and leaves the record, and one that starts after its cutoff
-  stopped being the instance's empties nothing. A run again finds nothing
-  left before the cutoff and goes on; a failure raises `pitr_purge_failed`
-  and is tried again a day later. Not for a stack configured outside the
-  panel, nor an archived instance, whose archive goes with its record.
+  dates and cancels a purge still waiting, and one that starts after its
+  cutoff stopped being the instance's empties nothing. Once the date came
+  a switch on waits for the purge, which deletes the oldest base copies
+  first and, cut short, would leave deltas a first copy could build on
+  without their base: the card refuses with a message, and a plan that
+  wants it on is switched on by the watch once the archive is emptied,
+  from a new one. A run again finds nothing left before the cutoff (exit
+  10, which no longer stops the run before the credentials' removal) and
+  goes on; a failure raises `pitr_purge_failed`, to the service provider
+  on a managed destination, and is tried again a day later. A purge queued
+  before the date, or on a server the instance left since, empties
+  nothing. Switching off again dates it anew. Not for a stack configured
+  outside the panel, nor an archived instance, whose archive goes with its
+  record; archiving one freezes the prefix its server was last given. A
+  neutralized copy clears the dates, the rendered prefix and the cluster.
   The 1.0.16 end-migrate dates the archives switched off before it from
   the update, and the watch dates any left without one (RB-23 §6).
 - **A rebuild that moves the recovery archive says so.** A change of
   backend, of the project's folder or of the bucket started the archive
   at a new prefix and left the old one where it was, unannounced. Every
-  rebuild that writes `pitr.env` now keeps the prefix and destination it
-  rendered (`pitr_rendered_prefix`, `pitr_rendered_backend_id`), which the
-  purge above empties; one that renders another raises
+  rebuild that writes `pitr.env` while the instance archives now keeps the
+  prefix and destination it rendered (`pitr_rendered_prefix`,
+  `pitr_rendered_backend_id`), which the purge above empties; switched
+  off, a rebuild leaves them as they are. One that renders another raises
   `pitr_prefix_changed` (warning) on the instance, keyed by the old
   prefix, with the destination it is on and the day from which no restore
   needs it, to empty it by hand (RB-23 §4). The old prefix is not emptied

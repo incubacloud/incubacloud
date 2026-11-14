@@ -4,16 +4,21 @@ Switching off fixes the purge date (``pitr_off_at`` plus the window it
 has then); the watch queues ``pitr_purge`` once it came, which empties
 only what was archived before the switch off, with an environment of its
 own, then the host's ``pitr.env``, and forgets the archive. Switching on
-before the date keeps it. Every rebuild that writes ``pitr.env`` keeps the
-prefix and destination it rendered, and says when they changed.
+before the date keeps it; after, it waits for the purge and starts from
+nothing. Every rebuild that writes ``pitr.env`` while it archives keeps
+the prefix and destination it rendered, and says when they changed.
 """
 import asyncio
 import importlib.util
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from odoo import fields
+from odoo.exceptions import UserError
+from odoo.modules.neutralize import neutralize_database
+
+from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
 
 from odoo.addons.incubacloud_pitr.models import pitr_executors as ex
 from odoo.addons.incubacloud_pitr.models._constants import (
@@ -71,6 +76,33 @@ class _SwitchedOffCase(_PitrCase):
     def _purge(self, before):
         return self._executor(ex.PitrPurgeExecutor, "pitr_purge", payload={"before": before})
 
+    def _watch(self):
+        """One pass of the watch: ``(chains, enqueued)`` as job type codes."""
+        with patch.object(self.Job, "enqueue_chain", autospec=True, return_value=[1, 2]) as chain, \
+                patch.object(self.Job, "enqueue", autospec=True, return_value=3) as enqueue:
+            self.env["cloud.instance"]._cron_pitr_watch()
+        return (
+            [[s["job_type_code"] for s in c.args[1]] for c in chain.call_args_list],
+            [(c.args[3], c.kwargs.get("payload")) for c in enqueue.call_args_list],
+        )
+
+    def _run(self, executor, purge_exit):
+        """Run *executor*'s steps through the job's step loop, as a job does.
+
+        :param int purge_exit: what the deletion exits with; every other
+            step ends well
+        :return: ``(results, skipped, errors)``, *errors* as the job's
+            outcome reads them (``_outcome_errors``)
+        """
+        transport = MagicMock(spec=SSHTransport)
+        transport.execute.side_effect = lambda command, *_a, **_k: CommandResult(
+            "", purge_exit if "backup_purge_archived.sh" in command else 0,
+        )
+        results, skipped = asyncio.run(
+            executor._run_steps(transport, executor.get_commands()),
+        )
+        return results, skipped, executor._outcome_errors(results, skipped)
+
 
 class TestSwitchingOffFixesThePurgeDate(_SwitchedOffCase):
 
@@ -92,6 +124,21 @@ class TestSwitchingOffFixesThePurgeDate(_SwitchedOffCase):
         self.backend.backup_retention = "7D"
         self.inst._pitr_schedule_purge()
         self.assertEqual(self.inst.pitr_purge_at, purge_at)
+
+    def test_switching_off_again_dates_it_anew(self):
+        """A switch on that left the dates (a move's): what was archived
+        since is within the new cutoff."""
+        self.inst.write({
+            "pitr_state": "ok",
+            "pitr_off_at": fields.Datetime.now() - timedelta(days=30),
+            "pitr_purge_at": fields.Datetime.now() - timedelta(days=16),
+        })
+        before = fields.Datetime.now().replace(microsecond=0)
+        asyncio.run(self._executor(ex.PitrDisableExecutor, "pitr_disable").on_success({}))
+        self.assertGreaterEqual(self.inst.pitr_off_at, before)
+        self.assertEqual(
+            self.inst.pitr_purge_at - self.inst.pitr_off_at, timedelta(days=14),
+        )
 
     def test_one_that_never_archived_gets_no_date(self):
         self.inst.write({"pitr_state": "ok", "pitr_cluster_id": False})
@@ -142,6 +189,7 @@ class TestThePurge(_SwitchedOffCase):
         self.assertIn(executor._env_path(), purge[1])
         self.assertNotIn("pitr-off-secret", purge[1])
         self.assertTrue(purge[2]["stop_on_failure"])
+        self.assertEqual(purge[2]["continue_on"], (10,))
         self.assertEqual(forget[0], ex.PURGE_FORGET_LABEL)
         self.assertIn(f"cd {self.inst.get_remote_dir()} ", forget[1])
         self.assertIn(f"rm -f {ENV_FILE}", forget[1])
@@ -194,6 +242,47 @@ class TestThePurge(_SwitchedOffCase):
         self.assertFalse(self.inst.pitr_cluster_id)
         self.assertFalse(self._alerts(ALERT_PURGE_FAILED))
 
+    def test_an_archive_already_empty_goes_on_and_the_job_ends_well(self):
+        """10 through the job's own loop: the credentials' removal still
+        runs, nothing is skipped, and the outcome is a success."""
+        before = self._switched_off(15)
+        results, skipped, errors = self._run(self._purge(before), 10)
+        self.assertEqual(skipped, [])
+        self.assertIn(ex.PURGE_FORGET_LABEL, results)
+        self.assertEqual(errors, [])
+
+    def test_a_deletion_that_fails_stops_before_the_credentials(self):
+        before = self._switched_off(15)
+        results, skipped, errors = self._run(self._purge(before), 21)
+        self.assertEqual(skipped, [ex.PURGE_FORGET_LABEL])
+        self.assertNotIn(ex.PURGE_FORGET_LABEL, results)
+        self.assertTrue(errors)
+
+    def test_one_queued_before_the_date_empties_nothing(self):
+        """Queued by hand with the right cutoff: the date is the job's too."""
+        before = self._switched_off(3, purge_in=11)
+        self.assertEqual(
+            self._purge(before).get_commands(), [(ex.PURGE_IDLE_LABEL, "true")],
+        )
+
+    def test_one_queued_on_a_server_the_instance_left_empties_nothing(self):
+        before = self._switched_off(15)
+        executor = self._purge(before)
+        self.inst.host_id = self.env["cloud.host"].create({
+            "name": "pitr-host-2", "ip_address": "192.0.2.91", "user": "ubuntu",
+            "wildcard_domain": "pitr2.example.com",
+        })
+        self.assertEqual(executor.get_commands(), [(ex.PURGE_IDLE_LABEL, "true")])
+
+    def test_on_a_managed_destination_its_failure_goes_to_the_provider(self):
+        before = self._switched_off(15)
+        self.inst._pitr_record_rendered()
+        self.backend.sudo().managed_reservation_id = "managed-1"
+        results = {ex.PURGE_STEP_LABEL: {"exit_status": 21, "stdout": ""}}
+        executor = self._purge(before)
+        asyncio.run(executor.on_failure(results, executor.parse_results(results)))
+        self.assertEqual(self._alerts(ALERT_PURGE_FAILED).audience, "provider")
+
     def test_one_the_storage_refused_keeps_the_record_and_says_why(self):
         before = self._switched_off(15)
         results = {ex.PURGE_STEP_LABEL: {"exit_status": 21, "stdout": ""}}
@@ -207,7 +296,7 @@ class TestThePurge(_SwitchedOffCase):
 class TestSwitchingOnBeforeTheDate(_SwitchedOffCase):
 
     def test_switching_on_cancels_the_purge_waiting_in_the_queue(self):
-        self._switched_off(15)
+        self._switched_off(3, purge_in=11)
         waiting = self._purge("x").job
         waiting.state = "queued"
         with patch.object(self.Job, "_cancel_queued", autospec=True) as cancel, \
@@ -219,20 +308,15 @@ class TestSwitchingOnBeforeTheDate(_SwitchedOffCase):
 
     def test_a_plan_that_wants_it_again_keeps_the_archive(self):
         """A layer that switches it with a plan sets the field: the watch's way."""
-        self._switched_off(15)
+        self._switched_off(3, purge_in=11)
         self.inst.pitr_enabled = True
-        with patch.object(self.Job, "enqueue_chain", autospec=True, return_value=[1, 2]) as chain, \
-                patch.object(self.Job, "enqueue", autospec=True, return_value=3) as enqueue:
-            self.env["cloud.instance"]._cron_pitr_watch()
+        chains, enqueued = self._watch()
         self.assertFalse(self.inst.pitr_purge_at)
-        self.assertEqual(
-            [[s["job_type_code"] for s in c.args[1]] for c in chain.call_args_list],
-            [["rebuild_instance", "pitr_enable"]],
-        )
-        self.assertNotIn("pitr_purge", [c.args[3] for c in enqueue.call_args_list])
+        self.assertEqual(chains, [["rebuild_instance", "pitr_enable"]])
+        self.assertNotIn("pitr_purge", [code for code, _payload in enqueued])
 
     def test_a_purge_that_starts_after_it_empties_nothing(self):
-        before = self._switched_off(15)
+        before = self._switched_off(3, purge_in=11)
         self.inst._pitr_cancel_purge()
         executor = self._purge(before)
         self.assertEqual(executor.get_commands(), [(ex.PURGE_IDLE_LABEL, "true")])
@@ -243,18 +327,77 @@ class TestSwitchingOnBeforeTheDate(_SwitchedOffCase):
         asyncio.run(executor.on_success({ex.PURGE_IDLE_LABEL: {"exit_status": 0}}))
         self.assertEqual(self.inst.pitr_cluster_id, "7698")
 
-    def test_one_switched_on_while_its_purge_ran_keeps_the_record(self):
-        """Its cutoff kept the purge to what predates the switch off."""
+
+
+class TestSwitchingOnOnceTheDateCame(_SwitchedOffCase):
+    """The purge may have started: a switch on waits for it to end.
+
+    The deletion goes oldest first, so a purge cut short leaves deltas
+    without their base; a switch on then would take its first copy as a
+    delta over them, and show a window that cannot be restored.
+    """
+
+    def test_the_card_refuses_and_keeps_the_dates(self):
+        self._switched_off(15)
+        with patch.object(self.Job, "enqueue_chain", autospec=True) as chain:
+            with self.assertRaises(UserError):
+                self.inst.action_pitr_enable()
+        chain.assert_not_called()
+        self.assertTrue(self.inst.pitr_purge_at)
+        self.assertFalse(self.inst.pitr_enabled)
+
+    def test_a_plan_that_wants_it_waits_for_the_purge_then_starts_from_nothing(self):
+        before = self._switched_off(15)
+        self.inst.pitr_enabled = True
+        chains, enqueued = self._watch()
+        self.assertEqual(chains, [])
+        self.assertEqual(enqueued, [("pitr_purge", {"before": before})])
+        self.assertTrue(self.inst.pitr_purge_at)
+        executor = self._purge(before)
+        # Its stack names pitr.env again: the purge leaves it.
+        self.assertEqual(
+            [step[0] for step in executor.get_commands()], [ex.PURGE_STEP_LABEL],
+        )
+        asyncio.run(executor.on_success({
+            ex.PURGE_STEP_LABEL: {"exit_status": 0, "stdout": ""},
+        }))
+        executor.job.state = "done"
+        self.assertFalse(self.inst.pitr_cluster_id)
+        self.assertFalse(self.inst.pitr_purge_at)
+        chains, _enqueued = self._watch()
+        self.assertEqual(chains, [["rebuild_instance", "pitr_enable"]])
+
+    def test_after_a_purge_that_failed_it_still_waits(self):
+        """Cut short: switched on now, the first copy would be a delta
+        over what the deletion left."""
+        before = self._switched_off(15)
+        results = {ex.PURGE_STEP_LABEL: {"exit_status": 22, "stdout": ""}}
+        failed = self._purge(before)
+        asyncio.run(failed.on_failure(results, failed.parse_results(results)))
+        failed.job.state = "failed"
+        self.inst.pitr_enabled = True
+        self.inst._pitr_cancel_purge()
+        chains, enqueued = self._watch()
+        self.assertEqual(chains, [])
+        self.assertNotIn("pitr_purge", [code for code, _payload in enqueued])
+        self.assertTrue(self.inst.pitr_purge_at)
+        self.assertEqual(self.inst.pitr_cluster_id, "7698")
+        self.assertTrue(self._alerts(ALERT_PURGE_FAILED))
+        with self.assertRaises(UserError):
+            self.inst.action_pitr_enable()
+
+    def test_a_switch_on_while_its_purge_runs_does_not_hold_the_forgetting(self):
         before = self._switched_off(15)
         executor = self._purge(before)
         executor.get_commands()
-        self.inst.write({"pitr_enabled": True, "pitr_state": "enabling"})
+        self.inst.pitr_enabled = True
         self.inst._pitr_cancel_purge()
+        self.assertTrue(self.inst.pitr_purge_at)
         asyncio.run(executor.on_success({
             ex.PURGE_STEP_LABEL: {"exit_status": 0, "stdout": ""},
             ex.PURGE_FORGET_LABEL: {"exit_status": 0, "stdout": ""},
         }))
-        self.assertEqual(self.inst.pitr_cluster_id, "7698")
+        self.assertFalse(self.inst.pitr_cluster_id)
 
 
 class TestAnArchiveSwitchedOffBeforeTheUpdate(_SwitchedOffCase):
@@ -325,3 +468,61 @@ class TestARebuildThatMovesThePrefix(_PitrCase):
         self._rebuilt()
         self.assertEqual(len(self._alerts(ALERT_PREFIX_CHANGED)), 1)
         self.assertEqual(self.inst.pitr_rendered_backend_id, other)
+
+
+class TestARebuildWhileSwitchedOff(_SwitchedOffCase):
+    """Nothing archives at the new prefix: the purge keeps the old one."""
+
+    def _rebuilt(self):
+        with patch.object(self.Job, "enqueue_chain", autospec=True, return_value=[1, 2]), \
+                patch.object(self.Job, "enqueue", autospec=True, return_value=3):
+            self.inst._after_stack_rendered()
+
+    def test_another_folder_keeps_the_prefix_and_says_nothing(self):
+        before = self._switched_off(3, purge_in=11)
+        self.inst._pitr_record_rendered()
+        self.project.remote_folder = "moved"
+        self.inst.invalidate_recordset()
+        self._rebuilt()
+        self.assertFalse(self._alerts(ALERT_PREFIX_CHANGED))
+        self.assertEqual(self.inst.pitr_rendered_prefix, PREFIX)
+        self.assertEqual(self.inst.pitr_rendered_backend_id, self.backend)
+        self.assertIn(f"DST={PREFIX}\n", self._purge(before)._env_content())
+
+    def test_switched_on_again_the_rebuild_says_it(self):
+        self._switched_off(3, purge_in=11)
+        self.inst._pitr_record_rendered()
+        self.project.remote_folder = "moved"
+        self.inst.write({"pitr_enabled": True, "pitr_state": "enabling"})
+        self.inst.invalidate_recordset()
+        self._rebuilt()
+        self.assertEqual(len(self._alerts(ALERT_PREFIX_CHANGED)), 1)
+        self.assertEqual(
+            self.inst.pitr_rendered_prefix, "s3://bucket/backups/moved/pitr-inst-pitr",
+        )
+
+
+class TestArchivingFreezesTheRenderedPrefix(_SwitchedOffCase):
+
+    def test_the_prefix_its_server_archived_to_not_the_one_computed_now(self):
+        self.inst._pitr_record_rendered()
+        self.project.remote_folder = "moved"
+        self.inst.invalidate_recordset()
+        self.inst._freeze_backup_dst()
+        self.assertEqual(self.inst.pitr_archived_prefix, PREFIX)
+
+
+class TestANeutralizedCopy(_SwitchedOffCase):
+
+    def test_it_keeps_no_date_cluster_nor_prefix_of_production(self):
+        self._switched_off(15)
+        self.inst._pitr_record_rendered()
+        self.env.flush_all()
+        neutralize_database(self.env.cr)
+        self.env.invalidate_all()
+        self.assertFalse(self.inst.pitr_cluster_id)
+        self.assertFalse(self.inst.pitr_previous_clusters)
+        self.assertFalse(self.inst.pitr_off_at)
+        self.assertFalse(self.inst.pitr_purge_at)
+        self.assertFalse(self.inst.pitr_rendered_prefix)
+        self.assertFalse(self.inst.pitr_rendered_backend_id)
