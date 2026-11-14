@@ -345,3 +345,40 @@ _more_env_file() {
     run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag"
     diff "$TMP/from-compose" "$DOCKER_STDIN"
 }
+
+# ── backup_purge_archived.sh: an SFTP copy ───────────────────────────
+
+_sftp_env_file() {
+    env_file="$(_env_file)"
+    printf 'DST=sftp://u1@backup.example.com/backups/proj/inst\n' > "$env_file"
+    printf 'KEY\n' > "$(dirname "$env_file")/purge-ssh-key"
+    printf 'backup.example.com ssh-ed25519 AAAA\n' > "$(dirname "$env_file")/purge-known_hosts"
+    echo "$env_file"
+}
+
+@test "archived purge mounts an SFTP copy's key files read-only, then removes them" {
+    env_file="$(_sftp_env_file)"
+    dir="$(dirname "$env_file")"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag"
+    [ "$status" -eq 0 ]
+    grep -q -- "--mount type=bind,src=$dir/purge-ssh-key,dst=/root/.ssh/id_ed25519,readonly" "$DOCKER_CALLS"
+    grep -q -- "--mount type=bind,src=$dir/purge-known_hosts,dst=/root/.ssh/known_hosts,readonly" "$DOCKER_CALLS"
+    ! grep -q 'KEY' "$DOCKER_CALLS"
+    [ ! -f "$dir/purge-ssh-key" ]
+    [ ! -f "$dir/purge-known_hosts" ]
+}
+
+@test "archived purge of an SFTP copy without its key files is 20, nothing runs" {
+    env_file="$(_sftp_env_file)"
+    rm "$(dirname "$env_file")/purge-known_hosts"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag"
+    [ "$status" -eq 20 ]
+    [ ! -s "$DOCKER_CALLS" ]
+    [ ! -f "$(dirname "$env_file")/purge-ssh-key" ]
+}
+
+@test "archived purge of an S3 copy mounts nothing" {
+    env_file="$(_env_file)"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag"
+    ! grep -q -- '--mount' "$DOCKER_CALLS"
+}

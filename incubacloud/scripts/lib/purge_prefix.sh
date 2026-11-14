@@ -36,6 +36,15 @@
 # live instance, which tears the instance down first) leave it unset and
 # get the unconditional purge.
 #
+# An ``sftp://`` DST is emptied over SFTP with paramiko (in both images),
+# with the same contract: the key and the trusted server key are read from
+# ``/root/.ssh`` (``id_ed25519``, ``known_hosts``), any other server key is
+# refused, and links are removed, never followed. With ``PURGE_BEFORE`` the
+# server's clock decides what is in scope (a file's mtime), so it is
+# checked first: a probe file's mtime more than 120 s off the container's
+# clock stops the purge with 22. Late, it would take the successor's
+# files; early, it would leave the old chain behind and answer 10.
+#
 # Exit codes are the contract with the executors (see backup_purge.sh):
 #   0   purged and verified empty (of objects in scope)
 #   10  nothing in scope was stored under the prefix
@@ -59,32 +68,16 @@ in scope; anything newer belongs to whoever holds the prefix now and is
 left alone.
 """
 import os
+import re
 import sys
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlparse
-
-try:
-    import boto3
-    from botocore.exceptions import ClientError, EndpointConnectionError
-except ImportError:
-    print("ERROR boto3 unavailable inside the backup container")
-    sys.exit(22)
 
 dst = os.environ.get("DST", "")
 if not dst:
     print("ERROR DST is empty; nothing identifies this instance's prefix")
     sys.exit(22)
-
-# DST looks like boto3+s3://bucket/path/project/instance
-parsed = urlparse(dst.replace("boto3+s3://", "s3://"))
-bucket = parsed.netloc
-prefix = parsed.path.strip("/")
-if not bucket or not prefix:
-    # Refusing a bare bucket is the whole safety story: a prefix-less
-    # delete would take every instance sharing this destination.
-    print(f"ERROR refusing to purge without a per-instance prefix: {dst}")
-    sys.exit(22)
-prefix += "/"
 
 cutoff = None
 raw_cutoff = os.environ.get("PURGE_BEFORE", "").strip()
@@ -99,6 +92,181 @@ if raw_cutoff:
     if cutoff.tzinfo is None:
         # Odoo stores datetimes naive in UTC; S3 hands back aware ones.
         cutoff = cutoff.replace(tzinfo=timezone.utc)
+
+scope = f" stored before {cutoff.isoformat()}" if cutoff else ""
+
+# A copy of incubacloud/models/sftp_dst.py's parse(): this runs in the
+# backup container, away from the panel's code. Both are tested against
+# tests/data/sftp_dst_cases.json.
+_USER_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$")
+_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def sftp_parse(url):
+    """Return ``(user, host, port, path)`` of an sftp:// DST, or raise ValueError."""
+    parsed = urlparse(url)
+    if parsed.scheme != "sftp" or parsed.password is not None:
+        raise ValueError("not an sftp:// destination")
+    user, host = parsed.username or "", parsed.hostname or ""
+    if not user or not host or not _USER_RE.match(user):
+        raise ValueError("no user or no server")
+    port = parsed.port or 22
+    raw = parsed.path[1:] if parsed.path.startswith("/") else parsed.path
+    raw = raw.strip()
+    absolute = raw.startswith("/")
+    body = raw.strip("/")
+    if not body:
+        if absolute:
+            raise ValueError("the root directory")
+        return user, host, port, ""
+    for segment in body.split("/"):
+        if not segment or segment in (".", "..") or not _SEGMENT_RE.match(segment):
+            raise ValueError(f"path segment not allowed: {segment!r}")
+    return user, host, port, ("/" if absolute else "") + body
+
+
+def sftp_purge():
+    """Empty an sftp:// prefix; exits with the contract's code."""
+    try:
+        user, host, port, path = sftp_parse(dst)
+    except ValueError as exc:
+        print(f"ERROR not a usable sftp:// destination ({exc}): {dst}")
+        sys.exit(22)
+    if len([s for s in path.split("/") if s]) < 2:
+        # Same safety as the bare bucket: {project}/{instance} at least.
+        print(f"ERROR refusing to purge without a per-instance prefix: {dst}")
+        sys.exit(22)
+    try:
+        import paramiko
+    except ImportError:
+        print("ERROR paramiko unavailable inside the backup container")
+        sys.exit(22)
+    import errno
+    import secrets
+    import stat as st
+
+    ssh_dir = os.path.expanduser("~/.ssh")
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    try:
+        client.load_host_keys(os.path.join(ssh_dir, "known_hosts"))
+    except OSError as exc:
+        print(f"ERROR no trusted server key to check {host} against: {exc}")
+        sys.exit(22)
+    try:
+        client.connect(
+            host, port=port, username=user,
+            key_filename=os.path.join(ssh_dir, "id_ed25519"),
+            look_for_keys=False, allow_agent=False,
+            timeout=30, banner_timeout=30, auth_timeout=30,
+        )
+    except paramiko.BadHostKeyException:
+        print(f"ERROR the server key of {host} does not match the trusted one")
+        sys.exit(22)
+    except paramiko.AuthenticationException:
+        print(f"ERROR {host} rejected the key")
+        sys.exit(21)
+    except (paramiko.SSHException, OSError) as exc:
+        print(f"ERROR cannot reach {host}:{port}: {exc}")
+        sys.exit(22)
+    sftp = client.open_sftp()
+
+    def is_dir(attrs):
+        return attrs.st_mode is not None and st.S_ISDIR(attrs.st_mode)
+
+    def walk():
+        """Return ``(files, dirs)`` under path; links count as files."""
+        files, dirs, pending = [], [], [path]
+        while pending:
+            current = pending.pop()
+            dirs.append(current)
+            for attrs in sftp.listdir_attr(current):
+                full = f"{current}/{attrs.filename}"
+                if is_dir(attrs):
+                    pending.append(full)
+                else:
+                    files.append((full, attrs.st_mtime or 0))
+        return files, dirs
+
+    def in_scope(mtime):
+        return cutoff is None or mtime < cutoff.timestamp()
+
+    try:
+        try:
+            sftp.lstat(path)
+        except OSError as exc:
+            if getattr(exc, "errno", None) == errno.ENOENT:
+                print(f"IC_PURGE_EMPTY nothing{scope} was stored under {path}")
+                sys.exit(10)
+            raise
+        if cutoff is not None:
+            probe = f"{path}/.incubacloud-clock-{secrets.token_hex(6)}"
+            with sftp.open(probe, "w") as fh:
+                fh.write("clock\n")
+            try:
+                skew = sftp.stat(probe).st_mtime - time.time()
+            finally:
+                sftp.remove(probe)
+            if abs(skew) > 120:
+                print(
+                    f"ERROR the clock of {host} is {skew:+.0f}s off this one: "
+                    "PURGE_BEFORE cannot be trusted there"
+                )
+                sys.exit(22)
+        files, dirs = walk()
+        deleted = 0
+        for name, mtime in files:
+            if in_scope(mtime):
+                sftp.remove(name)
+                deleted += 1
+        # Empty folders only, deepest first; one still holding a file out
+        # of scope (the successor's) refuses, which is expected.
+        for folder in sorted(dirs, key=lambda d: d.count("/"), reverse=True):
+            try:
+                sftp.rmdir(folder)
+            except OSError:
+                pass
+        try:
+            remaining = sum(1 for _n, m in walk()[0] if in_scope(m))
+        except OSError as exc:
+            if getattr(exc, "errno", None) != errno.ENOENT:
+                raise
+            remaining = 0
+    except OSError as exc:
+        print(f"ERROR SFTP error while purging {path}: {exc}")
+        sys.exit(22)
+    finally:
+        client.close()
+    if remaining:
+        print(f"ERROR prefix still has files{scope} after purge: {path}")
+        sys.exit(22)
+    if deleted == 0:
+        print(f"IC_PURGE_EMPTY nothing{scope} was stored under {path}")
+        sys.exit(10)
+    print(f"IC_PURGE_OK removed {deleted} file(s){scope} under {path}")
+    sys.exit(0)
+
+
+if dst.startswith("sftp://"):
+    sftp_purge()
+
+try:
+    import boto3
+    from botocore.exceptions import ClientError, EndpointConnectionError
+except ImportError:
+    print("ERROR boto3 unavailable inside the backup container")
+    sys.exit(22)
+
+# DST looks like boto3+s3://bucket/path/project/instance
+parsed = urlparse(dst.replace("boto3+s3://", "s3://"))
+bucket = parsed.netloc
+prefix = parsed.path.strip("/")
+if not bucket or not prefix:
+    # Refusing a bare bucket is the whole safety story: a prefix-less
+    # delete would take every instance sharing this destination.
+    print(f"ERROR refusing to purge without a per-instance prefix: {dst}")
+    sys.exit(22)
+prefix += "/"
 
 
 def in_scope(obj):
@@ -155,7 +323,6 @@ except EndpointConnectionError as exc:
     print(f"ERROR cannot reach the storage endpoint: {exc}")
     sys.exit(22)
 
-scope = f" stored before {cutoff.isoformat()}" if cutoff else ""
 if remaining:
     print(f"ERROR prefix still has objects{scope} after purge: {prefix}")
     sys.exit(22)

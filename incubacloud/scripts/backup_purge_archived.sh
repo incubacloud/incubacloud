@@ -33,11 +33,17 @@
 # something, 10 when every one was already empty. All of them must have
 # arrived before anything is deleted.
 #
+# An SFTP copy (``DST=sftp://…``) also needs the destination's key and
+# trusted server key, uploaded beside the first file as ``purge-ssh-key``
+# and ``purge-known_hosts``. They are mounted read-only where the program
+# reads them, with ``--mount``, which fails on a missing file instead of
+# creating a directory in its place, and removed with the rest.
+#
 # Exit codes are the contract with the executor:
 #
 #   0   purged — the prefix is empty and was verified empty
 #   10  nothing to purge — the prefix was already empty
-#   20  the environment file is missing (panel/host drift)
+#   20  the environment file (or an SFTP copy's key files) is missing
 #   21  the provider rejected the credentials
 #   22  the container could not start, or any other failure
 set -euo pipefail
@@ -52,13 +58,15 @@ env_file="$1"
 image="$2"
 shift 2
 env_files=("$env_file" "$@")
+ssh_key="$(dirname "$env_file")/purge-ssh-key"
+known_hosts="$(dirname "$env_file")/purge-known_hosts"
 
 # Removed whatever happens: they hold the destination's credentials, and
 # a failed run must not leave them on the host's /tmp. The directory
 # goes too, with a plain rmdir — it is empty by then, and a recursive
 # delete of a path that arrived as an argument is not a thing this
 # script should be able to do.
-trap 'rm -f "${env_files[@]}"; rmdir "$(dirname "$env_file")" 2>/dev/null || true' EXIT
+trap 'rm -f "${env_files[@]}" "$ssh_key" "$known_hosts"; rmdir "$(dirname "$env_file")" 2>/dev/null || true' EXIT
 
 for file in "${env_files[@]}"; do
     if [ ! -f "$file" ]; then
@@ -66,6 +74,20 @@ for file in "${env_files[@]}"; do
         exit 20
     fi
 done
+
+ssh_mounts=()
+if grep -q '^DST=sftp://' "${env_files[@]}"; then
+    for file in "$ssh_key" "$known_hosts"; do
+        if [ ! -f "$file" ]; then
+            ic_warn "SFTP key file not found: $file"
+            exit 20
+        fi
+    done
+    ssh_mounts=(
+        --mount "type=bind,src=$ssh_key,dst=/root/.ssh/id_ed25519,readonly"
+        --mount "type=bind,src=$known_hosts,dst=/root/.ssh/known_hosts,readonly"
+    )
+fi
 
 ic_log "purging archived backup prefix via an ephemeral container"
 
@@ -78,8 +100,8 @@ for file in "${env_files[@]}"; do
     fi
     set +e
     ic_purge_prefix_program \
-        | docker run --rm -i --env-file "$file" --entrypoint python3 \
-            "$image" -
+        | docker run --rm -i --env-file "$file" "${ssh_mounts[@]}" \
+            --entrypoint python3 "$image" -
     one=$?
     set -e
     case "$one" in
