@@ -32,6 +32,31 @@ USER_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$")
 SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
+#: Where an instance keeps the files its ``backup`` service logs in with,
+#: relative to the instance directory. Mounted read-only as ``/root/.ssh``
+#: over the ``backup_cache`` volume, so no key is ever written into it.
+SSH_DIR = ".docker/backup-ssh"
+SSH_MOUNT = f"./{SSH_DIR}:/root/.ssh:ro"
+SSH_KEY_FILE = f"{SSH_DIR}/id_ed25519"
+SSH_KNOWN_HOSTS_FILE = f"{SSH_DIR}/known_hosts"
+SSH_CONFIG_FILE = f"{SSH_DIR}/config"
+
+#: What ``~/.ssh/config`` says in the container. ``Host *``: the
+#: container talks to its destination only, so a frozen DST keeps the
+#: same identity. duplicity's paramiko reads the identity from here and
+#: ``~/.ssh/known_hosts`` by its default path; it does not read
+#: ``StrictHostKeyChecking`` nor ``UserKnownHostsFile`` (it asks on the
+#: standard input about an unknown server, which the commands close).
+#: Those two are for an OpenSSH client run by hand in the container.
+SSH_CONFIG = (
+    "Host *\n"
+    "  IdentityFile /root/.ssh/id_ed25519\n"
+    "  IdentitiesOnly yes\n"
+    "  UserKnownHostsFile /root/.ssh/known_hosts\n"
+    "  StrictHostKeyChecking yes\n"
+)
+
+
 class DstError(ValueError):
     """A DST that is not an ``sftp://`` URL this panel can use."""
 

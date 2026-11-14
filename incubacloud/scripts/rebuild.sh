@@ -73,7 +73,9 @@ case "$op" in
         # doodba copies into the image as root's ~/.ssh (where a deploy
         # key goes), repos.yaml with the repository tokens the panel
         # writes into its URLs, and the Odoo conf and pip.txt, whose
-        # contents are the user's (a password, a token in a git URL).
+        # contents are the user's (a password, a token in a git URL), and
+        # the backup service's SSH key and trusted server key (``/.docker``
+        # is ignored by the template already: a second lock).
         # All of them stay on disk for the build; copier renders ssh/,
         # repos.yaml and pip.txt only when missing (the template's
         # ``_skip_if_exists``), and never the conf.
@@ -82,6 +84,7 @@ case "$op" in
             odoo/custom/src/repos.yaml
             'odoo/custom/conf.d/*.conf'
             odoo/custom/dependencies/pip.txt
+            .docker/backup-ssh/
         )
         for path in "${secrets[@]}"; do
             ic_git_exclude "$dir" "$path"

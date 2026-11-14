@@ -718,6 +718,8 @@ class TestTheDailySweepOfTmp(TransactionCase):
                 ".incubacloud-shop-pip.txt", ".incubacloud-shop-apt.txt",
                 ".incubacloud-shop-override.yml",
                 ".incubacloud-shop-extra-env_smtp.env",
+                # The backup service's SFTP key, staged like any addon file.
+                ".incubacloud-shop-extra-.docker_backup-ssh_id_ed25519",
                 ".incubacloud-acme.json", ".incubacloud-traefik-default.key",
                 ".incubacloud-traefik-cdn-ca.pem",
                 ".incubacloud-whitelist.yaml",
