@@ -140,6 +140,18 @@ class TestSwitchingOffFixesThePurgeDate(_SwitchedOffCase):
             self.inst.pitr_purge_at - self.inst.pitr_off_at, timedelta(days=14),
         )
 
+    def test_switching_off_one_already_off_keeps_the_dates(self):
+        """A run on an instance waiting for its purge: the date that came
+        stays, or a purge cut short would be lost with a later switch on."""
+        off_at = fields.Datetime.now().replace(microsecond=0) - timedelta(days=30)
+        purge_at = off_at + timedelta(days=14)
+        self.inst.write({
+            "pitr_state": "off", "pitr_off_at": off_at, "pitr_purge_at": purge_at,
+        })
+        asyncio.run(self._executor(ex.PitrDisableExecutor, "pitr_disable").on_success({}))
+        self.assertEqual(self.inst.pitr_off_at, off_at)
+        self.assertEqual(self.inst.pitr_purge_at, purge_at)
+
     def test_one_that_never_archived_gets_no_date(self):
         self.inst.write({"pitr_state": "ok", "pitr_cluster_id": False})
         asyncio.run(self._executor(ex.PitrDisableExecutor, "pitr_disable").on_success({}))
