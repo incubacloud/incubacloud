@@ -11,7 +11,7 @@ from base64 import b64encode
 
 from werkzeug.datastructures import Headers
 
-from odoo.tests import tagged
+from odoo.tests import new_test_user, tagged
 from odoo.tests.common import BaseCase, HttpCase
 
 from odoo.addons.incubacloud.models.ir_http_framing import add_frame_ancestors
@@ -113,6 +113,19 @@ class TestTheRule(BaseCase):
 class TestTheHeadersSent(HttpCase):
     """The headers a browser gets from the panel, with no proxy in front."""
 
+    def setUp(self):
+        """Create an internal user of its own to sign in with.
+
+        The database's admin may not have the password ``admin`` (a copy
+        of a real panel is neutralized with another), so the pages behind
+        a sign-in are read as a user whose password the test knows.
+        """
+        super().setUp()
+        new_test_user(
+            self.env, login="framing-user", password="framing-user-pw",
+            groups="base.group_user",
+        )
+
     def _get(self, path):
         """Fetch *path* without following a redirect, and check it answered.
 
@@ -135,7 +148,7 @@ class TestTheHeadersSent(HttpCase):
 
     def test_the_panel_is_framed_only_by_its_origin(self):
         """``/cloud`` sets no framing of its own: it gets ``'self'``."""
-        self.authenticate("admin", "admin")
+        self.authenticate("framing-user", "framing-user-pw")
         self.assertFraming(self._get("/cloud"), "frame-ancestors 'self'", "SAMEORIGIN")
 
     def test_the_sign_in_keeps_odoos_own_policy(self):
@@ -146,7 +159,7 @@ class TestTheHeadersSent(HttpCase):
 
     def test_the_web_client_is_never_framed(self):
         """``/odoo`` sends X-Frame-Options DENY; its CSP says ``'none'`` too."""
-        self.authenticate("admin", "admin")
+        self.authenticate("framing-user", "framing-user-pw")
         self.assertFraming(self._get("/odoo"), "frame-ancestors 'none'", "DENY")
 
     def test_an_svg_keeps_default_src_none_and_gains_the_frame(self):
