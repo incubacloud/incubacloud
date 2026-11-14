@@ -34,7 +34,7 @@ case "$*" in
         head -1 "${TMP}/counts"
         sed -i '1d' "${TMP}/counts" 2>/dev/null || true
         ;;
-    *"SELECT 1"*) echo 1 ;;
+    *"SELECT 1"*) [ -z "${UNREACHABLE:-}" ] || exit 1; echo 1 ;;
     *"string_agg"*) echo "Collect Host Metrics" ;;
     *"click-odoo-update"*) echo "update ran"; exit "${UPDATE_EXIT:-0}" ;;
 esac
@@ -89,7 +89,7 @@ EOF
 }
 
 # A docker stub for a stop, that keeps what the database and the host
-# would: the marker table (${TMP}/marker), crons paused (${TMP}/paused),
+# would (answering "SELECT 1" with a failure when $UNREACHABLE is set): the marker table (${TMP}/marker), crons paused (${TMP}/paused),
 # the update's container (${TMP}/container, holding its name), a list
 # dropped by a call that does not put the crons back
 # (${TMP}/dropped_alone). Like the real client, which sets its own
@@ -109,7 +109,7 @@ slow() {
 }
 case "$*" in
     *"SELECT count(*)"*) echo 0 ;;
-    *"SELECT 1"*) echo 1 ;;
+    *"SELECT 1"*) [ -z "${UNREACHABLE:-}" ] || exit 1; echo 1 ;;
     *"CREATE TABLE IF NOT EXISTS"*) : > "${TMP}/marker" ;;
     *"SET active = false"*) [ -e "${TMP}/marker" ] && : > "${TMP}/paused" ;;
     *"click-odoo-update"*)
@@ -136,6 +136,13 @@ esac
 exit 0
 STUB
     chmod +x "${STUB_DIR}/docker"
+}
+
+@test "the update of an unreachable database runs in a named container, out of Traefik and Sablier" {
+    UNREACHABLE=1 run bash "$SCRIPT" update "${TMP}/inst" prod odoo 3 1
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"running the update unguarded"* ]]
+    grep -Eq "compose run --label traefik.enable=false --label sablier.enable=false --name incubacloud-update-[0-9a-f]{12} --rm odoo click-odoo-update" "${TMP}/calls"
 }
 
 # Wait up to 5 s for file $1.
@@ -188,4 +195,16 @@ _stop_twice() {
     rm_line="$(grep -n '^rm -f ' "${TMP}/calls" | cut -d: -f1)"
     resume_line="$(grep -n 'SET active = true' "${TMP}/calls" | tail -1 | cut -d: -f1)"
     [ -n "$rm_line" ] && [ "$rm_line" -lt "$resume_line" ]
+}
+
+@test "stopped as a detached step with the database unreachable, it removes the update's container and touches no cron" {
+    # The unguarded update has no crons to put back: the trap removes the
+    # container (the second TERM lands while it does) and leaves the
+    # database alone.
+    export UNREACHABLE=1
+    _stub_docker_for_a_stop rm
+    _stop_twice
+    [ "$status" -eq 143 ]
+    [ ! -e "${TMP}/container" ]
+    ! grep -Eq 'SET active|DROP TABLE|CREATE TABLE' "${TMP}/calls"
 }
