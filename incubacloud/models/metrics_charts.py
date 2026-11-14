@@ -148,6 +148,40 @@ FLEET_DISK_PERCENT = 90
 #: the threshold of the ``metrics_memory_high`` rule.
 FLEET_MEMORY_PERCENT = 92
 
+#: The rules whose thresholds the fleet's security figures count with,
+#: so the board and the alerts agree, and the shipped threshold each
+#: falls back to without its rule (plan #84, C7).
+FLEET_SECURITY_RULES = {
+    "ssh_threshold": ("security_ssh_bruteforce", 100),
+    "weblogin_threshold": ("security_weblogin_bruteforce", 50),
+}
+
+#: The servers whose security logs do not reach the central, as the
+#: ``security_logs_silent`` rule reads it, by account and server: the
+#: collector silent for 15 minutes, its Loki output dropping lines, or
+#: lines read in 30 minutes and none delivered. One series per server.
+_FLEET_SECURITY_SILENT = (
+    "count by (ic_account, host_id) ("
+    '(max by (ic_account, host_id) (max_over_time(up{job="security"}[15m])) < 1)'
+    " or (max by (ic_account, host_id) (increase("
+    'fluentbit_output_dropped_records_total{name=~"loki.*"}[30m])) > 0)'
+    " or ((sum by (ic_account, host_id) (increase("
+    'ic_security_lines_total{source=~"sshd|sudo|weblogin"}[30m])) > 0)'
+    " and on (ic_account, host_id) (max by (ic_account, host_id) (increase("
+    'fluentbit_output_proc_records_total{name=~"loki.*"}[30m])) == 0)))'
+)
+
+#: The servers under SSH brute force now, and the instances under
+#: web-login brute force now, over the rules' own windows.
+_FLEET_SSH_BRUTEFORCE = (
+    "round(sum by (ic_account, host_id) ("
+    "increase(ic_ssh_auth_failed_total[10m]))) > %(ssh_threshold)s"
+)
+_FLEET_WEBLOGIN_BRUTEFORCE = (
+    "round(sum by (ic_account, host_id, instance_id) (increase("
+    'ic_weblogin_failed_total{instance_id!="0"}[10m]))) > %(weblogin_threshold)s'
+)
+
 #: The central's operator read route, beside the account read route
 #: (``/r``) that ``metrics_central_url`` names. Read-only: the same
 #: endpoints as the accounts' route, without the account filter.
@@ -717,6 +751,50 @@ PANELS = {
                    'count_over_time(up{job="node"}[%(window)ds]))'),
             ),
         },
+        # The servers' security (plan #84, C7): figures, never an
+        # address or a user; every account's through the operator's
+        # route. Asked only where this panel's servers may send their
+        # security logs (``fleet_security``).
+        {
+            "key": "security", "kind": "stat", "unit": None,
+            "digits": 0, "legend": None,
+            "needs": "fleet_security",
+            "queries": (
+                _q("ssh_failed_1h", "round(sum(sum by (ic_account, host_id) ("
+                   "increase(ic_ssh_auth_failed_total[1h])))) or vector(0)"),
+                _q("ssh_bruteforce", "count(" + _FLEET_SSH_BRUTEFORCE
+                   + ") or vector(0)"),
+                _q("bans_1h", "round(sum(sum by (ic_account, host_id) ("
+                   'increase(ic_f2b_total{action="ban"}[1h])))) or vector(0)'),
+                _q("weblogin_bruteforce", "count(" + _FLEET_WEBLOGIN_BRUTEFORCE
+                   + ") or vector(0)"),
+                _q("silent", "count(" + _FLEET_SECURITY_SILENT + ") or vector(0)"),
+            ),
+        },
+        {
+            # One row per server with something to look at; the panel
+            # keeps only its own (``_fleet_security``).
+            "key": "security_hosts", "kind": "hosts", "unit": None,
+            "digits": 0, "legend": "host",
+            "needs": "fleet_security",
+            "queries": (
+                _q("ssh_bruteforce", _FLEET_SSH_BRUTEFORCE),
+                _q("weblogin_bruteforce", "count by (ic_account, host_id) ("
+                   + _FLEET_WEBLOGIN_BRUTEFORCE + ")"),
+                _q("silent", _FLEET_SECURITY_SILENT),
+            ),
+        },
+        {
+            "key": "security_ssh", "kind": "series", "unit": None,
+            "digits": 0, "legend": None,
+            "needs": "fleet_security",
+            "queries": (
+                _q("failed", "sum(sum by (ic_account, host_id) (rate("
+                   "ic_ssh_auth_failed_total[%(window)ds]))) * 3600"),
+                _q("bans", "sum(sum by (ic_account, host_id) (rate("
+                   'ic_f2b_total{action="ban"}[%(window)ds]))) * 3600'),
+            ),
+        },
     ),
 }
 
@@ -919,6 +997,26 @@ def shape_table(panel, raw):
     return list(rows.values())
 
 
+def shape_hosts(panel, raw):
+    """Turn an instant answer into one row per account and server.
+
+    :param dict panel: an entry of ``PANELS`` of kind ``hosts``.
+    :param list raw: ``promql_query``'s answer, ``[(labels, value)]``.
+    :returns: ``[{"host_id", "account", <role>: value, ...}]``, a role
+        missing from a row when the server is not in its answer.
+    :rtype: list[dict]
+    """
+    rows = {}
+    for labels, value in raw:
+        host_id = labels.get("host_id") or ""
+        if not host_id:
+            continue
+        account = labels.get("ic_account") or ""
+        row = rows.setdefault((account, host_id), {"host_id": host_id, "account": account})
+        row[labels.get(_ROLE_LABEL) or ""] = round(value, panel["digits"])
+    return list(rows.values())
+
+
 def shape_state(panel, raw, start, end, step):
     """Turn a range answer into segments of reporting and silence.
 
@@ -1000,6 +1098,7 @@ _EMPTY_ANSWERS = {
     "stat": {"value": {}},
     "markers": {"markers": []},
     "table": {"rows": []},
+    "hosts": {"rows": []},
     "state": {"rows": [], "hidden": 0},
 }
 
@@ -1018,7 +1117,7 @@ def run_board(scope, values, available, base, user, token,
     :param str scope: a key of ``PANELS``.
     :param dict values: the placeholders' values, the ids among them.
     :param set available: which ``needs`` the record can satisfy
-        (``instance``, ``host``, ``fleet``).
+        (``instance``, ``host``, ``fleet``, ``fleet_security``).
     :param str base: the central's read URL.
     :param str user: this panel's metrics account.
     :param str token: its password.
@@ -1038,13 +1137,15 @@ def run_board(scope, values, available, base, user, token,
         """Run one panel's query; never raises."""
         expression = panel_expression(panel, values, step)
         try:
-            if panel["kind"] in ("stat", "table"):
+            if panel["kind"] in ("stat", "table", "hosts"):
                 raw = promql_query(
                     base, expression, timeout=_CHART_QUERY_TIMEOUT,
                     token=token, user=user, retries=0, verify=verify,
                 )
                 if panel["kind"] == "table":
                     return {"rows": shape_table(panel, raw)}
+                if panel["kind"] == "hosts":
+                    return {"rows": shape_hosts(panel, raw)}
                 return {"value": shape_stat(panel, raw)}
             raw = promql_query_range(
                 base, expression, win_start, win_end, step,
@@ -1462,10 +1563,13 @@ class CloudHost(models.Model):
             return source
         board = None
         scope = "account"
+        security = self._security_logs_available()
+        available = {"fleet", "fleet_security"} if security else {"fleet"}
+        values = self._fleet_security_thresholds()
         operator = operator_source(self.env, source["base"])
         if operator:
             board = run_board(
-                "fleet", {}, {"fleet"},
+                "fleet", values, available,
                 operator["base"], operator["user"], operator["token"],
                 range_key=range_key, start=start, end=end,
                 verify=operator.get("verify", True),
@@ -1481,7 +1585,7 @@ class CloudHost(models.Model):
                 source = operator
         if board is None:
             board = run_board(
-                "fleet", {}, {"fleet"},
+                "fleet", values, available,
                 source["base"], source["user"], source["token"],
                 range_key=range_key, start=start, end=end,
                 verify=source.get("verify", True),
@@ -1499,7 +1603,111 @@ class CloudHost(models.Model):
         board["scope"] = scope
         board["alerts"] = self._fleet_alert_counts()
         board["silence"] = self._fleet_silence()
+        board["security"] = self._fleet_security(board["panels"], security)
         return {"ok": True, **board}
+
+    @api.model
+    def _fleet_security_thresholds(self):
+        """Return the thresholds the fleet's security figures count with.
+
+        Those of the security rules, so a server the board counts as
+        under brute force is one its rule alerts on; the shipped value
+        where the rule is gone (``FLEET_SECURITY_RULES``).
+
+        :returns: ``{"ssh_threshold": float, "weblogin_threshold": float}``.
+        :rtype: dict
+        """
+        Rule = self.env["cloud.metric.rule"].sudo().with_context(active_test=False)
+        out = {}
+        for key, (code, default) in FLEET_SECURITY_RULES.items():
+            rule = Rule.search([("code", "=", code)], limit=1)
+            out[key] = float(rule.threshold if rule else default)
+        return out
+
+    @api.model
+    def _fleet_security(self, panels, available):
+        """Build the fleet's Security block: figures and this panel's servers.
+
+        The central's figures (``panels["security"]``, every account's on
+        the operator's board) stay in ``panels``; the servers under
+        brute force or whose logs do not arrive come from
+        ``panels["security_hosts"]``, which is taken out of the answer
+        and kept only for this panel's own servers the caller can read:
+        another account's server is never named, whatever its id. Which
+        servers have their security logs off or no hardening, and which
+        have active security alerts the caller can read, come from the
+        panel's database. Never an address, a user or an alert's text.
+
+        :param dict panels: ``run_board``'s panels, ``own`` marked.
+        :param bool available: whether this panel's servers may send
+            their security logs; without it the block is ``unavailable``
+            and nothing of it was asked.
+        :returns: ``{"state": "unavailable"}``, or ``{"state": "ready",
+            "off", "unhardened", "alerts_hosts", "rows": [...],
+            "hidden"}``.
+        :rtype: dict
+        """
+        central = panels.pop("security_hosts", None) or {}
+        if not available:
+            return {"state": "unavailable"}
+        hosts = self.search([])
+        flags = hosts.sudo()
+        rows = {
+            host.id: {
+                "host_id": host.id, "name": host.name, "own": True,
+                "off": not host.security_logs_enabled,
+                "unhardened": not host.hardened,
+            }
+            for host in flags
+        }
+        for item in central.get("rows") or []:
+            if not item.get("own") or not str(item.get("host_id")).isdigit():
+                continue
+            row = rows.get(int(item["host_id"]))
+            if not row:
+                continue
+            for role in ("ssh_bruteforce", "weblogin_bruteforce"):
+                if item.get(role):
+                    row[role] = item[role]
+            # A server whose switch the panel turned off stops sending:
+            # its collector's last minutes are not a silence.
+            if "silent" in item and not row["off"]:
+                row["silent"] = True
+        alerts = self.env["cloud.alert"].search([
+            ("state", "=", "active"), ("code", "=like", "security\\_%"),
+        ]).sudo()
+        for alert in alerts:
+            row = rows.get((alert.host_id or alert.instance_id.host_id).id)
+            if not row:
+                continue
+            row["alerts"] = row.get("alerts", 0) + 1
+            if row.get("level") != "critical":
+                row["level"] = alert.level
+
+        def weight(row):
+            """Order the servers: critical alerts, then the most alerts,
+            what is happening now, then what is set."""
+            return (
+                row.get("level") != "critical", -row.get("alerts", 0),
+                not row.get("ssh_bruteforce"), not row.get("weblogin_bruteforce"),
+                not row.get("silent"), not row["off"], not row["unhardened"],
+                row["name"] or "",
+            )
+
+        listed = sorted(
+            (r for r in rows.values() if r.get("alerts") or r.get("ssh_bruteforce")
+             or r.get("weblogin_bruteforce") or r.get("silent") or r["off"]
+             or r["unhardened"]),
+            key=weight,
+        )
+        return {
+            "state": "ready",
+            "off": sum(1 for r in rows.values() if r["off"]),
+            "unhardened": sum(1 for r in rows.values() if r["unhardened"]),
+            "alerts_hosts": sum(1 for r in rows.values() if r.get("alerts")),
+            "rows": listed[:_MAX_STATE_ROWS],
+            "hidden": max(0, len(listed) - _MAX_STATE_ROWS),
+        }
 
     @api.model
     def _fleet_alert_counts(self):
