@@ -504,7 +504,7 @@ ic_db_load_args() {
 # ``kind=build|files`` and ``at=<UTC>``: ``build`` from a job that builds
 # the image, ``files`` from one that only rewrites files (a plan change).
 # Only a ``build`` mark holds anything back: what recreates containers
-# (compose_op.sh), what boots the image apart (tenant_push.sh), and, from
+# (compose_op.sh), a script that boots the image apart, and, from
 # the panel, restores and moves. ``rebuild.sh clear-unapplied <dir>``
 # without a job is the way out by hand (docs/runbooks/RB-42).
 

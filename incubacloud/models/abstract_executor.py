@@ -112,8 +112,9 @@ COMPOSE_OP_EXIT_UNCHECKED = 24
 #: A script refused to go on because a rebuild left its rewritten files
 #: and its image unapplied on the server (the mark of
 #: ``scripts/lib/common.sh``, #96): ``compose_op.sh`` when the previous
-#: build cannot be started as it was, ``tenant_push.sh`` before booting the
-#: image, ``rebuild.sh check-unapplied`` when there is a mark at all.
+#: build cannot be started as it was, a script that boots the image apart
+#: before booting it, ``rebuild.sh check-unapplied`` when there is a mark
+#: at all.
 #: Nothing was run.
 COMPOSE_OP_EXIT_UNAPPLIED = 26
 #: ``compose_op.sh`` started the existing containers, the previous build,
