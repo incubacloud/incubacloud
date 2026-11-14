@@ -88,6 +88,11 @@ class TestTheJobEmailUsesIt(TransactionCase):
     module's partner columns, ``account``'s among them."""
 
     def test_a_job_email_goes_out_in_the_layout(self):
+        # A module on top may configure another logo address; this test
+        # starts from the default one, as TestTheCompanyLayout does.
+        self.env['ir.config_parameter'].sudo().set_param(
+            'incubacloud.mail_logo_url', False,
+        )
         self.env.company.email_secondary_color = '#13579b'
         user = self.env['res.users'].create({
             'name': 'job-layout', 'login': 'job-layout',
