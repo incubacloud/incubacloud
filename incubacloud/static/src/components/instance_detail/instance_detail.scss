@@ -177,6 +177,86 @@
     }
 }
 
+// ── New instance: one page (form standard §1, §3, §4) ──────────────────────
+// A section per tab of the instance's page, its title above its groups, no
+// wider than the groups. A folded one is a single bar until opened. The
+// footer with Create stays at the bottom of the window.
+
+.ic-new-sec {
+    max-inline-size: 920px;
+    margin-block-end: 26px;
+
+    &--fold { margin-block-end: 12px; }
+    &--fold .ic-new-sec__body { padding-block-start: 12px; }
+}
+
+.ic-new-sec__title {
+    font-family: var(--rl-fd);
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 12px;
+    color: var(--rl-fg);
+
+    .ic-new-sec--fold & { margin: 0; }
+}
+
+.ic-new-sec__toggle {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    inline-size: 100%;
+    min-block-size: 44px;
+    padding: 10px 16px;
+    border: 1px solid var(--rl-line);
+    border-radius: var(--rl-r);
+    background: var(--rl-surf);
+    color: var(--rl-fg);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+
+    .fa { inline-size: 12px; font-size: 12px; color: var(--rl-muted); }
+    &:hover { border-color: var(--rl-line2); }
+    &:focus-visible { outline: 2px solid var(--rl-green-text); outline-offset: 2px; }
+}
+
+.ic-new-sec__adv {
+    font-family: var(--rl-fb);
+    font-size: 12.5px;
+    font-weight: 400;
+    color: var(--rl-muted);
+}
+
+.ic-new-sec__changed {
+    font-family: var(--rl-fm);
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--rl-amber-ink);
+    background: var(--rl-amber-soft);
+    border-radius: 4px;
+    padding: 1px 6px;
+}
+
+.rl-formfoot.ic-new-foot {
+    position: sticky;
+    inset-block-end: 0;
+    z-index: 5;
+    max-inline-size: 920px;
+    margin-block-start: 6px;
+    padding-block: 12px;
+    background: var(--rl-bg);
+}
+
+.rl-ff-hint.ic-new-foot__err {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--rl-red-text);
+    font-weight: 600;
+}
+
 // The sentence above a tab's groups.
 .ic-inst-lead { margin-block: 0 14px; }
 

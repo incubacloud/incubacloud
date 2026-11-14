@@ -4,6 +4,7 @@ import {
   onWillStart,
   onMounted,
   onWillUnmount,
+  useEffect,
   useEnv,
   useRef,
 } from "@odoo/owl";
@@ -197,6 +198,13 @@ function applyPipResolutions(text, choices) {
     }
   );
 }
+
+/**
+ * The sections of the new-instance page that start folded, as «Advanced»
+ * (form standard §4): their defaults serve most instances, and the fields
+ * in them are not required. A field to fix opens its section.
+ */
+export const NEW_FOLDED_SECTIONS = ["database", "email", "deps", "resources"];
 
 /**
  * The tab of the form that holds each field, for the marks on the tab bar,
@@ -432,9 +440,16 @@ export class InstanceDetail extends JobsMixin(
     this.orm = useService("orm");
     // Scroll box of the Recent requests table; reset on a page change.
     this.requestsBoxRef = useRef("requestsBox");
+    // The new-instance page, where Create looks for the first field to fix.
+    this.newPageRef = useRef("newPage");
 
     this.state = useState({
       tab: "overview",
+      // The folded sections of the new-instance page opened by hand.
+      openSections: {},
+      // Bumped by a Create that found fields to fix: the first one takes
+      // the focus once the page shows its error.
+      focusErrorAsk: 0,
       loading: true,
       // The job whose "Action required" says why, opened by a click.
       holdOpen: null,
@@ -583,6 +598,12 @@ export class InstanceDetail extends JobsMixin(
     };
 
     usePipFocus(this);
+    useEffect(
+      (ask) => {
+        if (ask) this._focusFirstError();
+      },
+      () => [this.state.focusErrorAsk]
+    );
     onWillStart(() => this.load());
     onMounted(() => {
       if (!this.isCreate) {
@@ -885,7 +906,8 @@ export class InstanceDetail extends JobsMixin(
    * «More». At most eight in the bar (form standard §1); a tab is always
    * in the same place whatever the environment and the permissions. Email
    * is production's and Mails staging's, so each takes the other's place.
-   * The new-instance form has no «More»: its tabs all fit.
+   * The new-instance page has no bar: these are its sections, one under
+   * the other (``newSections``).
    *
    * @returns {{tabs: {key: string, label: string}[], more: {key: string, label: string}[]}}
    */
@@ -934,6 +956,88 @@ export class InstanceDetail extends JobsMixin(
       }
     }
     return [...marked];
+  }
+
+  /**
+   * The sections of the new-instance page: the tabs the form has when
+   * creating, in their order and with their names, each saying whether it
+   * starts folded (``NEW_FOLDED_SECTIONS``).
+   *
+   * @returns {{key: string, label: string, folded: boolean}[]}
+   */
+  get newSections() {
+    return this.instanceTabs.tabs.map((tab) => ({
+      ...tab,
+      folded: NEW_FOLDED_SECTIONS.includes(tab.key),
+    }));
+  }
+
+  /**
+   * Whether a section of the new-instance page shows its fields: always
+   * for one that does not fold; for a folded one, once opened by hand or
+   * while a field in it needs fixing.
+   *
+   * @param {string} key the section's key, a tab's
+   * @returns {boolean}
+   */
+  sectionOpen(key) {
+    if (!NEW_FOLDED_SECTIONS.includes(key) || this.state.openSections[key]) {
+      return true;
+    }
+    return Object.entries(FIELD_TABS).some(
+      ([field, tab]) => tab === key && this.validator.fieldError(field)
+    );
+  }
+
+  /**
+   * Fold or unfold a folded section of the new-instance page. A section
+   * with a field to fix stays open.
+   *
+   * @param {string} key the section's key
+   */
+  toggleSection(key) {
+    this.state.openSections[key] = !this.sectionOpen(key);
+  }
+
+  /**
+   * Whether a field of a section differs from what the new-instance page
+   * started with, so a folded section says it holds a change.
+   *
+   * @param {string} key the section's key
+   * @returns {boolean}
+   */
+  sectionChanged(key) {
+    const saved = this._savedForm ? JSON.parse(this._savedForm) : null;
+    if (!saved) return false;
+    const edited = this._editedValues();
+    return Object.entries(FIELD_TABS).some(
+      ([field, tab]) => tab === key
+        && JSON.stringify(edited[field]) !== JSON.stringify(saved[field])
+    );
+  }
+
+  /** @returns {number} how many fields of the form show an error */
+  get newErrorCount() {
+    return Object.keys(FIELD_TABS).filter((field) => this.validator.fieldError(field)).length;
+  }
+
+  /** @returns {string} what the new-instance footer says of those fields */
+  get newErrorText() {
+    const count = this.newErrorCount;
+    return count === 1
+      ? _t("1 field needs attention")
+      : _t("%s fields need attention", count);
+  }
+
+  /**
+   * Take the focus to the first field of the new-instance page that shows
+   * an error, in the page's order, and bring it into view.
+   */
+  _focusFirstError() {
+    const field = this.newPageRef.el?.querySelector('[aria-invalid="true"]');
+    if (!field) return;
+    field.focus();
+    field.scrollIntoView?.({block: "center"});
   }
 
   setTab(tab) {
@@ -1475,6 +1579,7 @@ export class InstanceDetail extends JobsMixin(
     const {isValid, firstError} = this.validator.validate(this.state.form);
     if (!isValid) {
       this.env.toast?.error(firstError);
+      if (this.isCreate) this.state.focusErrorAsk += 1;
       return;
     }
     this.state.saving = true;

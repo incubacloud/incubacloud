@@ -21,10 +21,16 @@ log in real time.
       and choose it on the instance, on its project, or for every production
       instance in **Settings → General → Default backup destination**.
 
-## 1. Open the project and click `Deploy instance`
+## 1. Open the project and press **+**
 
-A side panel opens with the deployment form. The same form is reused later for
-re-deploys, so it's worth getting comfortable with each field.
+In the project's side menu, press **+** next to **Production**. The deployment
+form opens on one page, in sections named as the instance's tabs: **General**,
+**Database**, **Networking**, **Email**, **Repos**, **Dependencies**,
+**Resources** and **Backups** (**Email** and **Backups** on a production only).
+**Database**, **Email**, **Dependencies** and **Resources** start folded under
+**Advanced**: their defaults serve most instances, and a click unfolds them.
+The same fields are on the instance's tabs later, so it's worth getting
+comfortable with each one.
 
 ## 2. Pick the environment
 
@@ -47,8 +53,8 @@ the panel offers 8.0 to 20.0, and a new project starts on the newest one
 (20.0) unless you pick another. The
 deployment form does not ask for it: a new instance takes its project's, and keeps
 it if the project changes later. The version influences which modules are
-available and which Postgres major versions you can pick under the form's
-**Database** tab (under **More** on an instance saved as a draft): 12 alone for Odoo 8.0 to 10.0, 12 to 13 for 11.0 and 12.0 (13 by
+available and which Postgres major versions you can pick in the form's
+**Database** section (on an instance saved as a draft, its **Database** tab, under **More**): 12 alone for Odoo 8.0 to 10.0, 12 to 13 for 11.0 and 12.0 (13 by
 default), 12 to 16 for 13.0 and 14.0 (16 by default), 12 to 17 for 15.0 (17 by
 default), 14 to 18 for 16.0 to 19.0 and 16 to 18 for 20.0, with 17 by default on
 the last two ranges.

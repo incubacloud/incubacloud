@@ -21,11 +21,14 @@
             <t t-elif="isCreate or state.inst">
 
                 <!-- ═══════════════════════════════════════════════════════════
-                     CREATE MODE — narrow page, crumb + rocket CTA
+                     CREATE MODE — one page (form standard §1): a section per
+                     tab of the instance's page, in its order and with its
+                     name; those whose defaults serve most instances folded
+                     as Advanced. The footer with Create stays in view.
                      ═══════════════════════════════════════════════════════════ -->
                 <t t-if="isCreate">
                     <div class="ic-rl-detail-scroll">
-                        <div class="rl-page">
+                        <div class="rl-page ic-new-page" t-ref="newPage">
 
                             <div class="rl-crumb">
                                 <a t-on-click="goBack">Instances</a>
@@ -45,19 +48,49 @@
                                 </div>
                             </div>
 
-                            <!-- Tabs (create mode subset): all fit, no «More» -->
-                            <TabBar
-                                tabs="instanceTabs.tabs"
-                                active="state.tab"
-                                marked="markedTabs"
-                                onSelect="(key) => this.setTab(key)"
-                            />
+                            <t t-foreach="newSections" t-as="sec" t-key="sec.key">
+                                <section
+                                    t-att-class="'ic-new-sec' + (sec.folded ? ' ic-new-sec--fold' : '')"
+                                    t-att-aria-labelledby="'idet-s-' + sec.key"
+                                >
+                                    <h2 t-if="sec.folded" class="ic-new-sec__title">
+                                        <button
+                                            type="button"
+                                            class="ic-new-sec__toggle"
+                                            t-att-id="'idet-s-' + sec.key"
+                                            t-att-aria-expanded="sectionOpen(sec.key) ? 'true' : 'false'"
+                                            t-att-aria-controls="'idet-sb-' + sec.key"
+                                            t-on-click="() => this.toggleSection(sec.key)"
+                                        >
+                                            <i t-att-class="'fa ' + (sectionOpen(sec.key) ? 'fa-chevron-down' : 'fa-chevron-right')" aria-hidden="true"/>
+                                            <span t-esc="sec.label"/>
+                                            <span class="ic-new-sec__adv">Advanced</span>
+                                            <span t-if="sectionChanged(sec.key)" class="ic-new-sec__changed">Changed</span>
+                                        </button>
+                                    </h2>
+                                    <h2 t-else="" class="ic-new-sec__title" t-att-id="'idet-s-' + sec.key" t-esc="sec.label"/>
+                                    <div
+                                        class="ic-new-sec__body"
+                                        t-att-id="'idet-sb-' + sec.key"
+                                        t-att-hidden="!sectionOpen(sec.key)"
+                                    >
+                                        <t t-call="incubacloud.InstanceDetail.tabBody">
+                                            <t t-set="section" t-value="sec.key"/>
+                                        </t>
+                                    </div>
+                                </section>
+                            </t>
 
-                            <t t-call="incubacloud.InstanceDetail.tabBody" />
-
-                            <!-- Footer (create) -->
-                            <div class="rl-formfoot">
+                            <!-- Footer (create): stays at the bottom of the
+                                 window, and says how many fields need attention
+                                 once Create found some. -->
+                            <div class="rl-formfoot ic-new-foot">
+                                <span t-if="newErrorCount" class="rl-ff-hint ic-new-foot__err" role="alert">
+                                    <t t-out="env.icon('alert', 14)"/>
+                                    <t t-esc="newErrorText"/>
+                                </span>
                                 <span
+                  t-else=""
                   class="rl-ff-hint"
                 >Fill in the required fields *</span>
                                 <button
@@ -2126,11 +2159,15 @@
          SHARED TAB BODY (general / database / networking / email / build /
          config / resources / dependencies / repos / backups / audit). Repos
          is kept mounted via display:none to preserve the branch cache.
+         On the instance's page it shows the open tab. The new-instance page
+         calls it once per section, with ``section`` set to that section's
+         key, and it shows that section alone.
          ════════════════════════════════════════════════════════════════════════ -->
     <t t-name="incubacloud.InstanceDetail.tabBody">
+        <t t-set="bodyTab" t-value="section || state.tab"/>
 
         <!-- ── General ──────────────────────────────────────────────────────── -->
-        <t t-if="state.tab === 'general'">
+        <t t-if="bodyTab === 'general'">
             <div class="ic-inst-col">
                 <div class="ic-set-block">
                     <div class="ic-set-block__body">
@@ -2258,7 +2295,7 @@
         </t>
 
         <!-- ── Database ─────────────────────────────────────────────────────── -->
-        <t t-if="state.tab === 'database'">
+        <t t-if="bodyTab === 'database'">
             <div class="ic-inst-col">
                 <div class="ic-set-block">
                     <div class="ic-set-block__body">
@@ -2309,7 +2346,7 @@
 
         <!-- ── Networking: the names the instance answers to, and what it
              shows on them. ─────────────────────────────────────────────── -->
-        <t t-if="state.tab === 'networking'">
+        <t t-if="bodyTab === 'networking'">
             <div class="ic-inst-col">
                 <section class="ic-set-block" aria-labelledby="idet-g-domains">
                     <div class="ic-set-block__head">
@@ -2413,7 +2450,7 @@
         <!-- ── Email (production): the relay its outgoing mail leaves by. A
              staging's mail never leaves the server (Mails), so it has no
              such tab; its relay values are kept, and copied by a clone. ── -->
-        <t t-if="state.tab === 'email'">
+        <t t-if="bodyTab === 'email'">
             <div class="ic-inst-col">
                 <p class="ic-smtp-note ic-inst-lead" t-esc="mailCaptureNotice"/>
                 <section class="ic-set-block" aria-labelledby="idet-g-relay">
@@ -2585,7 +2622,7 @@
 
         <!-- ── Build (edit only): when the instance is rebuilt, and what the
              rebuild does. ─────────────────────────────────────────────── -->
-        <t t-if="state.tab === 'build'">
+        <t t-if="bodyTab === 'build'">
             <div class="ic-inst-col">
                 <section class="ic-set-block" aria-labelledby="idet-g-push">
                     <div class="ic-set-block__head">
@@ -2657,7 +2694,7 @@
         </t>
 
         <!-- ── Odoo Config (edit only) ──────────────────────────────────────── -->
-        <t t-if="state.tab === 'config'">
+        <t t-if="bodyTab === 'config'">
             <div class="ic-code-editor-wrap">
                 <div class="ic-code-gutter">
                     <t t-foreach="getLineNumbers('odoo_conf')" t-as="n" t-key="n">
@@ -2678,7 +2715,7 @@
         </t>
 
         <!-- ── Resources: each service's two short fields ───────────────────── -->
-        <t t-if="state.tab === 'resources'">
+        <t t-if="bodyTab === 'resources'">
             <div class="ic-inst-col">
                 <div class="ic-res-grid">
                     <section class="ic-set-block" aria-labelledby="idet-g-res-odoo">
@@ -2794,7 +2831,7 @@
         </t>
 
         <!-- ── Dependencies ─────────────────────────────────────────────────── -->
-        <t t-if="state.tab === 'deps'">
+        <t t-if="bodyTab === 'deps'">
             <div class="ic-deps-panel">
                 <t t-if="!isCreate">
                     <button
@@ -2850,7 +2887,7 @@
         </t>
 
         <!-- ── Backups: where a production's go, then the list ─────────────── -->
-        <t t-if="state.tab === 'backups'">
+        <t t-if="bodyTab === 'backups'">
             <t t-if="state.form.environment === 'production'">
                 <div class="ic-inst-col">
                     <section class="ic-set-block" aria-labelledby="idet-g-destination">
@@ -3018,7 +3055,7 @@
         </t>
 
         <!-- ── Metrics ──────────────────────────────────────────────────────── -->
-        <t t-if="state.tab === 'metrics'">
+        <t t-if="bodyTab === 'metrics'">
             <div class="ic-metrics-panel">
 
                 <!-- The board: a diagnosis, then since when, which
@@ -3206,7 +3243,7 @@
              its own — a gateway per instance, which is what a customer
              actually asks for — and it is rendered into the compose file,
              so it takes a rebuild to apply, not a job. -->
-        <t t-if="state.tab === 'whitelist'">
+        <t t-if="bodyTab === 'whitelist'">
             <div class="ic-whitelist-panel">
                 <!-- One sentence, one string: an emphasis tag inside a
                      sentence makes the extractor emit fragments ("records the
@@ -3250,7 +3287,7 @@
         <!-- A staging's mail never leaves the server: Odoo is wired to an
              in-stack catcher. This is that mailbox, read live over SSH and
              stored nowhere in the panel. -->
-        <t t-if="state.tab === 'mails'">
+        <t t-if="bodyTab === 'mails'">
             <div class="ic-mails-panel">
 
                 <div class="ic-mails-toolbar">
@@ -3414,7 +3451,7 @@
         </t>
 
         <!-- ── Audit Logs ───────────────────────────────────────────────────── -->
-        <t t-if="state.tab === 'activity'">
+        <t t-if="bodyTab === 'activity'">
             <div class="ic-activity-panel">
 
                 <!-- Filter bar -->
@@ -3505,7 +3542,8 @@
         <!-- ── Repos — kept mounted to preserve branch cache ──────────────────── -->
         <div
       class="rl-repolist ic-repos-list"
-      t-att-style="state.tab !== 'repos' ? 'display:none' : ''"
+      t-if="!section or section === 'repos'"
+      t-att-style="bodyTab !== 'repos' ? 'display:none' : ''"
     >
             <div class="ic-repos-toolbar">
                 <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="addRepo">

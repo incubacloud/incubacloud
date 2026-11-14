@@ -81,9 +81,10 @@ Pick the case that matches where your Odoo runs.
 
 ## 3. Deploy the production instance
 
-Deploy it once, empty: it is what the data is restored into. Choose on its
-**Database** tab (under **More** on an instance saved as a draft) a PostgreSQL
-of the same major version as today's, or a newer one.
+Deploy it once, empty: it is what the data is restored into. Choose in the
+**Database** section of its form (on an instance saved as a draft, its
+**Database** tab, under **More**) a PostgreSQL of the same major version as
+today's, or a newer one.
 
 ## 4. Bring the data
 

@@ -110,8 +110,8 @@ container, another provider — into a **new production instance**:
       put the repositories that carry them in the project
       ([which modules a repository brings](../projects/index.md#which-modules-a-repository-brings)).
     - **PostgreSQL** of the source's major version or a newer one, chosen on the
-      instance form's **Database** tab (under **More** on an instance saved
-      as a draft).
+      new-instance form's **Database** section (on an instance saved as a
+      draft, its **Database** tab, under **More**).
 2. **Make the ZIP** on the source.
 
     === "With Odoo's database manager"
