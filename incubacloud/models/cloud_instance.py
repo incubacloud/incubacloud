@@ -1171,7 +1171,27 @@ class CloudInstance(models.Model):
                 if (retention := inst._cron_backup_retention())
                 and retention != TEMPLATE_BACKUP_RETENTION else {}
             ),
+            # Only for an SFTP destination, for the same reason: the key
+            # pair and the trusted server key reach the host in files of
+            # their own (``_extra_env_files``). Fingerprints, never a key.
+            **(
+                {"backup_sftp": inst._backup_sftp_backend()._sftp_snapshot()}
+                if inst._backup_sftp_backend() else {}
+            ),
         }
+
+    def _backup_sftp_backend(self):
+        """Return the SFTP destination this instance backs up to, if any.
+
+        :return: the effective ``cloud.backup.backend``, as the platform,
+            when backups are on and it is SFTP; an empty recordset else
+        :rtype: cloud.backup.backend
+        """
+        self.ensure_one()
+        bb = self.effective_backup_backend.sudo()
+        if bb and bb.backend_type == "sftp" and self._backup_enabled():
+            return bb
+        return self.env["cloud.backup.backend"]
 
     #: Fields a group writes and only the system reads: ``{field: group}``.
     #: Saving the OAuth2 relay's client secret is a developer's, as its

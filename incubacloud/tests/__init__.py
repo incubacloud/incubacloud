@@ -321,3 +321,4 @@ from . import test_cron_heartbeat
 from . import test_panel_address_change
 from . import test_session_cookie_binding
 from . import test_frame_ancestors
+from . import test_backup_backend_sftp
