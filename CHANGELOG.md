@@ -278,7 +278,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the backup. For it the test adds a replication rule on the loopback, for
   the database's own user, to the database's `pg_hba.conf` and reloads,
   and takes it out again right after the copy; a test stopped during the
-  copy takes it out first of all. The file is replaced only by a copy
+  copy takes it out first of all, and the TERM a stop sends two or three
+  times no longer kills the trap before it has put everything back. The file is replaced only by a copy
   without the rule that could be written and is not empty, and a rule
   that could not be taken out is said in the job's log. Before copying, the job's log always gives the database's size, the
   free space of Docker's disk, what the test needs and how long the copy
