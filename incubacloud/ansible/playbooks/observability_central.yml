@@ -103,6 +103,11 @@
     # began. They carry operators' and attackers' addresses, not the
     # instances' visitors.
     ic_security_log_retention_days: 90
+    # Series one LogQL query may return (Loki's default, 500, would break
+    # "top source addresses" during a distributed attack: review M4 of
+    # 13-nov-2026). Provisional: fixed with step M (M-c), measured with
+    # thousands of source addresses on the disposable QA server.
+    ic_loki_max_query_series: 5000
     # Bound to the Docker bridge gateway, NOT to 127.0.0.1.
     #
     # Everything that consumes this stack is itself a container: the host
@@ -206,6 +211,7 @@
                   period: 24h
           limits_config:
             allow_structured_metadata: false
+            max_query_series: {{ ic_loki_max_query_series | int }}
             retention_period: {{ ic_log_retention_days }}d
             retention_stream:
               - selector: '{log_type="security"}'
@@ -462,6 +468,17 @@
       ansible.builtin.command:
         cmd: docker compose -p incubacloud-central -f docker-compose.yaml up -d --remove-orphans
         chdir: "{{ ic_central_dir }}"
+      changed_when: true
+
+    - name: Restart Loki when its configuration changed  # noqa: no-handler
+      # Loki reads it at start only, and ``up -d`` does not recreate a
+      # container whose definition is unchanged: a new limit or retention
+      # never applied (found on 14-nov-2026, plan #84). The agents keep
+      # their lines and send them again once it answers.
+      ansible.builtin.command:
+        cmd: docker compose -p incubacloud-central -f docker-compose.yaml restart loki
+        chdir: "{{ ic_central_dir }}"
+      when: ic_loki_cfg is changed
       changed_when: true
 
     - name: Apply the access-control config and verify the boundary
