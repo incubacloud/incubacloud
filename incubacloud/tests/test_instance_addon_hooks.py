@@ -187,6 +187,32 @@ class TestAddonHooks(TransactionCase):
             self.assertIn("⚠ the sidecar's data is left", lines)
             finalize.assert_called_once()
 
+    def test_a_report_that_fails_does_not_fail_the_delete(self):
+        """The host is clean by then: failing would put the instance back
+        to deployed (``on_abort``)."""
+        results = {"Purge sidecar data": {"stdout": "left", "exit_status": 0}}
+        with (
+            patch.object(
+                self.Instance, "_teardown_pre_steps_left",
+                side_effect=RuntimeError("addon broke"),
+            ),
+            patch.object(DeleteInstanceExecutor, "_sys", autospec=True) as log,
+            patch.object(
+                self.Instance, "_finalize_removal", autospec=True,
+            ) as finalize,
+            self.assertLogs(
+                "odoo.addons.incubacloud.models.delete_instance_executor",
+                level="ERROR",
+            ),
+        ):
+            executor = self._executor(DeleteInstanceExecutor, "delete_instance")
+            asyncio.run(executor.on_success(results))
+            lines = [call.args[1] for call in log.call_args_list]
+            finalize.assert_called_once()
+        warned = [line for line in lines if line.startswith("⚠")]
+        self.assertEqual(len(warned), 1)
+        self.assertIn("addon broke", warned[0])
+
     def test_each_env_file_move_must_succeed(self):
         files = {".docker/a.env": "A=1\n", ".docker/b.env": "B=1\n"}
         with patch.object(

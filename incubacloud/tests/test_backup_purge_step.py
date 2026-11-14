@@ -520,6 +520,28 @@ class TestFrozenBackupPath(_PurgeBase):
             self.instance.custom_backup_dst, "boto3+s3://imported/elsewhere",
         )
 
+    def test_archiving_pins_the_destination_it_inherited(self):
+        """The copy is read and deleted with that destination's
+        credentials: a later change of the project's would point it at a
+        bucket that does not hold it."""
+        self.instance.backup_backend_id = False
+        self.project.backup_backend_id = self.backend
+        self.instance.invalidate_recordset()
+        self.instance._finalize_removal(keep_in_panel=True)
+        self.assertEqual(self.instance.backup_backend_id, self.backend)
+        other = self.env["cloud.backup.backend"].create({
+            "name": "pg-backend-2", "backend_type": "s3",
+            "s3_bucket": "pg-bucket-2", "s3_access_key_id": "AKIAPG2",
+            "s3_secret_access_key": "shh2",
+        })
+        self.project.backup_backend_id = other
+        self.instance.invalidate_recordset()
+        self.assertEqual(self.instance.effective_backup_backend, self.backend)
+
+    def test_an_instance_s_own_destination_is_kept(self):
+        self.instance._finalize_removal(keep_in_panel=True)
+        self.assertEqual(self.instance.backup_backend_id, self.backend)
+
     def test_deleting_does_not_freeze_anything(self):
         """There is nothing left to point at."""
         self.instance._finalize_removal(keep_in_panel=False)

@@ -82,6 +82,23 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         """
         return list(self._inst()._archived_copy_extra_prefixes())
 
+    def _dsts(self):
+        """Every prefix the job empties, the chain's first when it has one.
+
+        An archived instance with no chain path (none was frozen, or it
+        was cleared by hand) may still have a further prefix, and
+        ``delete_archived`` sends it here for that one: it is then the
+        first.
+
+        :return: one DST per environment file, in ``_env_paths``'s order
+        :rtype: list
+        """
+        inst = self._inst()
+        return [
+            dst for dst in (inst.custom_backup_dst, *self._extra_prefixes())
+            if dst
+        ]
+
     def _env_paths(self):
         """Remote paths of every environment file, the chain's first.
 
@@ -90,7 +107,7 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         """
         return [self._env_path()] + [
             self._job_path(f"purge-{n}.env")
-            for n in range(1, len(self._extra_prefixes()) + 1)
+            for n in range(1, len(self._dsts()))
         ]
 
     def _env_contents(self):
@@ -99,10 +116,9 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         :return: ``{remote path: content}``
         :rtype: dict
         """
-        dsts = [None, *self._extra_prefixes()]
         return {
             path: self._env_content(dst)
-            for path, dst in zip(self._env_paths(), dsts)
+            for path, dst in zip(self._env_paths(), self._dsts())
         }
 
     def _env_content(self, dst=None):

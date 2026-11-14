@@ -9205,6 +9205,18 @@ msgstr "Nombre de instancia"
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
+"Instance name '%(name)s' cannot end in '-pitr': an instance's continuous "
+"recovery archive is kept under its name with that ending, beside the backups"
+" of the instance that has it."
+msgstr ""
+"El nombre de instancia '%(name)s' no puede terminar en '-pitr': el archivo "
+"de recuperación continua de una instancia se guarda con su nombre y esa "
+"terminación, junto a las copias de la instancia que lo tiene."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
 "Instance name '%(name)s' is invalid. It must start with a lowercase letter "
 "or digit and contain only lowercase letters, digits, hyphens and underscores"
 " (max 63 chars)."

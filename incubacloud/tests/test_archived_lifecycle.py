@@ -15,7 +15,7 @@ pin is that the record either tells the truth or refuses.
 from unittest.mock import MagicMock, patch
 
 from odoo import fields
-from odoo.exceptions import AccessError, UserError
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import Request
 from odoo.tests.common import TransactionCase, new_test_user, tagged
 
@@ -406,6 +406,35 @@ class TestArchivedNameIsReserved(_ArchivedBase):
             "environment": "staging",
         })
         self.assertTrue(twin.exists())
+
+
+class TestARecoveryArchiveNameIsRefused(_ArchivedBase):
+    """``x-pitr`` is where ``x``'s continuous recovery archive is kept.
+
+    Beside ``x``'s backups: an instance of that name in the same folder
+    keeps its chain under the same prefix, and emptying either empties
+    both.
+    """
+
+    def test_creating_one_is_refused(self):
+        with self.assertRaisesRegex(ValidationError, "ar-inst-pitr"):
+            self.env["cloud.instance"].create({
+                "name": "ar-inst-pitr", "project_id": self.project.id,
+                "environment": "staging",
+            })
+
+    def test_renaming_to_one_is_refused(self):
+        with self.assertRaisesRegex(ValidationError, "-pitr"):
+            self.instance.name = "ar-inst-pitr"
+
+    def test_the_word_elsewhere_in_a_name_is_fine(self):
+        for name in ("pitr-inst", "ar-pitr-inst", "ar-pitrx"):
+            with self.subTest(name=name):
+                inst = self.env["cloud.instance"].create({
+                    "name": name, "project_id": self.project.id,
+                    "environment": "staging",
+                })
+                self.assertTrue(inst.exists())
 
 
 class TestArchivedRoutePayload(_ArchivedBase):
