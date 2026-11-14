@@ -586,6 +586,61 @@ silence come first, twenty at most.
 The three routes share one budget per user (20 boards a minute,
 `_BOARD_READS_PER_MIN`).
 
+### A server's Security view
+
+The server's **Metrics** tab has two views, *Performance* (the board
+above) and *Security* (`models/metrics_security.py`, plan #84 C6),
+answered by `/cloud/host/security_board` within the same budget.
+
+- **Without reading the central:** *not available on this panel* while
+  `_security_logs_available()` is false (a managed panel until its
+  manager allows security logs), observability off or without a central
+  (the boards' own states), and *off* for a server whose *Send security
+  logs* is off.
+- **For the `developer` role and above:** `PANELS["host_security"]`,
+  Fluent Bit's counters only, none with an address or a user (failed SSH
+  connections and bans by jail a minute; sign-ins, sudo, auditd and lines
+  an hour by kind; the collector's deliveries and drops; failed web logins
+  per instance), the HTTP of the instances as means over the range with
+  their failed web logins, the web-login jail's bans and lifts, how many
+  addresses the last web logins came from, the defence from the panel's
+  own fields (how many addresses may reach SSH, never which; hardening and
+  whether its alert is open; CDN and closed origin; the switch and the last
+  line the cron read; the credential the agents write with; whether the
+  panel can tell its own key) and a diagnosis that names how many security
+  alerts are open, never their text.
+- **For `group_cloud_manager` alone, decided by the route:** the answer
+  carries `tables` (addresses with the most failed SSH connections and
+  the users tried, with country and whether the jail holds them now;
+  sign-ins of 7 days attributed as the security events' cron does, without
+  its confirming connection; sudo with the program alone; the watched
+  files' changes; the addresses with the most failed web logins with the
+  instances each went to; the web-login jail's bans of 7 days with the
+  instances tried before), and `/cloud/host/security_lines` gives the last
+  200 raw lines of one closed kind. Anyone else gets no `tables` key and
+  is refused the lines: hiding them on the screen is not the control.
+- **How the tables count:** on the panel, over the last 5 000 lines of a
+  window (10 pages of 500, newest first), by address with IPv6 by its /64,
+  the way the web-login alert counts (`logs.count_weblogin_sources`). No
+  aggregation by address runs in Loki, so `max_query_series` never refuses
+  a table during an attack from thousands of addresses (review M4); a
+  window that held more says *counted over the last 5 000 lines*. The
+  aggregations reach 24 hours whatever the range; the filtered reads
+  (sign-ins, sudo, changes, bans, one instance's web logins) reach 7 days.
+  An address is banned now when its last `Ban` of the jail has no `Unban`
+  after it. Countries are looked up when the answer is built and never
+  kept; the view names DB-IP's attribution when a country came from it.
+- **Ids, never LogQL:** the browser sends a host id, a range and at most
+  an instance id, which must be of an instance of that server the caller
+  can read. An instance in a table is named from the panel's database by
+  its id and only when it is of this server; any other id is
+  *unidentified*. An archived server, one the caller cannot read or an id
+  that is not an integer is *not found*, before anything is asked of the
+  central.
+- **Cost:** one board is 10 PromQL queries and, for a manager, six log
+  reads in parallel (four at a time), one for anyone else; an answer is
+  kept 60 s per person, server, window and filter.
+
 ## Where the central runs
 
 The central is always installed on a server the panel manages: added to

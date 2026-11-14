@@ -13,9 +13,11 @@ raises an alert for what it did not do: a sign-in that is not its own, its
 key used from an address it does not connect from, another user's sudo,
 and a change to the watched files outside its jobs and consoles. Four
 metric rules watch Fluent Bit's security counters, the failed web logins
-per instance among them. The country of an address is looked up on the
-panel; by default the panel downloads DB-IP's free country database once
-a month.
+per instance among them. A server's Metrics tab gains a Security view:
+its figures for whoever reads metrics, and the tables of addresses, users
+and commands for whoever manages servers. The country of an address is
+looked up on the panel; by default the panel downloads DB-IP's free
+country database once a month.
 
 The update adds two tables and columns, and no data migration. The new
 cron starts reading from the moment it first runs: nothing earlier is
@@ -24,6 +26,18 @@ columns: Odoo keeps what each holds as its English text.
 
 ### Added
 
+- **A server's Security view (#84).** The server's Metrics tab shows
+  *Performance* or *Security*. Security says what is happening and
+  whether the defence works, draws the security counters' charts and the
+  HTTP and failed web logins of the instances, for the `developer` role
+  and above, with no address or user in any of it. Whoever manages
+  servers also gets, from `/cloud/host/security_board`, the tables of
+  addresses with country, attempts, instances and whether they are banned
+  now, the users tried, the sign-ins, sudo and changes of 7 days with whose
+  they look, and see lines (`/cloud/host/security_lines`, 200 raw lines);
+  the route leaves them out for anyone else. The tables are counted on the
+  panel over the last 5 000 lines, 24 hours at most or 7 days filtered
+  (`docs/observability-operations.md`, "A server's Security view").
 - **The alerts of the servers' security events (#84).** Every 5 minutes,
   over the servers sending their security logs with agents of revision 4,
   the *Read the servers' security events* cron reads sign-ins, sudo and
