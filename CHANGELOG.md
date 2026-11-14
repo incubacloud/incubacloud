@@ -75,6 +75,10 @@ panel's assets and the Spanish catalogue change.
   starts the update the way the guarded run does, with a name, and its
   trap removes the container on a stop; with no crons paused, the trap
   leaves the database alone.
+- **A notification token typed and then cancelled is no longer saved
+  (#13).** Notification preferences open on what is saved: a Telegram bot
+  token or a webhook signing secret typed before Cancel is dropped, where
+  the next Save sent it and replaced the stored one.
 
 ---
 
