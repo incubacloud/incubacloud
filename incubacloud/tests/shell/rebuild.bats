@@ -25,8 +25,10 @@ STUB
     # (1 GiB unless STUB_DB_KB says) and the free space of Docker's disk
     # (100 GiB unless STUB_FREE_KB says). With STUB_HBA_FILE the hba file
     # is that one, and the shell the test runs in the database's container
-    # to change it runs here, on it, its temporary file under $TMP.
-    # STUB_COPY_BLOCKS makes the copy say it started, in $TMP/copying, and
+    # to change it runs here, on it, its temporary file under $TMP; so does
+    # the database's reload, through the psql stub below, which keeps the
+    # file as it was when reloaded in $TMP/hba.loaded (what the database
+    # holds in memory). STUB_COPY_BLOCKS makes the copy say it started, in $TMP/copying, and
     # last until it is killed.
     export TMP
     export BOOT_ANSWERS="$TMP/boot-answers"
@@ -41,6 +43,11 @@ case "$*" in
             body="${1//\/tmp\/ic_boot_hba/$TMP/ic_boot_hba}"
             shift
             exec sh -c "$body" "$@"
+        fi ;;
+    "compose exec -T db psql "*"pg_reload_conf"*)
+        if [ -n "${STUB_HBA_FILE:-}" ]; then
+            shift 4
+            exec "$@"
         fi ;;
     *"pg_basebackup"*)
         if [ -n "${STUB_COPY_BLOCKS:-}" ]; then
@@ -69,6 +76,12 @@ case "$*" in
 esac
 STUB
     chmod +x "$TMP/bin/docker"
+    cat > "$TMP/bin/psql" <<'STUB'
+#!/usr/bin/env bash
+echo "psql $*" >> "$CALLS"
+[ -z "${STUB_HBA_FILE:-}" ] || cp "$STUB_HBA_FILE" "$TMP/hba.loaded"
+STUB
+    chmod +x "$TMP/bin/psql"
     # The script invokes copier by absolute path (~/.local/bin/copier).
     cat > "$HOME/.local/bin/copier" <<STUB
 #!/usr/bin/env bash
@@ -321,6 +334,9 @@ STUB
     [ "$drop_line" -lt "$boot_pg_line" ]
     [ "$(grep -cF 'grep -vxF' "$CALLS")" -eq 1 ]
     [ "$(grep -c 'SELECT pg_reload_conf()' "$CALLS")" -eq 2 ]
+    # The drop reloads in the same call, as the database's own user.
+    drop_call="$(printf '%s\n' "$calls" | sed -n "${drop_line}p")"
+    [[ "$drop_call" == *'psql -U "$3" -d "$4" -tAc "SELECT pg_reload_conf()"'*" sh $rule /etc/postgres/pg_hba.conf odoo prod" ]]
 }
 
 @test "boot-test takes the rule out of a real pg_hba.conf and leaves the rest" {
@@ -332,6 +348,9 @@ STUB
     cmp "$hba" "$TMP/pg_hba.before"
     [ ! -e "$TMP/ic_boot_hba" ]
     [[ "$output" != *"WARNING"* ]]
+    # Reloaded once with the rule and once without it.
+    [ "$(grep -c '^psql .*SELECT pg_reload_conf()' "$CALLS")" -eq 2 ]
+    cmp "$TMP/hba.loaded" "$TMP/pg_hba.before"
 }
 
 @test "boot-test never empties pg_hba.conf when its temporary copy cannot be written" {
@@ -346,8 +365,9 @@ STUB
     grep -qx 'local all all trust' "$hba"
     grep -qxF 'host replication odoo 127.0.0.1/32 trust # incubacloud boot test' "$hba"
     [ "$(grep -c "WARNING: could not take the boot test's replication rule out of the database's $hba" <<<"$output")" -eq 2 ]
-    # No reload of a file the drop did not change.
-    [ "$(grep -c 'SELECT pg_reload_conf()' "$CALLS")" -eq 1 ]
+    # No reload of a file the drop did not change: the one after the rule
+    # went in only.
+    [ "$(grep -c '^psql .*SELECT pg_reload_conf()' "$CALLS")" -eq 1 ]
 }
 
 @test "boot-test stopped during the copy takes the rule out first, then the volume" {
@@ -436,6 +456,82 @@ STUB
     volume_rm_line="$(printf '%s\n' "$calls" | grep -n 'volume rm ic_boot_42' | tail -1 | cut -d: -f1)"
     [ -n "$drop_line" ] && [ "$volume_rm_line" -gt "$drop_line" ]
     [[ "$calls" == *"compose start db odoo smtp"* ]]
+}
+
+@test "boot-test stopped as a detached step does keeps its trap's docker calls out of the later TERMs" {
+    # The trap ignores the TERMs after the first one, and the docker client
+    # does not: it sets its own handlers and dies of them, and the trap's
+    # ``|| true`` hid it. Here the stub's slow part dies of a TERM as the
+    # client does, and a TERM lands while the rule is taken out (after the
+    # file was edited, before the reload) and another while the services
+    # are started again. The stub keeps what docker would hold: the
+    # containers and the volume, the rule as loaded, the services started.
+    hba="$TMP/pg_hba.conf"
+    printf 'local all all trust\n' > "$hba"
+    cp "$hba" "$TMP/pg_hba.before"
+    printf '#!/usr/bin/env bash\necho "sleep $*" >> "$CALLS"\n/bin/sleep 0.1\n' > "$TMP/bin/sleep"
+    chmod +x "$TMP/bin/sleep"
+    mkdir "$TMP/state"
+    cat > "$TMP/bin/psql" <<'STUB'
+#!/usr/bin/env bash
+echo "psql $*" >> "$CALLS"
+if ! grep -qF 'incubacloud boot test' "$STUB_HBA_FILE"; then
+    : > "$TMP/dropping"
+    env --default-signal=TERM /bin/sleep 1 || exit 143
+fi
+cp "$STUB_HBA_FILE" "$TMP/hba.loaded"
+STUB
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    "run "*)
+        prev=""
+        for arg; do
+            [ "$prev" != --name ] || : > "$TMP/state/container.$arg"
+            prev="$arg"
+        done ;;
+    "rm -f "*)
+        shift 2
+        for name; do rm -f "$TMP/state/container.$name"; done ;;
+    "volume create "*)    : > "$TMP/state/volume.$3" ;;
+    "volume rm "*)        rm -f "$TMP/state/volume.$3" ;;
+    "compose start "*)
+        : > "$TMP/starting"
+        env --default-signal=TERM /bin/sleep 1 || exit 143
+        shift 2
+        echo "$*" > "$TMP/state/started" ;;
+esac
+. "$BOOT_ANSWERS"
+case "$*" in
+    *"compose config --services"*)    printf 'odoo\ndb\nsmtp\n' ;;
+    *"compose ps -q --status running"*)    printf 'odoo\ndb\nsmtp\n' ;;
+    "inspect -f "*)    shift 3; printf '%s\n' "$@" ;;
+esac
+STUB
+    chmod +x "$TMP/bin/docker"
+    STUB_HBA_FILE="$hba" STUB_COPY_BLOCKS=1 \
+        setsid timeout --kill-after=60 60 bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod \
+        >"$TMP/out" 2>&1 </dev/null &
+    pid=$!
+    for marker in copying dropping starting; do
+        for _ in $(seq 100); do
+            [ -e "$TMP/$marker" ] && break
+            /bin/sleep 0.05
+        done
+        [ -e "$TMP/$marker" ]
+        pkill -TERM -s "$pid" || true
+    done
+    status=0
+    wait "$pid" || status=$?
+    [ "$status" -eq 143 ]
+    # The rule out of the file and out of the database's memory.
+    cmp "$hba" "$TMP/pg_hba.before"
+    cmp "$TMP/hba.loaded" "$TMP/pg_hba.before"
+    [[ "$(cat "$TMP/out")" != *"WARNING"* ]]
+    # The copy's container and the volume gone, the instance started.
+    [ -z "$(find "$TMP/state" -name 'container.*' -o -name 'volume.*')" ]
+    [ "$(cat "$TMP/state/started")" = "db odoo smtp" ]
 }
 
 @test "boot-test says what it measured and how long the copy should take" {
