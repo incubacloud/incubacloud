@@ -48,7 +48,7 @@ the panel offers 8.0 to 20.0, and a new project starts on the newest one
 deployment form does not ask for it: a new instance takes its project's, and keeps
 it if the project changes later. The version influences which modules are
 available and which Postgres major versions you can pick under the form's
-**Database** tab: 12 alone for Odoo 8.0 to 10.0, 12 to 13 for 11.0 and 12.0 (13 by
+**Database** tab (under **More** on an instance saved as a draft): 12 alone for Odoo 8.0 to 10.0, 12 to 13 for 11.0 and 12.0 (13 by
 default), 12 to 16 for 13.0 and 14.0 (16 by default), 12 to 17 for 15.0 (17 by
 default), 14 to 18 for 16.0 to 19.0 and 16 to 18 for 20.0, with 17 by default on
 the last two ranges.
