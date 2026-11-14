@@ -152,6 +152,10 @@ panel's assets and the Spanish catalogue change.
 
 ### Fixed
 
+- **A fold's count of unsaved fields reads «1 changed» in the singular
+  (#13).** The «Advanced» folds of Settings and of the pages that share
+  them said «1 cambiados» in Spanish; the count now has a string for one
+  and one for several.
 - **A relay's hidden secret is no longer sent by Save (#121).** In an
   instance's mail relay, a password typed before choosing OAuth2 – Microsoft
   365 (or a client secret typed before going back to Password) was hidden by

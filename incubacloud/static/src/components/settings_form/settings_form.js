@@ -335,6 +335,12 @@ export class SettingAdvanced extends Component {
         return this.props.fields.filter((id) => this.api.isChanged(id, this.store)).length;
     }
 
+    /** @returns {string} "N changed", in the singular for one */
+    get changedLabel() {
+        const n = this.changedCount;
+        return n === 1 ? _t("1 changed") : _t("%s changed", n);
+    }
+
     /** @returns {string} "N settings" */
     get countLabel() {
         const n = this.props.fields.length;

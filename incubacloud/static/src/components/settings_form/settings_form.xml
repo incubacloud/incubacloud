@@ -170,7 +170,7 @@
                 <i t-att-class="'fa ' + (open ? 'fa-chevron-down' : 'fa-chevron-right')" aria-hidden="true"/>
                 <span class="ic-set-adv__title">Advanced</span>
                 <span class="ic-set-adv__count" t-esc="countLabel"/>
-                <span t-if="changedCount" class="ic-set-adv__changed"><t t-esc="changedCount"/> changed</span>
+                <span t-if="changedCount" class="ic-set-adv__changed" t-esc="changedLabel"/>
             </button>
             <div t-att-id="panelId" t-att-hidden="!open">
                 <t t-slot="default"/>
