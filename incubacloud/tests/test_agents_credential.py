@@ -22,6 +22,7 @@ from odoo import fields
 from odoo.modules.module import get_module_path
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.models.cloud_settings_agents import credential_digest
 from odoo.addons.incubacloud.models.host_hardening_executor import (
     HostHardeningExecutor,
 )
@@ -73,6 +74,28 @@ class AgentsCase(ObservabilityExecutorCase):
         """Return every ``src_paths`` of *user*."""
         return [p for entry in user["url_map"] for p in entry["src_paths"]]
 
+    def _agents_in_force(self, in_force=True, token="agent-secret"):
+        """Record a list on the central with or without the agents' user, as a sync does.
+
+        The users and the digests of their credentials together, so the
+        state holds whether "in force" is asked by the user's name or by
+        its credential's digest.
+
+        :param bool in_force: whether the list carries the agents' user.
+        :param token: the agents' credential this panel holds, ``False``
+            for none; the list carries it only while *in_force*.
+        """
+        users = [ACCOUNT]
+        digests = [credential_digest(ACCOUNT, "shared-secret")]
+        if in_force:
+            users.append(AGENT)
+            digests.append(credential_digest(AGENT, token))
+        self.settings.write({
+            "metrics_agent_token": token,
+            "metrics_accounts_deployed": "\n".join(users),
+            "metrics_credentials_deployed": "\n".join(sorted(digests)),
+        })
+
     def _install(self, **vals):
         """Mark this test's host as installed by the agents, with *vals*."""
         self.host.sudo().write({
@@ -119,10 +142,7 @@ class TestTheAgentsUser(AgentsCase):
         self.assertNotEqual(agent["password"], "shared-secret")
 
     def test_agents_get_agent_token_when_central_has_it(self):
-        self.settings.write({
-            "metrics_agent_token": "agent-secret",
-            "metrics_accounts_deployed": f"{ACCOUNT}\n{AGENT}",
-        })
+        self._agents_in_force()
         extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
         self.assertEqual(extra["ic_remote_write_user"], AGENT)
         self.assertEqual(extra["ic_remote_write_token"], "agent-secret")
@@ -133,10 +153,7 @@ class TestTheAgentsUser(AgentsCase):
         """Minted but not on the central yet, or not minted: the account's (A2)."""
         for token in ("agent-secret", False):
             with self.subTest(token=token):
-                self.settings.write({
-                    "metrics_agent_token": token,
-                    "metrics_accounts_deployed": ACCOUNT,
-                })
+                self._agents_in_force(False, token)
                 extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
                 self.assertEqual(extra["ic_remote_write_user"], ACCOUNT)
                 self.assertEqual(extra["ic_remote_write_token"], "shared-secret")
@@ -184,14 +201,11 @@ class TestTheAgentsAreAppliedAgain(AgentsCase):
         return executor
 
     def test_write_user_installed_recorded(self):
-        self.settings.write({
-            "metrics_agent_token": "agent-secret",
-            "metrics_accounts_deployed": f"{ACCOUNT}\n{AGENT}",
-        })
+        self._agents_in_force()
         self._succeed(ic_write_user_installed="agent")
         self.assertEqual(self.host.metrics_write_user, "agent")
         # A playbook from before says nothing: what was sent.
-        self.settings.metrics_accounts_deployed = ACCOUNT
+        self._agents_in_force(False)
         self._succeed()
         self.assertEqual(self.host.metrics_write_user, "account")
 
@@ -200,7 +214,7 @@ class TestTheAgentsAreAppliedAgain(AgentsCase):
         self.settings.write({"metrics_agent_token": "agent-secret"})
         executor = self._make(ObservabilityAgentsExecutor)
         executor.get_extra_vars()
-        self.settings.metrics_accounts_deployed = f"{ACCOUNT}\n{AGENT}"
+        self._agents_in_force()
         executor._facts = {"ic_agents_running": "3", "ic_write_user_installed": "account"}
         asyncio.run(executor.on_success({}))
         self.assertEqual(self.host.metrics_agents_revision, 0)
@@ -217,10 +231,7 @@ class TestTheAgentsUserIsAppliedByState(AgentsCase):
     def setUp(self):
         """The agents' user in force; the other servers of the database on it."""
         super().setUp()
-        self.settings.write({
-            "metrics_agent_token": "agent-secret",
-            "metrics_accounts_deployed": f"{ACCOUNT}\n{AGENT}",
-        })
+        self._agents_in_force()
         # A copy of production holds servers of its own: on the current
         # revision and the agents' user, they stay out of the counts.
         self.env["cloud.host"].sudo().search([("id", "!=", self.host.id)]).write({
@@ -241,10 +252,10 @@ class TestTheAgentsUserIsAppliedByState(AgentsCase):
     def test_a_retry_on_the_account_credential_is_applied_again(self):
         """A failed server retried on the old credential as the new came in."""
         self._install(metrics_agents_state="failed", metrics_agents_attempts=1)
-        self.settings.metrics_accounts_deployed = ACCOUNT
+        self._agents_in_force(False)
         executor = self._make(ObservabilityAgentsExecutor)
         executor.get_extra_vars()
-        self.settings.metrics_accounts_deployed = f"{ACCOUNT}\n{AGENT}"
+        self._agents_in_force()
         executor._facts = {"ic_agents_running": "3", "ic_write_user_installed": "account"}
         asyncio.run(executor.on_success({}))
         self.assertEqual(self.host.metrics_agents_state, "installed")
@@ -270,9 +281,7 @@ class TestTheAgentsUserIsAppliedByState(AgentsCase):
 
     def test_a_layer_that_starts_handing_it_over_later(self):
         """Handed down before the layer said so: no moment, yet it converges."""
-        self.settings.write({
-            "metrics_agent_token": False, "metrics_accounts_deployed": ACCOUNT,
-        })
+        self._agents_in_force(False, False)
         self._install(metrics_write_user="account")
         self.settings.write({"metrics_agent_token": "agent-secret"})
         self.assertEqual(self.host.metrics_agents_revision, AGENTS_REVISION)
@@ -284,7 +293,7 @@ class TestTheAgentsUserIsAppliedByState(AgentsCase):
 
     def test_a_host_brought_back_from_the_archive(self):
         """Archived when the agents' user came into force, then restored."""
-        self.settings.metrics_accounts_deployed = ACCOUNT
+        self._agents_in_force(False)
         self._install(metrics_write_user="account", active=False)
         self.settings._metrics_record_deployed(self.settings._vmauth_users())
         self.assertTrue(self.settings._metrics_agent_in_force())
@@ -300,7 +309,7 @@ class TestTheAgentsUserIsAppliedByState(AgentsCase):
 
     def test_the_account_credential_is_right_until_it_is_in_force(self):
         """The way back (A2): nothing to re-apply while the central lacks it."""
-        self.settings.metrics_accounts_deployed = ACCOUNT
+        self._agents_in_force(False)
         self._install(metrics_write_user="account")
         self.assertEqual(self._reconcile(), 0)
         self.assertEqual(self._queued(), 0)
@@ -316,11 +325,8 @@ class TestTheReadCredentialRotates(AgentsCase):
             "name": "HY", "ip_address": "10.0.0.41", "user": "root",
             "wildcard_domain": "hy.example.com",
         })
-        self.settings.write({
-            "metrics_agent_token": "agent-secret",
-            "metrics_accounts_deployed": f"{ACCOUNT}\n{AGENT}",
-            "metrics_central_host_id": self.host.id,
-        })
+        self._agents_in_force()
+        self.settings.metrics_central_host_id = self.host.id
 
     def test_rotation_waits_for_every_host(self):
         """A server on revision 3, or with the account's credential, holds it."""
@@ -341,7 +347,7 @@ class TestTheReadCredentialRotates(AgentsCase):
         self.other.sudo().metrics_agents_state = "never"
         self.assertTrue(Settings._metrics_rotation_due())
         # Nor before the agents' user is in force.
-        self.settings.metrics_accounts_deployed = ACCOUNT
+        self._agents_in_force(False)
         self.assertFalse(Settings._metrics_rotation_due())
 
     def test_a_panel_handed_its_credentials_never_rotates_them(self):
