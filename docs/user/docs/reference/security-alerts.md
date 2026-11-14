@@ -10,10 +10,10 @@ There are two kinds:
 - **Events**, read from the logs every 5 minutes: a sign-in, a `sudo` command
   or a change that the panel did not make. They do not close by themselves:
   dismiss one once you know what it was. If the same thing happens again
-  while it is open, the alert says how many times and since when, but you
-  are not notified again: only a rise from warning to critical notifies.
-  An open alert keeps the next ones of its kind on that server silent, so
-  dismiss it to be notified of the next.
+  while it is open, the alert says how many times and since when, and you
+  are notified again of each new one, at most once an hour per server: the
+  ones within an hour of that server's last notice only update the alert
+  on the panel.
 - **Rules**, measured on the servers' counters every 5 minutes, like the
   [other metric rules](monitoring.md#alerts). They close by themselves when
   the figure goes back under the threshold.
