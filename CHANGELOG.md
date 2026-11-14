@@ -96,8 +96,8 @@ panel's assets and the Spanish catalogue change.
   Replace. With nothing stored the input is empty and says «Not set»; the
   hint under it stays, set in the text font at 12.5 px, and «Leave blank to
   auto-generate a strong password» shows only where the server generates
-  one (an instance's admin and database passwords, a host's SSH and
-  Traefik panel passwords, a backup destination's passphrase): an
+  one (an instance's admin and database passwords, a host's Traefik
+  panel password, a backup destination's passphrase): an
   instance's SMTP password and a destination's secret access key, which
   nothing generates, said it too and show no hint now. A token of Settings
   › Git providers follows the same pattern instead of the placeholder
