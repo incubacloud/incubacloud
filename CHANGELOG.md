@@ -67,6 +67,12 @@ panel's assets and the Spanish catalogue change.
 
 ### Fixed
 
+- **A relay's hidden secret is no longer sent by Save (#121).** In an
+  instance's mail relay, a password typed before choosing OAuth2 – Microsoft
+  365 (or a client secret typed before going back to Password) was hidden by
+  the form but still sent on Save, and replaced the stored one. Save now sends
+  only the secret of the authentication in use; the other goes empty, which
+  keeps what is stored.
 - **A module update stopped with the instance's database out of reach
   leaves no container running (#120).** When `cron_guard.sh` cannot talk
   to the database it runs the update unguarded, and that run had neither

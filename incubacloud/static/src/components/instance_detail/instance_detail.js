@@ -1284,6 +1284,13 @@ export class InstanceDetail extends JobsMixin(
         apt_dependencies: this.state.aptDeps,
         tag_ids: this.state.selectedTags.map((t) => t.id),
       };
+      // Only the secret of the authentication in use travels: what was typed
+      // before the other was chosen is hidden, and "" keeps what is stored.
+      if (this.isOAuthRelay) {
+        vals.smtp_relay_password = "";
+      } else {
+        vals.smtp_relay_oauth_client_secret = "";
+      }
       if (this.isCreate) {
         vals.project_id = this.props.project_id;
         vals.odoo_proxy = "traefik";
