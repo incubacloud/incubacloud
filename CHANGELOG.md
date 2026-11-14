@@ -52,6 +52,12 @@ pass, and the central is deployed again (revision 2).
 The update adds columns and no data migration: the agents' user is minted
 by the central's next deployment or account sync.
 
+Once the read credential is rotated: an archived server whose agents still
+run gets a 401 for everything it sends; going back to a core before
+1.0.230 leaves without writes every server that core applies again (it is
+fixed by updating again); and anything else pointed at the central with
+the account's credential by hand loses it.
+
 ### Added
 
 - **The agents' own user on the central, handed out by state (#84).**

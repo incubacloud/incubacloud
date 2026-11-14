@@ -161,6 +161,21 @@ plan #84 A2):
   reconciliation cron drives it (`_reconcile_metrics_credentials`), and a
   central deployed before 1.0.230 gets the agents' user with its next
   sync or deployment.
+- While the agents' user is in force, the reconciliation re-applies, five
+  a pass, every installed server whose agents still write with the
+  account's credential, whatever its revision: an install that ran on the
+  old credential as the new one came, a job resumed by another worker, or
+  a server brought back from the archive.
+- **After the rotation:**
+  - An archived server whose agents still run is not waited for, and
+    gets a 401 for everything it sends once the old credential is gone.
+    Unarchived, the reconciliation applies it again with the agents' user.
+  - Going back to a core before 1.0.230 leaves without writes every server
+    that core applies again: it hands them the account's credential,
+    which no longer writes. It is fixed forward, by updating again.
+  - A second panel or tool pointed by hand at the central with the
+    account's credential loses it: give it the new read credential, which
+    only reads.
 
 vmauth keeps its credentials in clear (it has no hash support). That is
 mitigated the same way the agents' copy of the token is: the config lives
@@ -339,8 +354,16 @@ itself and its counters never expire).
   step M measures it); above it they are counted and not sent, so an
   attack on the open web port cannot fill the buffer SSH and auditd
   share. The jail does not count `ignoreip` addresses (the panel, trusted
-  proxies); the counter does. bats checks the Lua against the jail's own
-  filter on the same lines (`fluent_bit_lines.bats`).
+  proxies); the counter does. A line longer than 32 KB (a `POST` to
+  `/web/login` with a long query) is skipped whole (`skip_long_lines`):
+  the jail counts it and the collector does not, so an attack spread over
+  many addresses with such requests would raise no alert. A known limit,
+  until step M of plan #84 measures Fluent Bit's memory with a buffer
+  above Traefik's largest header (1 MB). bats checks the Lua against the
+  jail's own filter on the same lines (`fluent_bit_lines.bats`, with
+  `IC_FLUENT_BIT_TEST=1`: it needs Docker, and the CI skips it); a test of
+  the module pins the filter, the grep and the Lua's condition together,
+  so none moves without running it.
 - **Counters**, scraped by vmagent from Fluent Bit (`job="security"`), with
   a closed set of labels: `ic_ssh_auth_failed_total` (one per connection
   that never authenticated), `ic_ssh_accepted_total{kind=panel|other,

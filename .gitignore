@@ -64,6 +64,8 @@ cover/
 
 # Django stuff:
 *.log
+# The shell tests' fixtures are logs on purpose.
+!incubacloud/tests/shell/fixtures/**/*.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
