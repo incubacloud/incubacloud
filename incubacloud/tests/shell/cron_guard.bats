@@ -89,7 +89,8 @@ EOF
 }
 
 # A docker stub for a stop, that keeps what the database and the host
-# would (answering "SELECT 1" with a failure when $UNREACHABLE is set): the marker table (${TMP}/marker), crons paused (${TMP}/paused),
+# would (answering "SELECT 1" with a failure when $UNREACHABLE is set):
+# the marker table (${TMP}/marker), crons paused (${TMP}/paused),
 # the update's container (${TMP}/container, holding its name), a list
 # dropped by a call that does not put the crons back
 # (${TMP}/dropped_alone). Like the real client, which sets its own

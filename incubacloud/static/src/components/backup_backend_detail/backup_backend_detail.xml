@@ -359,7 +359,7 @@
                             </div>
                             <div class="rl-ftoggle">
                                 <div>
-                                    <div class="rl-tl-label">Report on success</div>
+                                    <div class="rl-tl-label" id="bb-report-success-label">Report on success</div>
                                     <div
                     class="rl-th"
                   >Send email notification on successful backup</div>
@@ -368,6 +368,7 @@
                   t-att-class="'rl-sw' + (state.form.smtp_report_success ? ' on' : '')"
                   role="switch"
                   t-att-aria-checked="state.form.smtp_report_success ? 'true' : 'false'"
+                  aria-labelledby="bb-report-success-label"
                   t-on-click="() => this.toggleField('smtp_report_success')"
                 />
                             </div>
