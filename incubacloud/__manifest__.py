@@ -1,6 +1,6 @@
 {
     "name": "Incubacloud",
-    "version": "1.0.229",
+    "version": "1.0.231",
     "summary": "Deploy, manage and monitor doodba-based Odoo instances via SSH",
     "sequence": 10,
     "description": """

@@ -62,15 +62,20 @@ columns: Odoo keeps what each holds as its English text.
   `security_sensitive_change` (a change to passwd, shadow, sudoers or the
   SSH configuration by another user, critical, or by the panel's user or
   root outside every job, console and terminal of the panel, critical
-  and, for root, a provisional warning) and `security_sudo_foreign` (a
+  and, for root (login uid 0, also where the panel signs in as root), a
+  provisional warning) and `security_sudo_foreign` (a
   warning, with the program and never its arguments). The panel's own sudo
   is left out in LogQL. A cursor stays put when the central fails and
   moves only to the last line read at the page limit, two passes in a row
   of which raise `security_events_backlog`; a server back from a silence
   is read again from where it went quiet, 24 hours at most. An event is
-  counted once (`cloud.security.event`, 7 days, never the line). The
-  alerts do not resolve themselves and count their repeats; only the two
-  sign-in alerts carry the address, none the country.
+  counted once (`cloud.security.event`, 7 days, never the line), and
+  judged in a savepoint of its own: one that fails is logged and skipped.
+  The servers' rows the cron writes are written on a READ COMMITTED cursor
+  of their own. The alerts do not resolve themselves and count their
+  repeats without notifying again, so an open one must be dismissed for
+  the next to notify; only the two sign-in alerts carry the address, none
+  the country.
 - **The security logs read back from the central (#84).** `models/logs.py`:
   LogQL over the account's `/lr` route, paged by time, closed templates,
   parsers anchored at the start of the line whose user names and programs
