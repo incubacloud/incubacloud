@@ -320,7 +320,11 @@ class TestAlertNotifyEmail(TransactionCase):
 
     def test_the_alert_email_goes_out_in_the_company_layout(self):
         """Logo, frame and footer come from the layout, around the
-        alert itself."""
+        alert itself. A module on top may configure another logo
+        address; this test starts from the default one."""
+        self.env["ir.config_parameter"].sudo().set_param(
+            "incubacloud.mail_logo_url", False,
+        )
         self.env.company.email_secondary_color = "#13579b"
         self._user("ane-layout")
         self._alert(code="disk_critical", level="critical")
@@ -1002,7 +1006,12 @@ class TestAlertNotifyDigest(TransactionCase):
 
     def test_the_digest_goes_out_in_the_company_layout(self):
         """The digest is content only now: the layout brings the frame,
-        and its accents are the company's, not a fixed green."""
+        and its accents are the company's, not a fixed green. A module
+        on top may configure another logo address; this test starts from
+        the default one."""
+        self.env["ir.config_parameter"].sudo().set_param(
+            "incubacloud.mail_logo_url", False,
+        )
         self.env.company.email_secondary_color = "#13579b"
         self._user("adg-layout")
         self._qfail("host_probe", "uuid-digest-layout")
