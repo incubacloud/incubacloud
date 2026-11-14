@@ -640,7 +640,6 @@
                                         <PasswordInput
                                             id="'hd-password'"
                                             value="state.form.password"
-                                            autoGenerate="true"
                                             hasValue="state.has_password"
                                             required="true"
                                             onChange="(val) => this.onPasswordChange('password', val)"/>
