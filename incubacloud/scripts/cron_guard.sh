@@ -24,7 +24,9 @@
 #
 # The paused ids live in a marker table inside the instance DB so a
 # crashed run can be recovered by the next one; an EXIT trap restores
-# them on every normal path, including failure.
+# them on every normal path, including failure and a stop (TERM, INT,
+# HUP), and on a stop it first removes the update's container. A KILL
+# leaves them paused, with their list, for the next run.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
@@ -53,10 +55,40 @@ _psql() {
     docker compose exec -T db psql -U "$pg_user" -d "$db" -tAc "$1" 2>/dev/null
 }
 
+# Run a command in a session of its own, where a stop's TERM, sent to
+# this shell's session and to its process group, does not reach it. The
+# docker client sets its own signal handlers: a TERM this shell ignores
+# still kills it. Without ``setsid`` (util-linux), as it is.
+_apart() {
+    if command -v setsid >/dev/null 2>&1; then
+        setsid -w "$@"
+    else
+        "$@"
+    fi
+}
+
+# Put the paused crons back and drop their list. One ``psql -c`` runs both
+# statements in one transaction: both are done or neither is, and a list
+# that is kept is what the next run restores the crons from.
 _resume() {
-    _psql "UPDATE ir_cron SET active = true
-           WHERE id IN (SELECT id FROM $MARKER)" >/dev/null || true
-    _psql "DROP TABLE IF EXISTS $MARKER" >/dev/null || true
+    _apart docker compose exec -T db psql -U "$pg_user" -d "$db" -tAc \
+        "UPDATE ir_cron SET active = true
+         WHERE id IN (SELECT id FROM $MARKER);
+         DROP TABLE IF EXISTS $MARKER" >/dev/null 2>&1 || true
+}
+
+# The name of the update's container, set before it starts.
+update_container=""
+
+# Remove the update's container, if one was started. On a stop, ``docker
+# compose run`` passes the TERM on to the container and leaves at once,
+# and click-odoo-update, its PID 1 with no handler, ignores it: left
+# there, the update would go on with the crons running again. After an
+# update that ended, there is no such container any more.
+# shellcheck disable=SC2317  # reached through the EXIT trap below
+_remove_update() {
+    [ -n "$update_container" ] || return 0
+    _apart docker rm -f "$update_container" >/dev/null 2>&1 || true
 }
 
 if ! _psql "SELECT 1" >/dev/null; then
@@ -73,8 +105,9 @@ _psql "CREATE TABLE IF NOT EXISTS $MARKER (id integer PRIMARY KEY)" >/dev/null
 # process group: this shell gets it two or three times. Left to bash's
 # default, one that lands while bash goes into the trap kills it there,
 # and the crons stay paused. Handled, the first TERM leaves through the
-# trap, and the trap ignores the others (and its ``psql`` calls with it).
-trap 'trap "" TERM INT HUP; _resume' EXIT
+# trap, and the trap ignores the others; its docker calls, which do not
+# keep an ignored TERM, run apart (``_apart``).
+trap 'trap "" TERM INT HUP; _remove_update; _resume' EXIT
 trap 'trap "" TERM INT HUP; exit 143' TERM INT HUP
 
 ic_log "pausing crons (up to $tries × ${interval}s for in-flight ticks)"
@@ -93,7 +126,9 @@ for _ in $(seq 1 "$tries"); do
     left="$(_psql "SELECT count(*) FROM ir_cron WHERE active" || echo 0)"
     if [ "${left:-0}" -eq 0 ]; then
         ic_log "no cron is running — updating"
-        ic_compose_run --rm odoo click-odoo-update --database "$db"
+        update_container="incubacloud-update-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+        ic_compose_run --name "$update_container" --rm odoo \
+            click-odoo-update --database "$db"
         exit $?
     fi
     ic_log "$left cron(s) still executing — waiting ${interval}s"

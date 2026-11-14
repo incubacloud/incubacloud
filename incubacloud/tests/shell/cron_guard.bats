@@ -85,47 +85,107 @@ EOF
 @test "the update runs out of Traefik and Sablier" {
     run bash "$SCRIPT" update "${TMP}/inst" prod odoo 3 1
     [ "$status" -eq 0 ]
-    grep -q "compose run --label traefik.enable=false --label sablier.enable=false --rm odoo click-odoo-update" "${TMP}/calls"
+    grep -Eq "compose run --label traefik.enable=false --label sablier.enable=false --name incubacloud-update-[0-9a-f]{12} --rm odoo click-odoo-update" "${TMP}/calls"
 }
 
-@test "stopped as a detached step does, TERM after TERM, it still resumes the crons" {
-    # detached_step.sh stop sends TERM to the step's session, and the
-    # step's ``timeout`` sends it again to its process group: one that
-    # landed while the trap ran used to kill it there, with the crons
-    # left paused. The update blocks until the first TERM, and the
-    # resume is made slow so the second one lands inside the trap.
+# A docker stub for a stop, that keeps what the database and the host
+# would: the marker table (${TMP}/marker), crons paused (${TMP}/paused),
+# the update's container (${TMP}/container, holding its name), a list
+# dropped by a call that does not put the crons back
+# (${TMP}/dropped_alone). Like the real client, which sets its own
+# handlers, the slow call named by $1 ("rm" for the container's removal,
+# "resume" for the crons') dies of a TERM even when the shell that runs it
+# ignores TERM; its statements are then not applied.
+_stub_docker_for_a_stop() {
+    SLOW="$1"
+    export SLOW
     cat > "${STUB_DIR}/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "$*" >> "${TMP}/calls"
+slow() {
+    [ -e "${TMP}/container.started" ] || return 0
+    : > "${TMP}/slow"
+    env --default-signal=TERM /bin/sleep 1 || exit 143
+}
 case "$*" in
     *"SELECT count(*)"*) echo 0 ;;
     *"SELECT 1"*) echo 1 ;;
-    *"click-odoo-update"*) : > "${TMP}/updating"; /bin/sleep 30 ;;
+    *"CREATE TABLE IF NOT EXISTS"*) : > "${TMP}/marker" ;;
+    *"SET active = false"*) [ -e "${TMP}/marker" ] && : > "${TMP}/paused" ;;
+    *"click-odoo-update"*)
+        # compose run passes the TERM on to the container and leaves at
+        # once; click-odoo-update, PID 1 there without a handler, goes on.
+        name=""
+        while [ "$#" -gt 0 ]; do
+            [ "$1" = --name ] && name="$2"
+            shift
+        done
+        printf '%s\n' "$name" > "${TMP}/container"
+        : > "${TMP}/container.started"
+        exec env --default-signal=TERM /bin/sleep 30 ;;
+    "rm -f "*)
+        [ "$SLOW" = rm ] && slow
+        [ -e "${TMP}/container" ] && [ "$3" = "$(cat "${TMP}/container")" ] \
+            && rm -f "${TMP}/container" ;;
     *"SET active = true"*)
-        [ -e "${TMP}/updating" ] && : > "${TMP}/resuming" && /bin/sleep 1 ;;
+        [ "$SLOW" = resume ] && slow
+        [ -e "${TMP}/marker" ] && rm -f "${TMP}/paused"
+        [[ "$*" == *"DROP TABLE IF EXISTS"* ]] && rm -f "${TMP}/marker" ;;
+    *"DROP TABLE IF EXISTS"*) : > "${TMP}/dropped_alone"; rm -f "${TMP}/marker" ;;
 esac
 exit 0
 STUB
     chmod +x "${STUB_DIR}/docker"
+}
+
+# Wait up to 5 s for file $1.
+_wait_for() {
+    for _ in $(seq 100); do
+        [ -e "$1" ] && return 0
+        /bin/sleep 0.05
+    done
+    return 1
+}
+
+# Run the guard as detached_step.sh runs a step (a session of its own,
+# under ``timeout``), stop it once the update runs, and again once the
+# slow call is under way: the stop's TERM to the session, then the one
+# ``timeout`` passes on to its process group.
+_stop_twice() {
     setsid timeout --kill-after=60 60 bash "$SCRIPT" update "${TMP}/inst" prod odoo 3 1 \
         >"${TMP}/out" 2>&1 </dev/null &
     pid=$!
-    for _ in $(seq 100); do
-        [ -e "${TMP}/updating" ] && break
-        /bin/sleep 0.1
-    done
-    [ -e "${TMP}/updating" ]
+    _wait_for "${TMP}/container.started"
     pkill -TERM -s "$pid"
-    for _ in $(seq 100); do
-        [ -e "${TMP}/resuming" ] && break
-        /bin/sleep 0.05
-    done
-    [ -e "${TMP}/resuming" ]
+    _wait_for "${TMP}/slow"
     pkill -TERM -s "$pid" || true
     status=0
     wait "$pid" || status=$?
+}
+
+@test "stopped as a detached step, TERM after TERM, it puts the crons back and drops their list together" {
+    # The second TERM lands while the crons are put back: the docker
+    # client of that call dies of it, and a list dropped by a call of its
+    # own would leave the crons paused with nothing to restore them.
+    _stub_docker_for_a_stop resume
+    _stop_twice
     [ "$status" -eq 143 ]
-    update_line="$(grep -n 'click-odoo-update' "${TMP}/calls" | cut -d: -f1)"
-    drop_line="$(grep -n 'DROP TABLE IF EXISTS incubacloud_cron_pause' "${TMP}/calls" | tail -1 | cut -d: -f1)"
-    [ -n "$update_line" ] && [ "$drop_line" -gt "$update_line" ]
+    [ ! -e "${TMP}/paused" ]
+    [ ! -e "${TMP}/marker" ]
+    [ ! -e "${TMP}/dropped_alone" ]
+}
+
+@test "stopped as a detached step, it removes the update's container before it puts the crons back" {
+    # compose run leaves on the TERM and the update would go on in its
+    # container, with the crons running again. The second TERM lands
+    # while the container is removed, and does not cut that either.
+    _stub_docker_for_a_stop rm
+    _stop_twice
+    [ "$status" -eq 143 ]
+    [ ! -e "${TMP}/container" ]
+    [ ! -e "${TMP}/paused" ]
+    [ ! -e "${TMP}/marker" ]
+    rm_line="$(grep -n '^rm -f ' "${TMP}/calls" | cut -d: -f1)"
+    resume_line="$(grep -n 'SET active = true' "${TMP}/calls" | tail -1 | cut -d: -f1)"
+    [ -n "$rm_line" ] && [ "$rm_line" -lt "$resume_line" ]
 }
