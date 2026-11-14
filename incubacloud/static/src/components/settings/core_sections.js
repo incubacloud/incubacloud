@@ -457,7 +457,7 @@ settingsElsewhere.add("backup_destinations", {
     synonyms: ["backup", "storage", "s3", "bucket", "destination"], route: "backup_backends",
 });
 settingsElsewhere.add("instance_backup_backend", {
-    label: _t("Backup destination of an instance"), where: _t("Instance › Networking, on each instance"),
+    label: _t("Backup destination of an instance"), where: _t("Instance › Backups, on each instance"),
     synonyms: ["backup", "storage"], route: "projects",
 });
 settingsElsewhere.add("project_backup_backend", {
@@ -469,7 +469,7 @@ settingsElsewhere.add("instance_backups", {
     synonyms: ["backup", "restore", "snapshot"], route: "projects",
 });
 settingsElsewhere.add("instance_smtp", {
-    label: _t("SMTP host of an instance"), where: _t("Instance › Networking, on each instance"),
+    label: _t("SMTP host of an instance"), where: _t("Instance › Email, on each instance"),
     synonyms: ["smtp", "mail", "email"], route: "projects",
 });
 settingsElsewhere.add("hosts", {

@@ -1,0 +1,80 @@
+// A record's tab bar with «More ▾» (TabBar). The bar is relay.scss's
+// `.rl-tabs`; the list it opens is its sibling, placed against this
+// wrapper, because the bar scrolls sideways and would clip it.
+
+.ic-tabbar {
+    position: relative;
+
+    .rl-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    // A tab with unsaved changes or a field to fix.
+    .ic-tabbar__dot {
+        inline-size: 6px;
+        block-size: 6px;
+        border-radius: 50%;
+        background: var(--rl-amber);
+        flex: none;
+    }
+
+    .ic-tabbar__caret {
+        font-size: 10px;
+        color: var(--rl-muted);
+    }
+
+    .ic-tabbar__more[aria-expanded="true"] { color: var(--rl-fg); }
+
+    // Placed on opening (TabBar.position); until then, under the bar.
+    .ic-tabbar__menu {
+        position: absolute;
+        inset-block-start: calc(100% + 4px);
+        inset-inline-start: 0;
+        z-index: 50;
+        display: grid;
+        gap: 2px;
+        min-inline-size: 190px;
+        padding: 5px;
+        background: var(--rl-surf2);
+        border: 1px solid var(--rl-line2);
+        border-radius: var(--rl-rsm);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
+        animation: rl-tin 0.12s ease;
+
+        .rl-tab {
+            display: flex;
+            inline-size: 100%;
+            margin: 0;
+            padding-block: 8px;
+            padding-inline: 11px;
+            border: 0;
+            border-radius: var(--rl-rsm);
+            color: var(--rl-fg2);
+            font-weight: 500;
+            text-align: start;
+
+            &:hover,
+            &:focus-visible {
+                background: var(--rl-surf3);
+                color: var(--rl-fg);
+                outline: none;
+            }
+
+            &:focus-visible { box-shadow: inset 0 0 0 2px var(--rl-green-dim); }
+
+            &.active {
+                background: var(--rl-green-soft);
+                color: var(--rl-green-text);
+                font-weight: 600;
+            }
+
+            .ic-tabbar__dot { margin-inline-start: auto; }
+        }
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ic-tabbar .ic-tabbar__menu { animation: none; }
+}
