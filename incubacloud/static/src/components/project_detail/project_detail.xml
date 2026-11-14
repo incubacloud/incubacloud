@@ -101,10 +101,14 @@
                         </div>
 
                         <!-- Tabs -->
-                        <div class="rl-tabs">
+                        <div class="rl-tabs" role="tablist">
                             <button t-att-class="state.tab === 'general' ? 'rl-tab active' : 'rl-tab'"
+                                    role="tab"
+                                    t-att-aria-selected="state.tab === 'general' ? 'true' : 'false'"
                                     t-on-click="() => this.setTab('general')">General</button>
                             <button t-att-class="state.tab === 'repos' ? 'rl-tab active' : 'rl-tab'"
+                                    role="tab"
+                                    t-att-aria-selected="state.tab === 'repos' ? 'true' : 'false'"
                                     t-on-click="() => this.setTab('repos')">
                                 Repositories
                                 <t t-if="state.repos.length">
@@ -112,9 +116,13 @@
                                 </t>
                             </button>
                             <button t-att-class="state.tab === 'deps' ? 'rl-tab active' : 'rl-tab'"
+                                    role="tab"
+                                    t-att-aria-selected="state.tab === 'deps' ? 'true' : 'false'"
                                     t-on-click="() => this.setTab('deps')">Dependencies</button>
                             <t t-if="env.permissions?.can_create_project">
                                 <button t-att-class="state.tab === 'members' ? 'rl-tab active' : 'rl-tab'"
+                                        role="tab"
+                                        t-att-aria-selected="state.tab === 'members' ? 'true' : 'false'"
                                         t-on-click="() => this.setTab('members')">
                                     Members
                                     <t t-if="state.members and state.members.length">
@@ -127,6 +135,8 @@
                                  every project, which is nearly all of them. -->
                             <t t-if="state.archived.length">
                                 <button t-att-class="state.tab === 'archived' ? 'rl-tab active' : 'rl-tab'"
+                                        role="tab"
+                                        t-att-aria-selected="state.tab === 'archived' ? 'true' : 'false'"
                                         t-on-click="() => this.setTab('archived')">
                                     Archived
                                     <span class="ic-tab-count" t-esc="state.archived.length"/>
@@ -235,6 +245,8 @@
                                         <button
                                             type="button"
                                             t-att-class="'rl-sw' + (state.form.pr_reviews_enabled ? ' on' : '')"
+                                            role="switch"
+                                            t-att-aria-checked="state.form.pr_reviews_enabled ? 'true' : 'false'"
                                             aria-label="Toggle pull request and merge request previews"
                                             t-on-click="() => { state.form.pr_reviews_enabled = !state.form.pr_reviews_enabled; }"
                                         />

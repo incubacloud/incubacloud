@@ -135,6 +135,13 @@
 @keyframes rl-pulse { 50% { opacity:.4; } }
 @keyframes rl-sp { to { transform:rotate(360deg); } }
 @keyframes rl-tin { from { opacity:0; transform:translateY(8px); } }
+// A tab bar that scrolls fades out on the side with more tabs (see .rl-tabs).
+// Mask images do not interpolate, so each stretch holds its own: the end fades
+// at the start of the scroll, both sides in between, the start at its end.
+@keyframes rl-tabs-edge {
+  0%, 1% { mask-image:linear-gradient(to right, #000 calc(100% - 28px), transparent), linear-gradient(#000, #000); }
+  2%, 98% { mask-image:linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent), linear-gradient(#000, #000); }
+  99%, 100% { mask-image:linear-gradient(to right, transparent, #000 28px), linear-gradient(#000, #000); } }
 
 // Everything below is scoped under :root (i.e. the whole cloud page) rather than
 // .ic-app, so rl-* primitives also style the slide-over / dialogs / toasts that
@@ -303,6 +310,14 @@
   // overflow-y to `auto`, and the active tab's 2px border + (-1px) margin
   // overflow then triggers a phantom vertical scrollbar on the tab bar.
   .rl-tabs { display:flex; gap:2px; border-block-end:1px solid var(--rl-line); margin-block-start:18px; margin-inline:0; margin-block-end:22px; overflow-x:auto; overflow-y:clip; }
+  // The fade follows the bar's own scroll. A bar that fits has no scroll, so
+  // its timeline is inactive and nothing fades; a browser without scroll
+  // timelines shows no fade either. The second mask layer keeps the bottom
+  // pixel, the bar's rule, whole.
+  @supports (animation-timeline: scroll()) {
+    .rl-tabs { mask-size:100% calc(100% - 1px), 100% 1px; mask-position:top, bottom; mask-repeat:no-repeat;
+      animation-name:rl-tabs-edge; animation-timing-function:linear; animation-fill-mode:both;
+      animation-timeline:scroll(self inline); } }
   .rl-tab { padding-block:9px; padding-inline:13px; background:none; border:none; border-block-end:2px solid transparent;
     color:var(--rl-muted); font-size:13px; font-weight:500; margin-block-end:-1px; white-space:nowrap;
     cursor:pointer; font-family:var(--rl-fb);
@@ -431,11 +446,11 @@
   .rl-fgrid { display:grid; grid-template-columns:1fr 1fr; gap:14px 18px;
     .rl-full { grid-column:1/-1; }
     .rl-frow { margin:0; } }
-  .rl-tabnote { font-family:var(--rl-fm); font-size:11px; color:var(--rl-faint); margin-block-start:0; margin-inline:0; margin-block-end:16px; }
+  .rl-tabnote { font-family:var(--rl-fb); font-size:12.5px; color:var(--rl-muted); margin-block-start:0; margin-inline:0; margin-block-end:16px; }
 
   .rl-ftoggle { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-block:10px; padding-inline:0; border-block-start:1px solid var(--rl-line);
     .rl-tl-label { font-size:13px; color:var(--rl-fg); }
-    .rl-th { font-family:var(--rl-fm); font-size:10.5px; color:var(--rl-muted); margin-block-start:2px; } }
+    .rl-th { font-family:var(--rl-fb); font-size:12.5px; color:var(--rl-muted); margin-block-start:2px; } }
   // Switch
   .rl-sw { width:36px; height:20px; border-radius:999px; background:var(--rl-surf3); border:1px solid var(--rl-line2);
     position:relative; flex:none; cursor:pointer; padding:0; transition:background .15s;
@@ -444,7 +459,7 @@
     &:disabled { opacity:.5; cursor:not-allowed; } }
 
   .rl-formfoot { display:flex; align-items:center; gap:10px; justify-content:flex-end; margin-block-start:16px; padding-block-start:14px; border-block-start:1px solid var(--rl-line);
-    .rl-ff-hint { margin-inline-end:auto; font-family:var(--rl-fm); font-size:11px; color:var(--rl-faint); } }
+    .rl-ff-hint { margin-inline-end:auto; font-family:var(--rl-fb); font-size:12.5px; color:var(--rl-muted); } }
 
   // ── Custom select (RlSelect) ─────────────────────────────────────────────
   // Drop-in replacement for native <select>: the trigger mimics an rl input and

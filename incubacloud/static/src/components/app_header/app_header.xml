@@ -276,6 +276,8 @@
                             </div>
                             <button type="button"
                                     t-att-class="'rl-sw' + (state.emailEnabled ? ' on' : '')"
+                                    role="switch"
+                                    t-att-aria-checked="state.emailEnabled ? 'true' : 'false'"
                                     aria-label="Toggle email notifications"
                                     t-on-click="() => { state.emailEnabled = !state.emailEnabled; }"/>
                         </div>

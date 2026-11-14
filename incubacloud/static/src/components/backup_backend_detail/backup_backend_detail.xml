@@ -47,25 +47,35 @@
                     </div>
 
                     <!-- Tabs -->
-                    <div class="rl-tabs">
+                    <div class="rl-tabs" role="tablist">
                         <button
               t-att-class="'rl-tab' + (state.tab === 'general' ? ' active' : '')"
+              role="tab"
+              t-att-aria-selected="state.tab === 'general' ? 'true' : 'false'"
               t-on-click="() => this.setTab('general')"
             >General</button>
                         <button
               t-att-class="'rl-tab' + (state.tab === 'storage' ? ' active' : '')"
+              role="tab"
+              t-att-aria-selected="state.tab === 'storage' ? 'true' : 'false'"
               t-on-click="() => this.setTab('storage')"
             >Storage</button>
                         <button
               t-att-class="'rl-tab' + (state.tab === 'usage' ? ' active' : '')"
+              role="tab"
+              t-att-aria-selected="state.tab === 'usage' ? 'true' : 'false'"
               t-on-click="() => this.setTab('usage')"
             >Usage</button>
                         <button
               t-att-class="'rl-tab' + (state.tab === 'notifications' ? ' active' : '')"
+              role="tab"
+              t-att-aria-selected="state.tab === 'notifications' ? 'true' : 'false'"
               t-on-click="() => this.setTab('notifications')"
             >Notifications</button>
                         <button
               t-att-class="'rl-tab' + (state.tab === 'advanced' ? ' active' : '')"
+              role="tab"
+              t-att-aria-selected="state.tab === 'advanced' ? 'true' : 'false'"
               t-on-click="() => this.setTab('advanced')"
             >Advanced</button>
                     </div>
@@ -356,6 +366,8 @@
                                 </div>
                                 <button
                   t-att-class="'rl-sw' + (state.form.smtp_report_success ? ' on' : '')"
+                  role="switch"
+                  t-att-aria-checked="state.form.smtp_report_success ? 'true' : 'false'"
                   t-on-click="() => this.toggleField('smtp_report_success')"
                 />
                             </div>
