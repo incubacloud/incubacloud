@@ -149,6 +149,24 @@ panel's assets and the Spanish catalogue change.
   and the notes under the quota, the alert threshold, the retention
   period and the retention owner describe their field. `SettingAdvanced`
   takes `forceOpen` and `changed` from a page outside Settings.
+- **A host's General tab is in groups (#13).** Its fields, on the host's
+  page and on *New Host*, sit in four cards no wider than 920 px:
+  *Details* (name, IP address and port, tags, description), *Placement*
+  (auto-assignment, and the host pool and warm spares a layer adds),
+  *Network edge* (connection-rate cap, proxy network, the ranges applied
+  and direct access) and *Internal traffic* (direct port and the public
+  path), on a 12-column grid with the label above the field. *Reached
+  through a CDN*, *Trusted proxy ranges (override)* and *CDN client
+  certificate authority* fold under *Advanced · 3 settings* at the end
+  of *Network edge*, which reads «N changed» while any of them is
+  unsaved. Their long explanations, and that of *Direct access*, moved
+  from under each field to the group's *How it works*; each field keeps
+  a one-line help. Every label of the host's form names its control
+  (`for`/`id`, the tag field's input too), and the read-only values
+  (*Applied to this host*, *Admitted on the direct port*, *Agents write
+  to*, *Public key*) carry a caption instead of a `<label>`. On a phone
+  the Traefik tab's file names scroll in their own row instead of
+  widening the page. The labels and the checkbox words do not change.
 
 ### Fixed
 

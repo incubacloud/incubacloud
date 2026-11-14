@@ -4455,25 +4455,6 @@ msgstr ""
 "despliegue o reconstrucción."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-msgid ""
-"Decides how a visitor is identified here. On: the rate limit counts the "
-"forwarded client, so one CDN edge is not one bucket shared by everyone "
-"behind it. Off: it counts the address that opened the connection. Turning "
-"this on for a host the world reaches directly is the worse mistake of the "
-"two — a direct request carries no forwarded chain, so every visitor "
-"collapses into a single shared bucket."
-msgstr ""
-"Decide cómo se identifica aquí a un visitante. Activado: el límite de "
-"peticiones cuenta al cliente que reenvía el CDN, así un borde del CDN no es "
-"un único cubo compartido por todos los que hay detrás. Desactivado: cuenta "
-"la dirección que abrió la conexión. Activarlo en un host al que el mundo "
-"llega directo es el peor de los dos errores: una petición directa no lleva "
-"cadena reenviada, así que todos los visitantes se cuentan como el mismo y "
-"comparten un único límite."
-
-#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__dedup_key
 msgid "Dedup Key"
 msgstr "Clave de deduplicación"
@@ -11885,21 +11866,6 @@ msgid "Off. Pick a host above and enable it."
 msgstr "Apagada. Elija un host arriba y actívela."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-msgid ""
-"One CIDR range per line, e.g. 198.51.100.0/24 or 2001:db8::/32. Leave empty "
-"to use whatever the platform supplies; fill it in only to pin this host to a"
-" different proxy than the rest. Traefik believes X-Forwarded-For only on "
-"connections from the ranges applied below, and strips it from every other, "
-"which is what makes the header unspoofable and lets the per-client rate "
-"limit key on the real visitor instead of a handful of edge addresses."
-msgstr ""
-"Un rango CIDR por línea, por ejemplo 198.51.100.0/24 o 2001:db8::/32. Una "
-"entrada que no sea un rango se rechaza al guardar, en vez de descartarse en "
-"silencio."
-
-#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__queue_exclusive
 msgid "One Waiting at Most"
 msgstr "Uno en espera como máximo"
@@ -13596,22 +13562,6 @@ msgstr ""
 "dirección y saltarse el borde. Requiere que haya rangos de proxy de "
 "confianza: sin ninguno se ignora, porque dejaría al anfitrión sin ninguno de"
 " sus visitantes."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-msgid ""
-"Refuses HTTPS requests that reached this host without going through one of "
-"them, so its address cannot be used to bypass the edge. Ignored while no "
-"range is applied above, where it would lock out every visitor — the override"
-" box being empty does not mean that, since the platform may be supplying the"
-" list."
-msgstr ""
-"Rechaza las peticiones HTTPS que llegaron a este anfitrión sin pasar por "
-"ninguno de ellos, para que no se pueda usar su dirección para saltarse el "
-"borde. Se ignora mientras no haya ningún rango aplicado arriba, porque "
-"entonces dejaría fuera a todos los visitantes: que la caja de excepción esté"
-" vacía no significa eso, ya que la lista puede aportarla la plataforma."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -19047,22 +18997,6 @@ msgstr "Con Filestore"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-msgid ""
-"With direct access refused, also require every TLS connection to present a "
-"client certificate signed by this authority. The CDN's addresses are shared "
-"by all its customers; only your zone's certificate tells your traffic apart."
-" Leave empty to accept any connection the firewall lets in. Applied by Full "
-"Setup or Push Trusted Proxy Settings."
-msgstr ""
-"Con el acceso directo rechazado, exigir además en cada conexión TLS un "
-"certificado de cliente firmado por esta autoridad. Las direcciones de la CDN"
-" las comparten todos sus clientes; solo el certificado de su zona distingue "
-"su tráfico. Déjelo vacío para aceptar cualquier conexión que deje pasar el "
-"firewall. Se aplica con Full Setup o Push Trusted Proxy Settings."
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "With filestore"
 msgstr "Con filestore"
@@ -23106,6 +23040,7 @@ msgstr "Hasta dónde lee hacia atrás una búsqueda en los logs."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings_form/settings_form.xml:0
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "How it works"
 msgstr "Cómo funciona"
 
@@ -23268,6 +23203,7 @@ msgstr "Debe ser de 5 segundos o más."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Network edge"
 msgstr "Borde de red"
 
@@ -23398,6 +23334,7 @@ msgstr "Truncado de la carga útil"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 #: code:addons/incubacloud/static/src/components/settings/core_settings_block.xml:0
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Placement"
 msgstr "Ubicación"
 
@@ -24834,3 +24771,109 @@ msgstr "Vistas previas de pull requests"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "Quota"
 msgstr "Cuota"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Internal traffic"
+msgstr "Tráfico interno"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"The rate limit counts a visitor by the address that opened the connection "
+"or, with Reached through a CDN on, by the forwarded client, so one CDN edge "
+"is not one bucket shared by everyone behind it. Turning it on for a host the"
+" world reaches directly is the worse mistake of the two: a direct request "
+"carries no forwarded chain, so every visitor collapses into a single shared "
+"bucket."
+msgstr ""
+"El límite de peticiones cuenta a cada visitante por la dirección que abrió "
+"la conexión o, con «Se llega a través de un CDN» activado, por el cliente "
+"que reenvía el CDN, así un borde del CDN no es un único cubo compartido por "
+"todos los que hay detrás. Activarlo en un host al que el mundo llega directo"
+" es el peor de los dos errores: una petición directa no lleva cadena "
+"reenviada, así que todos los visitantes se cuentan como el mismo y comparten"
+" un único límite."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"Traefik believes X-Forwarded-For only on connections from the ranges applied"
+" to this host, and strips it from every other, which is what makes the "
+"header unspoofable and lets the per-client rate limit key on the real "
+"visitor instead of a handful of edge addresses. The ranges are whatever the "
+"platform supplies, unless this host's override pins it to a different proxy "
+"than the rest."
+msgstr ""
+"Traefik solo cree la cabecera X-Forwarded-For en las conexiones que llegan "
+"desde los rangos aplicados a este host, y la quita en todas las demás: eso "
+"impide falsificarla y permite que el límite por cliente se base en el "
+"visitante real y no en unas pocas direcciones del borde. Los rangos son los "
+"que aporta la plataforma, salvo que la excepción de este host lo fije a un "
+"proxy distinto del resto."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"Direct access is ignored while no range is applied, where it would lock out "
+"every visitor. An empty override does not mean that, since the platform may "
+"be supplying the list."
+msgstr ""
+"El acceso directo se ignora mientras no haya ningún rango aplicado, porque "
+"entonces dejaría fuera a todos los visitantes. Que la excepción esté vacía "
+"no significa eso, ya que la lista puede aportarla la plataforma."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"The CDN's addresses are shared by all its customers; only your zone's client"
+" certificate tells your traffic apart. Leave the certificate authority empty"
+" to accept any connection the firewall lets in; it is applied by Full Setup "
+"or Push Trusted Proxy Settings."
+msgstr ""
+"Las direcciones del CDN las comparten todos sus clientes; solo el "
+"certificado de cliente de su zona distingue su tráfico. Deje vacía la "
+"autoridad del certificado para aceptar cualquier conexión que deje pasar el "
+"firewall; se aplica con «Configuración completa» o «Enviar ajustes de "
+"proxies de confianza»."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Decides how the rate limit identifies a visitor."
+msgstr "Decide cómo identifica a un visitante el límite de peticiones."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"One CIDR range per line, e.g. 198.51.100.0/24 or 2001:db8::/32. Leave empty "
+"to use what the platform supplies."
+msgstr ""
+"Un rango CIDR por línea, por ejemplo 198.51.100.0/24 o 2001:db8::/32. Déjelo"
+" vacío para usar los que aporta la plataforma."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"Refuses HTTPS requests that reached this host without going through one of "
+"them, so its address cannot be used to bypass the edge."
+msgstr ""
+"Rechaza las peticiones HTTPS que llegaron a este host sin pasar por ninguno "
+"de ellos, para que no se pueda usar su dirección para saltarse el borde."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"With direct access refused, also require every TLS connection to present a "
+"client certificate signed by this authority."
+msgstr ""
+"Con el acceso directo rechazado, exigir además en cada conexión TLS un "
+"certificado de cliente firmado por esta autoridad."

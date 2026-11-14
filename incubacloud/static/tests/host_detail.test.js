@@ -1139,6 +1139,16 @@ describe("HostDetail — the save bar", () => {
         expect.verifySteps(["clearErrors"]);
     });
 
+    test("Advanced counts a field changed while it differs from what is saved", () => {
+        const comp = savedHost();
+        expect(comp.isFieldUnsaved("tls_default_key")).toBe(false);
+        comp.state.form.tls_default_key = "-----BEGIN PRIVATE KEY-----";
+        expect(comp.isFieldUnsaved("tls_default_key")).toBe(true);
+        expect(comp.isFieldUnsaved("name")).toBe(false);
+        comp.state.form.tls_default_key = "";
+        expect(comp.isFieldUnsaved("tls_default_key")).toBe(false);
+    });
+
     test("Discard empties the key's file input with the key it read", () => {
         const comp = savedHost();
         const input = document.createElement("input");

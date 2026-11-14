@@ -410,198 +410,270 @@
                     <!-- ── Config tabs (everything except overview) ───────── -->
                     <t t-if="state.tab !== 'overview'">
 
-                        <!-- ── General tab ──────────────────────────────────────── -->
+                        <!-- ── General tab: the host's groups on the record grid
+                             (form standard §2–§4). ───────────────────────── -->
                         <t t-if="state.tab === 'general'">
-                            <!-- Keeps `ic-form-grid` so a layer's patches
-                                 (xpath on this grid) resolve. -->
-                            <div class="rl-fgrid ic-form-grid">
-                                <div class="rl-frow"
-                                     t-att-class="validator.fieldError('name') ? 'has-error' : ''">
-                                    <label>Name <span class="rl-req">*</span></label>
-                                    <input
-                    t-att-aria-invalid="validator.fieldError('name') ? 'true' : undefined"
-                    t-att-aria-describedby="validator.fieldError('name') ? 'hd-err-name' : undefined"
-                                           t-att-value="state.form.name"
-                                           t-on-input="(ev) => this.onInput('name', ev)"
-                                           t-on-blur="() => validator.touch('name')"/>
-                                    <t t-if="validator.fieldError('name')">
-                                        <span class="ic-field-error"
-                      t-att-id="'hd-err-name'" t-esc="validator.fieldError('name')"/>
-                                    </t>
+                            <section class="ic-set-block ic-host-group" aria-labelledby="hd-g-details">
+                                <div class="ic-set-block__head">
+                                    <h3 class="ic-set-block__title" id="hd-g-details">Details</h3>
                                 </div>
-                                <div class="rl-frow"
-                                     t-att-class="validator.fieldError('ip_address') ? 'has-error' : ''">
-                                    <label>IP address <span class="rl-req">*</span></label>
-                                    <input
-                    t-att-aria-invalid="validator.fieldError('ip_address') ? 'true' : undefined"
-                    t-att-aria-describedby="validator.fieldError('ip_address') ? 'hd-err-ip_address' : undefined"
-                                           t-att-value="state.form.ip_address"
-                                           t-on-input="(ev) => this.onInput('ip_address', ev)"
-                                           t-on-blur="() => validator.touch('ip_address')"/>
-                                    <t t-if="validator.fieldError('ip_address')">
-                                        <span class="ic-field-error"
-                      t-att-id="'hd-err-ip_address'" t-esc="validator.fieldError('ip_address')"/>
-                                    </t>
+                                <div class="ic-set-block__body">
+                                    <div class="ic-rgrid">
+                                        <div class="rl-frow ic-w-m"
+                                             t-att-class="validator.fieldError('name') ? 'has-error' : ''">
+                                            <label for="hd-name">Name <span class="rl-req">*</span></label>
+                                            <input id="hd-name" type="text" aria-required="true"
+                                                   t-att-aria-invalid="validator.fieldError('name') ? 'true' : undefined"
+                                                   t-att-aria-describedby="validator.fieldError('name') ? 'hd-err-name' : undefined"
+                                                   t-att-value="state.form.name"
+                                                   t-on-input="(ev) => this.onInput('name', ev)"
+                                                   t-on-blur="() => validator.touch('name')"/>
+                                            <t t-if="validator.fieldError('name')">
+                                                <span class="ic-field-error"
+                                                      t-att-id="'hd-err-name'" t-esc="validator.fieldError('name')"/>
+                                            </t>
+                                        </div>
+                                        <div class="ic-w-m ic-rgrid__gap" aria-hidden="true"/>
+                                        <div class="rl-frow ic-w-m"
+                                             t-att-class="validator.fieldError('ip_address') ? 'has-error' : ''">
+                                            <label for="hd-ip_address">IP address <span class="rl-req">*</span></label>
+                                            <input id="hd-ip_address" type="text" aria-required="true"
+                                                   t-att-aria-invalid="validator.fieldError('ip_address') ? 'true' : undefined"
+                                                   t-att-aria-describedby="validator.fieldError('ip_address') ? 'hd-err-ip_address' : undefined"
+                                                   t-att-value="state.form.ip_address"
+                                                   t-on-input="(ev) => this.onInput('ip_address', ev)"
+                                                   t-on-blur="() => validator.touch('ip_address')"/>
+                                            <t t-if="validator.fieldError('ip_address')">
+                                                <span class="ic-field-error"
+                                                      t-att-id="'hd-err-ip_address'" t-esc="validator.fieldError('ip_address')"/>
+                                            </t>
+                                        </div>
+                                        <div class="rl-frow ic-w-s"
+                                             t-att-class="validator.fieldError('port') ? 'has-error' : ''">
+                                            <label for="hd-port">Port <span class="rl-req">*</span></label>
+                                            <input id="hd-port" type="number" aria-required="true"
+                                                   t-att-aria-invalid="validator.fieldError('port') ? 'true' : undefined"
+                                                   t-att-aria-describedby="validator.fieldError('port') ? 'hd-err-port' : undefined"
+                                                   t-att-value="state.form.port"
+                                                   t-on-input="(ev) => this.onInput('port', ev)"
+                                                   t-on-blur="() => validator.touch('port')"/>
+                                            <t t-if="validator.fieldError('port')">
+                                                <span class="ic-field-error"
+                                                      t-att-id="'hd-err-port'" t-esc="validator.fieldError('port')"/>
+                                            </t>
+                                        </div>
+                                        <div class="rl-frow ic-w-l">
+                                            <label for="hd-tags">Tags</label>
+                                            <TagSelector
+                                                id="'hd-tags'"
+                                                selected="state.selectedTags"
+                                                available="state.allTags"
+                                                onAdd.bind="addTag"
+                                                onRemove.bind="removeTag"
+                                                onCreate.bind="createTag"
+                                            />
+                                        </div>
+                                        <div class="rl-frow ic-w-l">
+                                            <label for="hd-description">Description</label>
+                                            <textarea id="hd-description" rows="4"
+                                                      t-att-value="state.form.description"
+                                                      t-on-input="(ev) => this.onInput('description', ev)"/>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="rl-frow rl-full"
-                                     t-att-class="validator.fieldError('port') ? 'has-error' : ''">
-                                    <label>Port <span class="rl-req">*</span></label>
-                                    <input
-                    t-att-aria-invalid="validator.fieldError('port') ? 'true' : undefined"
-                    t-att-aria-describedby="validator.fieldError('port') ? 'hd-err-port' : undefined" type="number"
-                                           t-att-value="state.form.port"
-                                           t-on-input="(ev) => this.onInput('port', ev)"
-                                           t-on-blur="() => validator.touch('port')"/>
-                                    <t t-if="validator.fieldError('port')">
-                                        <span class="ic-field-error"
-                      t-att-id="'hd-err-port'" t-esc="validator.fieldError('port')"/>
-                                    </t>
+                            </section>
+
+                            <!-- Where new instances go. Keeps `ic-form-grid`, a
+                                 direct child of this tab, so a layer's patches
+                                 (xpath on this grid) add their rows, a host pool
+                                 or warm spares, to this group. -->
+                            <div class="ic-set-block ic-host-group ic-host-placement ic-form-grid"
+                                 role="group" aria-labelledby="hd-g-placement">
+                                <div class="ic-set-block__head">
+                                    <h3 class="ic-set-block__title" id="hd-g-placement">Placement</h3>
                                 </div>
                                 <div class="rl-frow rl-full">
-                                    <label>Tags</label>
-                                    <TagSelector
-                                        selected="state.selectedTags"
-                                        available="state.allTags"
-                                        onAdd.bind="addTag"
-                                        onRemove.bind="removeTag"
-                                        onCreate.bind="createTag"
-                                    />
-                                </div>
-                                <div class="rl-frow rl-full">
-                                    <label>Description</label>
-                                    <textarea rows="4"
-                                              t-att-value="state.form.description"
-                                              t-on-input="(ev) => this.onInput('description', ev)"/>
-                                </div>
-                                <div class="rl-frow rl-full">
-                                    <label>Auto-assignment</label>
-                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                        <input type="checkbox"
+                                    <label for="hd-exclude_from_autoassign">Auto-assignment</label>
+                                    <div class="ic-host-check">
+                                        <input id="hd-exclude_from_autoassign" type="checkbox"
+                                               aria-describedby="hd-exclude_from_autoassign-help"
                                                t-att-checked="state.form.exclude_from_autoassign"
                                                t-on-change="(ev) => { this.state.form.exclude_from_autoassign = ev.target.checked; }"/>
                                         <span>Exclude from auto-assignment</span>
                                     </div>
-                                    <span class="ic-form-note">
+                                    <span class="ic-form-note" id="hd-exclude_from_autoassign-help">
                                         When checked, this host will not be selected automatically for new instances.
                                     </span>
                                 </div>
-                                <div class="rl-frow rl-full">
-                                    <label>HTTP connection-rate cap</label>
-                                    <input type="number" min="0" step="1"
-                                           t-att-value="state.form.http_conn_rate"
-                                           t-on-input="(ev) => this.onInput('http_conn_rate', ev)"/>
-                                    <span class="ic-form-note">
-                                        Per-source new-connection cap (per second) on ports 80/443, enforced by the host firewall. 0 disables it. Not applied behind a CDN, where the CDN's allowlist replaces it. Applies on the next hardening run.
-                                    </span>
-                                </div>
-                                <div class="rl-frow rl-full">
-                                    <label>Reached through a CDN</label>
-                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                        <input type="checkbox"
-                                               t-att-checked="state.form.behind_cdn"
-                                               t-on-change="(ev) => { this.state.form.behind_cdn = ev.target.checked; }"/>
-                                        <span>Visitors reach this host through a CDN or reverse proxy</span>
+                            </div>
+
+                            <!-- How visitors reach the host, and what its proxy
+                                 believes about them. -->
+                            <section class="ic-set-block ic-host-group" aria-labelledby="hd-g-edge">
+                                <div class="ic-set-block__head">
+                                    <h3 class="ic-set-block__title" id="hd-g-edge">Network edge</h3>
+                                    <button type="button" class="ic-set-how"
+                                            aria-controls="hd-g-edge-how"
+                                            t-att-aria-expanded="state.edgeHowOpen ? 'true' : 'false'"
+                                            t-on-click="() => { this.state.edgeHowOpen = !this.state.edgeHowOpen; }">
+                                        <i class="fa fa-info-circle" aria-hidden="true"/> How it works
+                                    </button>
+                                    <div id="hd-g-edge-how" class="ic-set-how__text" t-if="state.edgeHowOpen">
+                                        <p>The rate limit counts a visitor by the address that opened the connection or, with Reached through a CDN on, by the forwarded client, so one CDN edge is not one bucket shared by everyone behind it. Turning it on for a host the world reaches directly is the worse mistake of the two: a direct request carries no forwarded chain, so every visitor collapses into a single shared bucket.</p>
+                                        <p>Traefik believes X-Forwarded-For only on connections from the ranges applied to this host, and strips it from every other, which is what makes the header unspoofable and lets the per-client rate limit key on the real visitor instead of a handful of edge addresses. The ranges are whatever the platform supplies, unless this host's override pins it to a different proxy than the rest.</p>
+                                        <p>Direct access is ignored while no range is applied, where it would lock out every visitor. An empty override does not mean that, since the platform may be supplying the list.</p>
+                                        <p>The CDN's addresses are shared by all its customers; only your zone's client certificate tells your traffic apart. Leave the certificate authority empty to accept any connection the firewall lets in; it is applied by Full Setup or Push Trusted Proxy Settings.</p>
                                     </div>
-                                    <span class="ic-form-note">
-                                        Decides how a visitor is identified here. On: the rate limit counts the forwarded client, so one CDN edge is not one bucket shared by everyone behind it. Off: it counts the address that opened the connection. Turning this on for a host the world reaches directly is the worse mistake of the two — a direct request carries no forwarded chain, so every visitor collapses into a single shared bucket.
-                                    </span>
                                 </div>
-                                <div class="rl-frow rl-full">
-                                    <label>Trusted proxy ranges (override)</label>
-                                    <textarea rows="3"
-                                              t-att-value="state.form.trusted_proxy_ranges"
-                                              t-on-input="(ev) => this.onInput('trusted_proxy_ranges', ev)"/>
-                                    <span class="ic-form-note">
-                                        One CIDR range per line, e.g. 198.51.100.0/24 or 2001:db8::/32. Leave empty to use whatever the platform supplies; fill it in only to pin this host to a different proxy than the rest. Traefik believes X-Forwarded-For only on connections from the ranges applied below, and strips it from every other, which is what makes the header unspoofable and lets the per-client rate limit key on the real visitor instead of a handful of edge addresses.
-                                    </span>
-                                </div>
-                                <div class="rl-frow rl-full">
-                                    <label>Applied to this host</label>
-                                    <div t-if="state.effectiveProxyRanges.length">
-                                        <code t-esc="state.effectiveProxyRanges.join(', ')"/>
-                                    </div>
-                                    <div t-else="">
-                                        <em>No proxy is trusted. This host is treated as answering its visitors directly.</em>
-                                    </div>
-                                    <span class="ic-form-note">
-                                        <t t-if="state.effectiveProxyRanges.length">
-                                            Source: <t t-esc="proxySourceLabel()"/>.
-                                        </t>
-                                        <t t-if="proxyChangePending()">
-                                            <strong>Not applied yet.</strong> Traefik on this host is still running the previous list; use Push Trusted Proxy Settings, or a full setup run, to ship it.
-                                        </t>
-                                    </span>
-                                </div>
-                                <div class="rl-frow rl-full">
-                                    <label>Direct access</label>
-                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                        <input type="checkbox"
-                                               t-att-checked="state.form.block_direct_access"
-                                               t-on-change="(ev) => { this.state.form.block_direct_access = ev.target.checked; }"/>
-                                        <span>Only accept traffic from the proxies applied above</span>
-                                    </div>
-                                    <span class="ic-form-note">
-                                        Refuses HTTPS requests that reached this host without going through one of them, so its address cannot be used to bypass the edge. Ignored while no range is applied above, where it would lock out every visitor — the override box being empty does not mean that, since the platform may be supplying the list.
-                                    </span>
-                                </div>
-                                <div class="rl-frow rl-full">
-                                    <label>CDN client certificate authority</label>
-                                    <textarea rows="4" spellcheck="false"
-                                              placeholder="-----BEGIN CERTIFICATE-----"
-                                              t-att-value="state.form.cdn_client_ca"
-                                              t-on-input="(ev) => this.onInput('cdn_client_ca', ev)"/>
-                                    <span class="ic-form-note">
-                                        With direct access refused, also require every TLS connection to present a client certificate signed by this authority. The CDN's addresses are shared by all its customers; only your zone's certificate tells your traffic apart. Leave empty to accept any connection the firewall lets in. Applied by Full Setup or Push Trusted Proxy Settings.
-                                    </span>
-                                </div>
-                                <div class="rl-frow rl-full">
-                                    <label>Proxy network</label>
-                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                        <input id="host-shared-guard" type="checkbox"
-                                               t-att-checked="state.form.shared_guard"
-                                               t-on-change="(ev) => { this.state.form.shared_guard = ev.target.checked; }"/>
-                                        <span>Only the proxy may open connections to the instances</span>
-                                    </div>
-                                    <span class="ic-form-note">
-                                        Every instance on this host shares a network with the proxy. With this on, the host's firewall keeps one instance from reaching another directly, past the proxy and the CDN. Applied, or removed, by Full Setup.
-                                    </span>
-                                </div>
-                                <t t-if="env.features?.observability?.configure !== false">
-                                    <div class="rl-frow rl-full">
-                                        <label for="host-direct-port">Direct port</label>
-                                        <input id="host-direct-port" type="number" min="0" step="1"
-                                               placeholder="9443"
-                                               t-att-value="state.form.direct_port"
-                                               t-on-input="(ev) => this.onInput('direct_port', ev)"/>
-                                        <span class="ic-form-note">
-                                            Port the platform's own servers use to reach this host without the CDN. Applied by Full Setup.
-                                            <t t-if="directPortPending"><strong>Not applied yet.</strong></t>
+                                <div class="ic-set-block__body">
+                                    <div class="ic-rgrid">
+                                        <div class="rl-frow ic-w-s">
+                                            <label for="hd-http_conn_rate">HTTP connection-rate cap</label>
+                                            <input id="hd-http_conn_rate" type="number" min="0" step="1"
+                                                   aria-describedby="hd-http_conn_rate-help"
+                                                   t-att-value="state.form.http_conn_rate"
+                                                   t-on-input="(ev) => this.onInput('http_conn_rate', ev)"/>
+                                        </div>
+                                        <span class="ic-form-note ic-w-l ic-rgrid__note" id="hd-http_conn_rate-help">
+                                            Per-source new-connection cap (per second) on ports 80/443, enforced by the host firewall. 0 disables it. Not applied behind a CDN, where the CDN's allowlist replaces it. Applies on the next hardening run.
                                         </span>
-                                    </div>
-                                    <div class="rl-frow rl-full">
-                                        <label>Use the public path</label>
-                                        <div style="display: flex; align-items: center; gap: 8px;">
-                                            <input id="host-direct-opt-out" type="checkbox"
-                                                   t-att-checked="state.form.direct_path_opt_out"
-                                                   t-on-change="(ev) => { this.state.form.direct_path_opt_out = ev.target.checked; }"/>
-                                            <span>This host's agents, and the panels that run on it, keep going through the CDN.</span>
+                                        <div class="rl-frow ic-w-l">
+                                            <label for="host-shared-guard">Proxy network</label>
+                                            <div class="ic-host-check">
+                                                <input id="host-shared-guard" type="checkbox"
+                                                       aria-describedby="host-shared-guard-help"
+                                                       t-att-checked="state.form.shared_guard"
+                                                       t-on-change="(ev) => { this.state.form.shared_guard = ev.target.checked; }"/>
+                                                <span>Only the proxy may open connections to the instances</span>
+                                            </div>
+                                            <span class="ic-form-note" id="host-shared-guard-help">
+                                                Every instance on this host shares a network with the proxy. With this on, the host's firewall keeps one instance from reaching another directly, past the proxy and the CDN. Applied, or removed, by Full Setup.
+                                            </span>
+                                        </div>
+                                        <div class="rl-frow ic-w-l">
+                                            <span class="ic-ro-label">Applied to this host</span>
+                                            <div t-if="state.effectiveProxyRanges.length">
+                                                <code t-esc="state.effectiveProxyRanges.join(', ')"/>
+                                            </div>
+                                            <div t-else="">
+                                                <em>No proxy is trusted. This host is treated as answering its visitors directly.</em>
+                                            </div>
+                                            <span class="ic-form-note">
+                                                <t t-if="state.effectiveProxyRanges.length">
+                                                    Source: <t t-esc="proxySourceLabel()"/>.
+                                                </t>
+                                                <t t-if="proxyChangePending()">
+                                                    <strong>Not applied yet.</strong> Traefik on this host is still running the previous list; use Push Trusted Proxy Settings, or a full setup run, to ship it.
+                                                </t>
+                                            </span>
+                                        </div>
+                                        <div class="rl-frow ic-w-l">
+                                            <label for="hd-block_direct_access">Direct access</label>
+                                            <div class="ic-host-check">
+                                                <input id="hd-block_direct_access" type="checkbox"
+                                                       aria-describedby="hd-block_direct_access-help"
+                                                       t-att-checked="state.form.block_direct_access"
+                                                       t-on-change="(ev) => { this.state.form.block_direct_access = ev.target.checked; }"/>
+                                                <span>Only accept traffic from the proxies applied above</span>
+                                            </div>
+                                            <span class="ic-form-note" id="hd-block_direct_access-help">
+                                                Refuses HTTPS requests that reached this host without going through one of them, so its address cannot be used to bypass the edge.
+                                            </span>
                                         </div>
                                     </div>
-                                    <div class="rl-frow rl-full" t-if="state.directPortShipped">
-                                        <label>Admitted on the direct port</label>
-                                        <div><code t-esc="state.directAllowlist.join(', ')"/></div>
-                                        <span class="ic-form-note" t-if="state.directAllowlistPending">
-                                            <strong>pending</strong>
-                                        </span>
+                                </div>
+                                <!-- The CDN's side of it: right as they are for
+                                     nearly every host, and wrong without a sign on
+                                     this screen (form standard §4). -->
+                                <SettingAdvanced fields="['behind_cdn', 'trusted_proxy_ranges', 'cdn_client_ca']"
+                                                 form="state.form">
+                                    <div class="ic-set-block__body">
+                                        <div class="ic-rgrid">
+                                            <div class="rl-frow ic-w-l">
+                                                <label for="hd-behind_cdn">Reached through a CDN</label>
+                                                <div class="ic-host-check">
+                                                    <input id="hd-behind_cdn" type="checkbox"
+                                                           aria-describedby="hd-behind_cdn-help"
+                                                           t-att-checked="state.form.behind_cdn"
+                                                           t-on-change="(ev) => { this.state.form.behind_cdn = ev.target.checked; }"/>
+                                                    <span>Visitors reach this host through a CDN or reverse proxy</span>
+                                                </div>
+                                                <span class="ic-form-note" id="hd-behind_cdn-help">
+                                                    Decides how the rate limit identifies a visitor.
+                                                </span>
+                                            </div>
+                                            <div class="rl-frow ic-w-l">
+                                                <label for="hd-trusted_proxy_ranges">Trusted proxy ranges (override)</label>
+                                                <textarea id="hd-trusted_proxy_ranges" rows="3"
+                                                          aria-describedby="hd-trusted_proxy_ranges-help"
+                                                          t-att-value="state.form.trusted_proxy_ranges"
+                                                          t-on-input="(ev) => this.onInput('trusted_proxy_ranges', ev)"/>
+                                                <span class="ic-form-note" id="hd-trusted_proxy_ranges-help">
+                                                    One CIDR range per line, e.g. 198.51.100.0/24 or 2001:db8::/32. Leave empty to use what the platform supplies.
+                                                </span>
+                                            </div>
+                                            <div class="rl-frow ic-w-l">
+                                                <label for="hd-cdn_client_ca">CDN client certificate authority</label>
+                                                <textarea id="hd-cdn_client_ca" rows="4" spellcheck="false"
+                                                          aria-describedby="hd-cdn_client_ca-help"
+                                                          placeholder="-----BEGIN CERTIFICATE-----"
+                                                          t-att-value="state.form.cdn_client_ca"
+                                                          t-on-input="(ev) => this.onInput('cdn_client_ca', ev)"/>
+                                                <span class="ic-form-note" id="hd-cdn_client_ca-help">
+                                                    With direct access refused, also require every TLS connection to present a client certificate signed by this authority.
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div class="rl-frow rl-full" t-if="state.agentsWriteUrl">
-                                        <label>Agents write to</label>
-                                        <div><code t-esc="state.agentsWriteUrl"/></div>
-                                        <span class="ic-form-note" t-if="state.directReachReason"
-                                              t-esc="state.directReachReason"/>
+                                </SettingAdvanced>
+                            </section>
+
+                            <!-- The platform's own traffic to the host, past the CDN. -->
+                            <t t-if="env.features?.observability?.configure !== false">
+                                <section class="ic-set-block ic-host-group" aria-labelledby="hd-g-internal">
+                                    <div class="ic-set-block__head">
+                                        <h3 class="ic-set-block__title" id="hd-g-internal">Internal traffic</h3>
                                     </div>
-                                </t>
-                            </div>
+                                    <div class="ic-set-block__body">
+                                        <div class="ic-rgrid">
+                                            <div class="rl-frow ic-w-s">
+                                                <label for="host-direct-port">Direct port</label>
+                                                <input id="host-direct-port" type="number" min="0" step="1"
+                                                       placeholder="9443"
+                                                       aria-describedby="host-direct-port-help"
+                                                       t-att-value="state.form.direct_port"
+                                                       t-on-input="(ev) => this.onInput('direct_port', ev)"/>
+                                            </div>
+                                            <span class="ic-form-note ic-w-l ic-rgrid__note" id="host-direct-port-help">
+                                                Port the platform's own servers use to reach this host without the CDN. Applied by Full Setup.
+                                                <t t-if="directPortPending"><strong>Not applied yet.</strong></t>
+                                            </span>
+                                            <div class="rl-frow ic-w-l">
+                                                <label for="host-direct-opt-out">Use the public path</label>
+                                                <div class="ic-host-check">
+                                                    <input id="host-direct-opt-out" type="checkbox"
+                                                           t-att-checked="state.form.direct_path_opt_out"
+                                                           t-on-change="(ev) => { this.state.form.direct_path_opt_out = ev.target.checked; }"/>
+                                                    <span>This host's agents, and the panels that run on it, keep going through the CDN.</span>
+                                                </div>
+                                            </div>
+                                            <div class="rl-frow ic-w-l" t-if="state.directPortShipped">
+                                                <span class="ic-ro-label">Admitted on the direct port</span>
+                                                <div><code t-esc="state.directAllowlist.join(', ')"/></div>
+                                                <span class="ic-form-note" t-if="state.directAllowlistPending">
+                                                    <strong>pending</strong>
+                                                </span>
+                                            </div>
+                                            <div class="rl-frow ic-w-l" t-if="state.agentsWriteUrl">
+                                                <span class="ic-ro-label">Agents write to</span>
+                                                <div><code t-esc="state.agentsWriteUrl"/></div>
+                                                <span class="ic-form-note" t-if="state.directReachReason"
+                                                      t-esc="state.directReachReason"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
+                            </t>
                         </t>
 
                         <!-- ── Connection tab ───────────────────────────────────── -->
@@ -609,8 +681,8 @@
                             <div class="rl-fgrid">
                                 <div class="rl-frow"
                                      t-att-class="validator.fieldError('user') ? 'has-error' : ''">
-                                    <label>User <span class="rl-req">*</span></label>
-                                    <input
+                                    <label for="hd-user">User <span class="rl-req">*</span></label>
+                                    <input id="hd-user" aria-required="true"
                     t-att-aria-invalid="validator.fieldError('user') ? 'true' : undefined"
                     t-att-aria-describedby="validator.fieldError('user') ? 'hd-err-user' : undefined" type="text" placeholder="ubuntu"
                                            t-att-value="state.form.user"
@@ -622,8 +694,9 @@
                                     </t>
                                 </div>
                                 <div class="rl-frow">
-                                    <label>Login type <span class="rl-req">*</span></label>
-                                    <RlSelect value="state.form.login_type"
+                                    <label for="hd-login_type">Login type <span class="rl-req">*</span></label>
+                                    <RlSelect id="'hd-login_type'"
+                                              value="state.form.login_type"
                                               options="loginTypeOptions"
                                               onChange="(value) => this.onSelect('login_type', { target: { value: value } })"
                                               ariaLabel="'Login type'"/>
@@ -647,17 +720,17 @@
                                 </t>
                                 <t t-else="">
                                     <div class="rl-frow rl-full" t-if="isNew">
-                                        <label id="host-key-source-label">SSH key</label>
+                                        <span class="ic-ro-label" id="host-key-source-label">SSH key</span>
                                         <div class="ic-key-source" role="radiogroup"
                                              aria-labelledby="host-key-source-label">
-                                            <label class="ic-key-source__option">
-                                                <input type="radio" name="host-key-source" value="generate"
+                                            <label class="ic-key-source__option" for="hd-key-source-generate">
+                                                <input id="hd-key-source-generate" type="radio" name="host-key-source" value="generate"
                                                        t-att-checked="state.form.key_source === 'generate'"
                                                        t-on-change="() => { this.state.form.key_source = 'generate'; }"/>
                                                 Generate a key for me
                                             </label>
-                                            <label class="ic-key-source__option">
-                                                <input type="radio" name="host-key-source" value="upload"
+                                            <label class="ic-key-source__option" for="hd-key-source-upload">
+                                                <input id="hd-key-source-upload" type="radio" name="host-key-source" value="upload"
                                                        t-att-checked="state.form.key_source === 'upload'"
                                                        t-on-change="() => { this.state.form.key_source = 'upload'; }"/>
                                                 Upload my own private key
@@ -665,8 +738,8 @@
                                         </div>
                                     </div>
                                     <div class="rl-frow rl-full" t-if="!isNew or state.form.key_source === 'upload'">
-                                        <label>SSH private key <span class="rl-req">*</span></label>
-                                        <input type="file" accept=".pem,.key,.txt" t-ref="keyFile"
+                                        <label for="hd-key_file">SSH private key <span class="rl-req">*</span></label>
+                                        <input id="hd-key_file" type="file" accept=".pem,.key,.txt" t-ref="keyFile"
                                                t-on-change="onKeyFileChange"/>
                                         <t t-if="!isNew and state.has_key_file and !state.form.key_file">
                                             <span class="ic-form-note ic-form-note--set">
@@ -675,7 +748,7 @@
                                         </t>
                                     </div>
                                     <div class="rl-frow rl-full ic-host-pubkey" t-if="sshPublicKey">
-                                        <label>Public key</label>
+                                        <span class="ic-ro-label">Public key</span>
                                         <div class="ic-copy-field">
                                             <code class="ic-copy-field__value" t-esc="sshPublicKey"
                                                   t-on-copy="() => this.markKeyShared()"/>
@@ -739,8 +812,8 @@
                             <div class="rl-fgrid ic-traefik-meta">
                                 <div class="rl-frow"
                                      t-att-class="validator.fieldError('wildcard_domain') ? 'has-error' : ''">
-                                    <label>Wildcard domain <span class="rl-req">*</span></label>
-                                    <input
+                                    <label for="hd-wildcard_domain">Wildcard domain <span class="rl-req">*</span></label>
+                                    <input id="hd-wildcard_domain" aria-required="true"
                     t-att-aria-invalid="validator.fieldError('wildcard_domain') ? 'true' : undefined"
                     t-att-aria-describedby="validator.fieldError('wildcard_domain') ? 'hd-err-wildcard_domain' : undefined" type="text" placeholder="example.com"
                                            t-att-value="state.form.wildcard_domain"
@@ -761,8 +834,8 @@
                                         onChange="(val) => this.onPasswordChange('traefik_panel_password', val)"/>
                                 </div>
                                 <div class="rl-frow rl-full">
-                                    <label>Default certificate <span class="rl-opt">— served when a router has none of its own; what a CDN in front connects to</span></label>
-                                    <textarea rows="5" spellcheck="false"
+                                    <label for="hd-tls_default_cert">Default certificate <span class="rl-opt">— served when a router has none of its own; what a CDN in front connects to</span></label>
+                                    <textarea id="hd-tls_default_cert" rows="5" spellcheck="false"
                                               placeholder="-----BEGIN CERTIFICATE-----"
                                               t-att-value="state.form.tls_default_cert"
                                               t-on-input="(ev) => this.onInput('tls_default_cert', ev)"/>
@@ -775,8 +848,8 @@
                                     </t>
                                 </div>
                                 <div class="rl-frow rl-full">
-                                    <label>Default certificate key <span class="rl-opt" t-if="state.has_tls_default_key">— stored; paste a new one to replace it</span></label>
-                                    <textarea rows="5" spellcheck="false" autocomplete="off"
+                                    <label for="hd-tls_default_key">Default certificate key <span class="rl-opt" t-if="state.has_tls_default_key">— stored; paste a new one to replace it</span></label>
+                                    <textarea id="hd-tls_default_key" rows="5" spellcheck="false" autocomplete="off"
                                               placeholder="-----BEGIN PRIVATE KEY-----"
                                               t-att-value="state.form.tls_default_key"
                                               t-on-input="(ev) => this.onInput('tls_default_key', ev)"/>
