@@ -46,12 +46,14 @@ export const MailsMixin = (Base) =>
      * The sentence shown above the list, which differs by environment.
      *
      * Built in JS rather than split across the template so the
-     * translators get one whole sentence.
+     * translators get one whole sentence. The new-instance form has no
+     * instance yet: its environment is the form's.
      *
      * @returns {string}
      */
     get mailCaptureNotice() {
-      return this.state.inst?.environment === "production"
+      const environment = this.state.inst?.environment || this.state.form?.environment;
+      return environment === "production"
         ? _t("Outgoing email is real on production.")
         : _t("Outgoing email on staging never leaves this server.");
     }

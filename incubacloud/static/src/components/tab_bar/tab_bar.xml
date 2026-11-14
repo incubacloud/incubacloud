@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.TabBar">
+        <div class="ic-tabbar" t-ref="root" t-on-keydown="onKeydown">
+            <div class="rl-tabs" role="tablist" t-on-scroll="onBarScroll">
+                <t t-foreach="barTabs" t-as="tab" t-key="tab.key">
+                    <button type="button"
+                            t-att-class="tab.key === props.active ? 'rl-tab active' : 'rl-tab'"
+                            role="tab"
+                            t-att-aria-selected="tab.key === props.active ? 'true' : 'false'"
+                            t-on-click="() => this.select(tab.key)">
+                        <t t-esc="tab.label"/>
+                        <t t-if="isMarked(tab.key)">
+                            <span class="ic-tabbar__dot" aria-hidden="true"/>
+                            <span class="ic-sr-only" t-esc="markText"/>
+                        </t>
+                    </button>
+                </t>
+                <button t-if="menuTabs.length"
+                        type="button"
+                        t-ref="more"
+                        t-att-class="'rl-tab ic-tabbar__more' + (activeInMenu ? ' active' : '')"
+                        aria-haspopup="true"
+                        t-att-aria-expanded="state.open ? 'true' : 'false'"
+                        t-on-click="toggle">
+                    <t t-esc="moreLabel"/>
+                    <t t-if="moreMarked">
+                        <span class="ic-tabbar__dot" aria-hidden="true"/>
+                        <span class="ic-sr-only" t-esc="markText"/>
+                    </t>
+                    <span class="ic-tabbar__caret" aria-hidden="true">▾</span>
+                </button>
+            </div>
+            <div t-if="state.open"
+                 class="ic-tabbar__menu"
+                 role="tablist"
+                 aria-orientation="vertical"
+                 t-att-aria-label="moreLabel"
+                 t-att-style="state.menuStyle"
+                 t-ref="menu">
+                <t t-foreach="menuTabs" t-as="tab" t-key="tab.key">
+                    <button type="button"
+                            t-att-class="tab.key === props.active ? 'rl-tab active' : 'rl-tab'"
+                            role="tab"
+                            t-att-aria-selected="tab.key === props.active ? 'true' : 'false'"
+                            t-on-click="() => this.select(tab.key)">
+                        <t t-esc="tab.label"/>
+                        <t t-if="isMarked(tab.key)">
+                            <span class="ic-tabbar__dot" aria-hidden="true"/>
+                            <span class="ic-sr-only" t-esc="markText"/>
+                        </t>
+                    </button>
+                </t>
+            </div>
+        </div>
+    </t>
+
+</templates>

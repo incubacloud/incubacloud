@@ -29,6 +29,7 @@ import {SearchSelect} from "../search_select/search_select";
 import {RlSelect} from "../rl_select/rl_select";
 import {restoreForm, SaveBar, unsavedCount} from "../settings_form/save_bar";
 import {IcPager} from "../ic_pager/ic_pager";
+import {TabBar} from "../tab_bar/tab_bar";
 import {MetricsBoard} from "../metrics/metrics_board";
 import {JobsMixin} from "./instance_detail_jobs";
 import {MoveMixin} from "./instance_detail_move";
@@ -198,6 +199,46 @@ function applyPipResolutions(text, choices) {
 }
 
 /**
+ * The tab of the form that holds each field, for the marks on the tab bar.
+ * Fields no tab edits (the environment, the series, the proxy) are left out.
+ */
+export const FIELD_TABS = {
+  name: "general",
+  host_id: "general",
+  odoo_admin_password: "general",
+  autopurge_exempt: "general",
+  postgres_version: "database",
+  postgres_username: "database",
+  postgres_password: "database",
+  domains: "networking",
+  website_info_public: "networking",
+  smtp_relay_auth: "email",
+  smtp_relay_host: "email",
+  smtp_relay_port: "email",
+  smtp_relay_security: "email",
+  smtp_relay_user: "email",
+  smtp_relay_password: "email",
+  smtp_relay_oauth_directory_id: "email",
+  smtp_relay_oauth_client_id: "email",
+  smtp_relay_oauth_client_secret: "email",
+  repos: "repos",
+  odoo_conf: "config",
+  backup_backend_id: "backups",
+  auto_rebuild: "build",
+  auto_update: "build",
+  boot_test: "build",
+  odoo_memory_limit: "resources",
+  odoo_cpus: "resources",
+  db_memory_limit: "resources",
+  db_cpus: "resources",
+  backup_memory_limit: "resources",
+  backup_cpus: "resources",
+  smtp_memory_limit: "resources",
+  smtp_cpus: "resources",
+  whitelist: "whitelist",
+};
+
+/**
  * The access log's summary before anything was read, every cut empty.
  *
  * @returns {Object}
@@ -243,6 +284,7 @@ export class InstanceDetail extends JobsMixin(
     IcPager,
     MetricsBoard,
     SaveBar,
+    TabBar,
   };
 
   get isCreate() {
@@ -797,10 +839,96 @@ export class InstanceDetail extends JobsMixin(
     }
   }
 
+  /**
+   * A tab's name in the bar.
+   *
+   * @param {string} key the tab's key
+   * @returns {{key: string, label: string}}
+   */
+  _tab(key) {
+    const labels = {
+      overview: _t("Overview"),
+      general: _t("General"),
+      database: _t("Database"),
+      networking: _t("Networking"),
+      email: _t("Email"),
+      repos: _t("Repos"),
+      config: _t("Odoo Config"),
+      backups: _t("Backups"),
+      mails: _t("Mails"),
+      metrics: _t("Metrics"),
+      deps: _t("Dependencies"),
+      build: _t("Build"),
+      resources: _t("Resources"),
+      whitelist: _t("Whitelist"),
+      activity: _t("Audit Logs"),
+    };
+    return {key, label: labels[key]};
+  }
+
+  /**
+   * The tabs of the instance's page: those in the bar and those under
+   * «More». At most eight in the bar (form standard §1); a tab is always
+   * in the same place whatever the environment and the permissions. Email
+   * is production's and Mails staging's, so each takes the other's place.
+   * The new-instance form has no «More»: its tabs all fit.
+   *
+   * @returns {{tabs: {key: string, label: string}[], more: {key: string, label: string}[]}}
+   */
+  get instanceTabs() {
+    const perms = this.env.permissions || {};
+    const production = this.state.form.environment === "production";
+    if (this.isCreate) {
+      const keys = ["general", "database", "networking"];
+      if (production) keys.push("email");
+      keys.push("repos", "deps", "resources");
+      if (this.canShowBackups) keys.push("backups");
+      return {tabs: keys.map((k) => this._tab(k)), more: []};
+    }
+    const keys = ["overview"];
+    const more = [];
+    if (perms.can_edit_instance) {
+      keys.push("general", "networking");
+      if (production) keys.push("email");
+      keys.push("repos", "config");
+      if (this.canShowBackups) keys.push("backups");
+      more.push("deps", "build", "resources", "database");
+      if (this.canShowWhitelist) more.push("whitelist");
+    }
+    if (this.canShowMails) keys.push("mails");
+    if (perms.can_view_metrics) keys.push("metrics");
+    if (perms.can_manage_hosts) more.push("activity");
+    return {tabs: keys.map((k) => this._tab(k)), more: more.map((k) => this._tab(k))};
+  }
+
+  /**
+   * The tabs holding a change not saved yet or a field to fix, by the
+   * field each one holds (``FIELD_TABS``).
+   *
+   * @returns {string[]} their keys
+   */
+  get markedTabs() {
+    const saved = this._savedForm ? JSON.parse(this._savedForm) : null;
+    const marked = new Set();
+    for (const [field, tab] of Object.entries(FIELD_TABS)) {
+      const changed = saved
+        && JSON.stringify(this.state.form[field]) !== JSON.stringify(saved[field]);
+      if (changed || this.validator.fieldError(field)) {
+        marked.add(tab);
+      }
+    }
+    return [...marked];
+  }
+
   setTab(tab) {
     this.state.tab = tab;
     if (tab !== "deps") this.state.pipFocusName = null;
-    if (tab === "backups" && !this.state.backupsData && !this.state.backupsLoading) {
+    // Before its first deploy a production has no backup to list yet:
+    // the tab only offers to choose where they will go.
+    if (
+      tab === "backups" && this.state.inst?.deployed
+      && !this.state.backupsData && !this.state.backupsLoading
+    ) {
       this._loadBackups();
     }
     if (

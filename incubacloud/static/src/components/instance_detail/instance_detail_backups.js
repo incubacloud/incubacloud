@@ -21,10 +21,19 @@ export const BackupsMixin = (Base) =>
     // ── Backups ──────────────────────────────────────────────────────────
 
     get canShowBackups() {
-      const inst = this.state.inst;
       // Listing, taking and restoring backups are a Developer's: below
-      // one, the tab only answered with the server's refusal.
-      return !!(inst && inst.deployed && this.env.permissions?.can_manage_backups);
+      // one, the tab only answered with the server's refusal. Choosing
+      // where they go is too, so a production shows the tab before its
+      // first deploy, and the new-instance form for a production, for
+      // that choice alone.
+      if (!this.env.permissions?.can_manage_backups) {
+        return false;
+      }
+      if (this.isCreate) {
+        return this.state.form.environment === "production";
+      }
+      const inst = this.state.inst;
+      return !!(inst && (inst.deployed || inst.environment === "production"));
     }
 
     get isProductionBackup() {

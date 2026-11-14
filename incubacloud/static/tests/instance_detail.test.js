@@ -932,20 +932,35 @@ describe("InstanceDetail — what the form offers is what the server takes", () 
 });
 
 describe("InstanceDetail — the backups tab is for who manages backups", () => {
-    test("a deployed instance shows it to a developer, not to a consultant", () => {
+    /**
+     * A stand-in of an instance's page on the shipped getter.
+     *
+     * @param {object} inst the instance's ``deployed`` and ``environment``
+     * @param {boolean} manages whether the reader may manage backups
+     * @returns {object}
+     */
+    const page = (inst, manages) => {
         const comp = Object.create(InstanceDetail.prototype);
-        comp.state = { inst: { deployed: true } };
-        comp.env = { permissions: { can_manage_backups: true } };
-        expect(comp.canShowBackups).toBe(true);
-        comp.env = { permissions: { can_manage_backups: false } };
-        expect(comp.canShowBackups).toBe(false);
+        comp.props = { instance_id: 7, project_id: 1 };
+        comp.state = { inst, form: { environment: inst.environment } };
+        comp.env = { permissions: { can_manage_backups: manages } };
+        return comp;
+    };
+
+    test("a deployed instance shows it to a developer, not to a consultant", () => {
+        const inst = { deployed: true, environment: "staging" };
+        expect(page(inst, true).canShowBackups).toBe(true);
+        expect(page(inst, false).canShowBackups).toBe(false);
     });
 
-    test("an instance not deployed shows it to nobody", () => {
-        const comp = Object.create(InstanceDetail.prototype);
-        comp.state = { inst: { deployed: false } };
-        comp.env = { permissions: { can_manage_backups: true } };
-        expect(comp.canShowBackups).toBe(false);
+    test("a staging not deployed shows it to nobody", () => {
+        expect(page({ deployed: false, environment: "staging" }, true).canShowBackups).toBe(false);
+    });
+
+    test("a production not deployed shows it, to choose the destination", () => {
+        const inst = { deployed: false, environment: "production" };
+        expect(page(inst, true).canShowBackups).toBe(true);
+        expect(page(inst, false).canShowBackups).toBe(false);
     });
 });
 

@@ -10,11 +10,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 The panel's help text is easier to read, its switches and tab bars say
 what they are to a screen reader, and a tab bar that scrolls shows that
-it has more tabs. A module update stopped while the instance's database
-is out of reach no longer leaves its container running. A stored
-password, secret or token reads «Stored» with Replace across the panel,
-as in Settings, and an instance's, a host's, a project's and a backup
-destination's page save with Settings' save bar.
+it has more tabs. An instance's page keeps eight tabs in its bar and the
+rest under «More», with the SMTP relay on a tab of its own. A module
+update stopped while the instance's database is out of reach no longer
+leaves its container running. A stored password, secret or token reads
+«Stored» with Replace across the panel, as in Settings, and an
+instance's, a host's, a project's and a backup destination's page save
+with Settings' save bar.
 
 The update adds no table or column and needs no data migration; only the
 panel's assets and the Spanish catalogue change.
@@ -38,6 +40,28 @@ panel's assets and the Spanish catalogue change.
   without scroll-driven animations. No text changes. The backup
   backend's «Report on success» switch takes its name from its label
   (`aria-labelledby`).
+- **An instance's tabs: eight in the bar, the rest under «More» (#13).**
+  Networking held five subjects; it keeps the domains and, in a group of
+  its own, the public website info page. The SMTP relay and its status
+  move to a new **Email** tab, production's only: a staging's mail never
+  leaves the server, and its relay values are kept and still copied by a
+  clone. The three rebuild switches move to a new **Build** tab, the
+  backup backend to **Backups** under «Destination», and «Never purge
+  automatically» to **General** under «Automatic purge». **Config** is
+  now **Odoo Config**. The bar shows Overview, General, Networking,
+  Email (production) or Mails (staging), Repos, Odoo Config, Backups and
+  Metrics; Dependencies, Build, Resources, Database, Whitelist and Audit
+  Logs sit under «More ▾», which takes the open tab's name while it is one
+  of its own and shows a dot when one of them has a change not saved or
+  a field to fix, as every tab does. A production shows Backups before
+  its first deploy, to choose the destination. Each tab's fields sit in
+  group cards on the form standard's 12-column grid, no wider than
+  920 px, and on a phone each domain is a card. The new-instance form
+  has General, Database, Networking, Email and Backups (production),
+  Repos, Dependencies and Resources. Links that open a tab by its key
+  («Edit Manually» opens Dependencies) work as before, and the settings
+  search sends the SMTP host to Instance › Email and an instance's backup
+  destination to Instance › Backups.
 
 - **Stored secrets show «Stored · Replace» outside Settings too (#13).**
   The password fields of an instance (admin, database, SMTP password and

@@ -152,6 +152,77 @@
     .ic-form-section-header { margin-top: 6px; }
 }
 
+// ── Groups and the record grid (form standard §2, §3) ───────────────────────
+// A tab's fields sit in group cards (settings_form's `.ic-set-block`) no
+// wider than 920 px, on a 12-column grid with the label above the field:
+// S takes 3 columns, M 6 and L the whole row.
+
+.ic-inst-col {
+    max-inline-size: 920px;
+
+    // A group without a title opens with its fields.
+    .ic-set-block__body:first-child { padding-block-start: 16px; }
+
+    // A switch heading its group has no rule above it.
+    .ic-set-block__body > .rl-ftoggle:first-child {
+        border-block-start: 0;
+        padding-block-start: 4px;
+    }
+
+    .ic-set-block__title .rl-opt {
+        font-family: var(--rl-fb);
+        font-size: 12.5px;
+        font-weight: 400;
+        color: var(--rl-muted);
+    }
+}
+
+// The sentence above a tab's groups.
+.ic-inst-lead { margin-block: 0 14px; }
+
+// A switch that only applies while the one above it is on.
+.rl-ftoggle.ic-ftoggle--nested { padding-inline-start: 22px; }
+
+.ic-rgrid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 14px 18px;
+
+    > .ic-w-s { grid-column: span 3; }
+    > .ic-w-m { grid-column: span 6; }
+    > .ic-w-l { grid-column: 1 / -1; }
+
+    .rl-frow { margin: 0; min-width: 0; }
+
+    input:disabled,
+    select:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+}
+
+// Resources: one half-width card per service, its two S fields side by side.
+.ic-res-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 18px;
+
+    .ic-rgrid > .ic-w-s { grid-column: span 6; }
+}
+
+// Phones and narrow windows (§9): S fields two by two, M and L whole rows,
+// the empty cells that kept a row's shape dropped, one service card a row.
+@media (max-width: 900px) {
+    .ic-rgrid {
+        > .ic-w-s { grid-column: span 6; }
+        > .ic-w-m { grid-column: 1 / -1; }
+        > .ic-rgrid__gap { display: none; }
+    }
+
+    .ic-res-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 // ── Language picker ─────────────────────────────────────────────────────────────
 
 .ic-lang-picker {
@@ -1094,10 +1165,21 @@
     gap: 6px;
 }
 
+// One row per domain on the record grid (form standard §2): the host name
+// takes 5 parts, the redirect 4, then 301 with the certificate and the
+// remove button. The certificate keeps its fixed width (below).
 .ic-domain-row {
-    display: flex;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 4fr) auto 28px;
+    gap: 8px;
     align-items: center;
+}
+
+.ic-domain-tls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
 }
 
 // Hostname and redirect wear the same field look as every other control on
@@ -1115,19 +1197,13 @@
     font-family: var(--rl-fb);
     font-size: 13.5px;
     outline: none;
+    inline-size: 100%;
+    min-width: 0;
 
     &:focus {
         border-color: var(--rl-green);
         box-shadow: 0 0 0 3px var(--rl-green-soft);
     }
-}
-
-.ic-domain-hostname {
-    flex: 2;
-}
-
-.ic-domain-redirect {
-    flex: 1;
 }
 
 // 301 toggle. Only meaningful when a redirect target is set, so it dims
@@ -1167,20 +1243,22 @@
     inline-size: 13rem;
 }
 
-// Phone width: hostname, redirect, 301, certificate and remove cannot share
-// one line (the fixed 13rem picker alone takes a third of 390 px, and the
-// inputs' own minimum widths pushed the tab to ~680 px). The row wraps: the
-// two inputs take a line each, then 301, the picker and the remove button.
-@media (max-width: 480px) {
+// Phone width: the five cannot share one line (the fixed 13rem picker
+// alone takes a third of 390 px). Each domain becomes a card (form
+// standard §9): the host name and the remove button, the redirect, then
+// 301 and the picker, which takes what is left.
+@media (max-width: 600px) {
     .ic-domain-row {
-        flex-wrap: wrap;
+        grid-template-columns: minmax(0, 1fr) 28px;
+        padding: 10px;
+        border: 1px solid var(--rl-line);
+        border-radius: var(--rl-rsm);
     }
 
-    .ic-domain-hostname,
-    .ic-domain-redirect {
-        flex: 1 1 100%;
-        min-width: 0;
-    }
+    .ic-domain-hostname { grid-area: 1 / 1; }
+    .ic-domain-remove { grid-area: 1 / 2; }
+    .ic-domain-redirect { grid-area: 2 / 1 / 3 / 3; }
+    .ic-domain-tls { grid-area: 3 / 1 / 4 / 3; }
 
     .ic-domain-cert {
         flex: 1 1 0;

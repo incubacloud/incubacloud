@@ -45,45 +45,13 @@
                                 </div>
                             </div>
 
-                            <!-- Tabs (create mode subset) -->
-                            <div class="rl-tabs" role="tablist">
-                                <button
-                  t-att-class="state.tab === 'general'    ? 'rl-tab active' : 'rl-tab'"
-                  role="tab"
-                  t-att-aria-selected="state.tab === 'general' ? 'true' : 'false'"
-                  t-on-click="() => this.setTab('general')"
-                >General</button>
-                                <button
-                  t-att-class="state.tab === 'database'   ? 'rl-tab active' : 'rl-tab'"
-                  role="tab"
-                  t-att-aria-selected="state.tab === 'database' ? 'true' : 'false'"
-                  t-on-click="() => this.setTab('database')"
-                >Database</button>
-                                <button
-                  t-att-class="state.tab === 'networking' ? 'rl-tab active' : 'rl-tab'"
-                  role="tab"
-                  t-att-aria-selected="state.tab === 'networking' ? 'true' : 'false'"
-                  t-on-click="() => this.setTab('networking')"
-                >Networking</button>
-                                <button
-                  t-att-class="state.tab === 'repos'      ? 'rl-tab active' : 'rl-tab'"
-                  role="tab"
-                  t-att-aria-selected="state.tab === 'repos' ? 'true' : 'false'"
-                  t-on-click="() => this.setTab('repos')"
-                >Repos</button>
-                                <button
-                  t-att-class="state.tab === 'resources'  ? 'rl-tab active' : 'rl-tab'"
-                  role="tab"
-                  t-att-aria-selected="state.tab === 'resources' ? 'true' : 'false'"
-                  t-on-click="() => this.setTab('resources')"
-                >Resources</button>
-                                <button
-                  t-att-class="state.tab === 'deps'       ? 'rl-tab active' : 'rl-tab'"
-                  role="tab"
-                  t-att-aria-selected="state.tab === 'deps' ? 'true' : 'false'"
-                  t-on-click="() => this.setTab('deps')"
-                >Dependencies</button>
-                            </div>
+                            <!-- Tabs (create mode subset): all fit, no «More» -->
+                            <TabBar
+                                tabs="instanceTabs.tabs"
+                                active="state.tab"
+                                marked="markedTabs"
+                                onSelect="(key) => this.setTab(key)"
+                            />
 
                             <t t-call="incubacloud.InstanceDetail.tabBody" />
 
@@ -460,99 +428,14 @@
                         </div>
                     </t>
 
-                    <!-- Tabs -->
-                    <div class="rl-tabs" role="tablist">
-                        <button
-              t-att-class="state.tab === 'overview' ? 'rl-tab active' : 'rl-tab'"
-              role="tab"
-              t-att-aria-selected="state.tab === 'overview' ? 'true' : 'false'"
-              t-on-click="() => this.setTab('overview')"
-            >Overview</button>
-                        <t t-if="env.permissions?.can_edit_instance">
-                            <button
-                t-att-class="state.tab === 'general'    ? 'rl-tab active' : 'rl-tab'"
-                role="tab"
-                t-att-aria-selected="state.tab === 'general' ? 'true' : 'false'"
-                t-on-click="() => this.setTab('general')"
-              >General</button>
-                            <button
-                t-att-class="state.tab === 'database'   ? 'rl-tab active' : 'rl-tab'"
-                role="tab"
-                t-att-aria-selected="state.tab === 'database' ? 'true' : 'false'"
-                t-on-click="() => this.setTab('database')"
-              >Database</button>
-                            <button
-                t-att-class="state.tab === 'networking' ? 'rl-tab active' : 'rl-tab'"
-                role="tab"
-                t-att-aria-selected="state.tab === 'networking' ? 'true' : 'false'"
-                t-on-click="() => this.setTab('networking')"
-              >Networking</button>
-                            <button
-                t-att-class="state.tab === 'config' ? 'rl-tab active' : 'rl-tab'"
-                role="tab"
-                t-att-aria-selected="state.tab === 'config' ? 'true' : 'false'"
-                t-on-click="() => this.setTab('config')"
-              >Config</button>
-                            <button
-                t-att-class="state.tab === 'repos'      ? 'rl-tab active' : 'rl-tab'"
-                role="tab"
-                t-att-aria-selected="state.tab === 'repos' ? 'true' : 'false'"
-                t-on-click="() => this.setTab('repos')"
-              >Repos</button>
-                            <button
-                t-att-class="state.tab === 'resources'  ? 'rl-tab active' : 'rl-tab'"
-                role="tab"
-                t-att-aria-selected="state.tab === 'resources' ? 'true' : 'false'"
-                t-on-click="() => this.setTab('resources')"
-              >Resources</button>
-                            <button
-                t-att-class="state.tab === 'deps'       ? 'rl-tab active' : 'rl-tab'"
-                role="tab"
-                t-att-aria-selected="state.tab === 'deps' ? 'true' : 'false'"
-                t-on-click="() => this.setTab('deps')"
-              >Dependencies</button>
-                            <t t-if="canShowBackups">
-                                <button
-                  t-att-class="state.tab === 'backups' ? 'rl-tab active' : 'rl-tab'"
-                  role="tab"
-                  t-att-aria-selected="state.tab === 'backups' ? 'true' : 'false'"
-                  t-on-click="() => this.setTab('backups')"
-                >Backups</button>
-                            </t>
-                            <t t-if="canShowWhitelist">
-                                <button
-                  t-att-class="state.tab === 'whitelist' ? 'rl-tab active' : 'rl-tab'"
-                  role="tab"
-                  t-att-aria-selected="state.tab === 'whitelist' ? 'true' : 'false'"
-                  t-on-click="() => this.setTab('whitelist')"
-                >Whitelist</button>
-                            </t>
-                        </t>
-                        <t t-if="canShowMails">
-                            <button
-                t-att-class="state.tab === 'mails' ? 'rl-tab active' : 'rl-tab'"
-                role="tab"
-                t-att-aria-selected="state.tab === 'mails' ? 'true' : 'false'"
-                t-on-click="() => this.setTab('mails')"
-              >Mails</button>
-                        </t>
-                        <t t-if="env.permissions?.can_view_metrics">
-                            <button
-                t-att-class="state.tab === 'metrics' ? 'rl-tab active' : 'rl-tab'"
-                role="tab"
-                t-att-aria-selected="state.tab === 'metrics' ? 'true' : 'false'"
-                t-on-click="() => this.setTab('metrics')"
-              >Metrics</button>
-                        </t>
-                        <t t-if="env.permissions?.can_manage_hosts">
-                            <button
-                t-att-class="state.tab === 'activity' ? 'rl-tab active' : 'rl-tab'"
-                role="tab"
-                t-att-aria-selected="state.tab === 'activity' ? 'true' : 'false'"
-                t-on-click="() => this.setTab('activity')"
-              >Audit Logs</button>
-                        </t>
-                    </div>
+                    <!-- Tabs: eight at most in the bar, the rest under «More» -->
+                    <TabBar
+                        tabs="instanceTabs.tabs"
+                        more="instanceTabs.more"
+                        active="state.tab"
+                        marked="markedTabs"
+                        onSelect="(key) => this.setTab(key)"
+                    />
 
                     <!-- Scrolling body -->
                     <div class="ic-rl-detail-scroll">
@@ -2240,474 +2123,540 @@
     </t>
 
     <!-- ════════════════════════════════════════════════════════════════════════
-         SHARED TAB BODY (general / database / networking / config / resources /
-         dependencies / repos / backups / audit). Repos is kept mounted via
-         display:none to preserve the branch cache.
+         SHARED TAB BODY (general / database / networking / email / build /
+         config / resources / dependencies / repos / backups / audit). Repos
+         is kept mounted via display:none to preserve the branch cache.
          ════════════════════════════════════════════════════════════════════════ -->
     <t t-name="incubacloud.InstanceDetail.tabBody">
 
         <!-- ── General ──────────────────────────────────────────────────────── -->
         <t t-if="state.tab === 'general'">
-            <div class="rl-fgrid">
-                <t t-if="!isCreate and state.inst.deployed">
-                    <div class="rl-full">
-                        <div class="ic-locked-notice">
-                            Locked: Name, Host and Odoo Version cannot be changed after deployment.
-                        </div>
-                    </div>
-                </t>
-                <div
-          class="rl-frow"
-          t-att-class="validator.fieldError('name') ? 'has-error' : ''"
-        >
-                    <label>Name <span class="rl-req">*</span></label>
-                    <input
+            <div class="ic-inst-col">
+                <div class="ic-set-block">
+                    <div class="ic-set-block__body">
+                        <div class="ic-rgrid">
+                            <t t-if="!isCreate and state.inst.deployed">
+                                <div class="ic-w-l">
+                                    <div class="ic-locked-notice">
+                                        Locked: Name, Host and Odoo Version cannot be changed after deployment.
+                                    </div>
+                                </div>
+                            </t>
+                            <div
+                class="rl-frow ic-w-m"
+                t-att-class="validator.fieldError('name') ? 'has-error' : ''"
+              >
+                                <label>Name <span class="rl-req">*</span></label>
+                                <input
                     t-att-aria-invalid="validator.fieldError('name') ? 'true' : undefined"
                     t-att-aria-describedby="validator.fieldError('name') ? 'idet-err-name' : undefined"
-            type="text"
-            t-att-placeholder="state.form.environment === 'staging' ? 'myproject-staging' : 'myproject'"
-            t-att-value="state.form.name"
-            t-att-disabled="(!isCreate and state.inst.deployed) || null"
-            t-on-input="(ev) => this.onInput('name', ev)"
-            t-on-blur="() => validator.touch('name')"
-          />
-                    <t t-if="validator.fieldError('name')">
-                        <span
-              class="ic-field-error"
+                  type="text"
+                  t-att-placeholder="state.form.environment === 'staging' ? 'myproject-staging' : 'myproject'"
+                  t-att-value="state.form.name"
+                  t-att-disabled="(!isCreate and state.inst.deployed) || null"
+                  t-on-input="(ev) => this.onInput('name', ev)"
+                  t-on-blur="() => validator.touch('name')"
+                />
+                                <t t-if="validator.fieldError('name')">
+                                    <span
+                    class="ic-field-error"
                       t-att-id="'idet-err-name'"
-              t-esc="validator.fieldError('name')"
-            />
-                    </t>
-                </div>
-                <div
-          class="rl-frow ic-host-row"
-          t-att-class="validator.fieldError('host_id') ? 'has-error' : ''"
-        >
-                    <label>Host
-                        <t t-if="!state.autoassignEnabled">
-                            <span class="rl-req">*</span>
-                        </t>
-                    </label>
-                    <t t-if="!state.hosts.length and !state.autoassignEnabled">
-                        <span class="ic-form-note ic-no-host-note">No host ready for this instance yet.</span>
-                        <button type="button" class="rl-btn rl-btn-sm ic-no-host-add"
-                                t-on-click="() => env.navigate('hosts', {})">
-                            Add a host →
-                        </button>
-                    </t>
-                    <t t-else="">
-                        <RlSelect
+                    t-esc="validator.fieldError('name')"
+                  />
+                                </t>
+                            </div>
+                            <div
+                class="rl-frow ic-host-row ic-w-m"
+                t-att-class="validator.fieldError('host_id') ? 'has-error' : ''"
+              >
+                                <label>Host
+                                    <t t-if="!state.autoassignEnabled">
+                                        <span class="rl-req">*</span>
+                                    </t>
+                                </label>
+                                <t t-if="!state.hosts.length and !state.autoassignEnabled">
+                                    <span class="ic-form-note ic-no-host-note">No host ready for this instance yet.</span>
+                                    <button type="button" class="rl-btn rl-btn-sm ic-no-host-add"
+                                            t-on-click="() => env.navigate('hosts', {})">
+                                        Add a host →
+                                    </button>
+                                </t>
+                                <t t-else="">
+                                    <RlSelect
                     ariaInvalid="validator.fieldError('host_id') ? true : false"
                     ariaDescribedby="validator.fieldError('host_id') ? 'idet-err-host_id' : undefined"
-              value="state.form.host_id"
-              options="hostOptions"
-              emptyLabel="state.autoassignEnabled ? 'Auto (recommended)' : '— select host —'"
-              disabled="hostLocked"
-              onChange="(value) => { this.onHostSelect({ target: { value: value } }); validator.touch('host_id'); }"
-              ariaLabel="'Host'"
-            />
-                    </t>
-                    <t t-if="validator.fieldError('host_id')">
-                        <span
-              class="ic-field-error"
+                    value="state.form.host_id"
+                    options="hostOptions"
+                    emptyLabel="state.autoassignEnabled ? 'Auto (recommended)' : '— select host —'"
+                    disabled="hostLocked"
+                    onChange="(value) => { this.onHostSelect({ target: { value: value } }); validator.touch('host_id'); }"
+                    ariaLabel="'Host'"
+                  />
+                                </t>
+                                <t t-if="validator.fieldError('host_id')">
+                                    <span
+                    class="ic-field-error"
                       t-att-id="'idet-err-host_id'"
-              t-esc="validator.fieldError('host_id')"
-            />
-                    </t>
+                    t-esc="validator.fieldError('host_id')"
+                  />
+                                </t>
+                            </div>
+                            <div class="rl-frow ic-w-m">
+                                <label for="idet-odoo_admin_password" id="idet-odoo_admin_password-label">Admin password</label>
+                                <PasswordInput
+                  id="'idet-odoo_admin_password'"
+                  value="state.form.odoo_admin_password"
+                  autoGenerate="true"
+                  hasValue="state.has_odoo_admin_password"
+                  required="true"
+                  onChange="(val) => this.onPasswordChange('odoo_admin_password', val)"
+                />
+                            </div>
+                            <div class="ic-w-m ic-rgrid__gap" aria-hidden="true"/>
+                            <div class="rl-frow ic-w-l">
+                                <label>Tags</label>
+                                <TagSelector
+                  selected="state.selectedTags"
+                  available="state.allTags"
+                  onAdd.bind="addTag"
+                  onRemove.bind="removeTag"
+                  onCreate.bind="createTag"
+                />
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="rl-frow">
-                    <label for="idet-odoo_admin_password" id="idet-odoo_admin_password-label">Admin password</label>
-                    <PasswordInput
-            id="'idet-odoo_admin_password'"
-            value="state.form.odoo_admin_password"
-            autoGenerate="true"
-            hasValue="state.has_odoo_admin_password"
-            required="true"
-            onChange="(val) => this.onPasswordChange('odoo_admin_password', val)"
-          />
-                </div>
-                <div class="rl-frow rl-full">
-                    <label>Tags</label>
-                    <TagSelector
-            selected="state.selectedTags"
-            available="state.allTags"
-            onAdd.bind="addTag"
-            onRemove.bind="removeTag"
-            onCreate.bind="createTag"
-          />
-                </div>
+
+                <!-- Whether the whole staging stays: not a matter of the
+                     network, where it used to sit. -->
+                <t t-if="!isCreate and state.form.environment === 'staging'">
+                    <section class="ic-set-block" aria-labelledby="idet-g-purge">
+                        <div class="ic-set-block__head">
+                            <h3 class="ic-set-block__title" id="idet-g-purge">Automatic purge</h3>
+                        </div>
+                        <div class="ic-set-block__body">
+                            <div class="rl-ftoggle">
+                                <div>
+                                    <div class="rl-tl-label">Never purge automatically</div>
+                                    <div
+                      class="rl-th"
+                    >keep this staging out of the autopurge for good. For the permanent ones — a QA environment nobody logs into for months is still not disposable.</div>
+                                </div>
+                                <button
+                  type="button"
+                  t-att-class="'rl-sw' + (state.form.autopurge_exempt ? ' on' : '')"
+                  role="switch"
+                  t-att-aria-checked="state.form.autopurge_exempt ? 'true' : 'false'"
+                  aria-label="Toggle never purge automatically"
+                  t-on-click="() => { state.form.autopurge_exempt = !state.form.autopurge_exempt; state.saved = false; }"
+                />
+                            </div>
+                        </div>
+                    </section>
+                </t>
             </div>
         </t>
 
         <!-- ── Database ─────────────────────────────────────────────────────── -->
         <t t-if="state.tab === 'database'">
-            <div class="rl-fgrid">
-                <t t-if="!isCreate and state.inst.deployed">
-                    <div class="rl-full">
-                        <div class="ic-locked-notice">
-                            Locked: Database fields cannot be changed after deployment.
+            <div class="ic-inst-col">
+                <div class="ic-set-block">
+                    <div class="ic-set-block__body">
+                        <div class="ic-rgrid">
+                            <t t-if="!isCreate and state.inst.deployed">
+                                <div class="ic-w-l">
+                                    <div class="ic-locked-notice">
+                                        Locked: Database fields cannot be changed after deployment.
+                                    </div>
+                                </div>
+                            </t>
+                            <div class="rl-frow ic-w-s">
+                                <label>PostgreSQL version</label>
+                                <RlSelect
+                  options="pgVersions"
+                  value="state.form.postgres_version"
+                  disabled="(!isCreate and state.inst.deployed)"
+                  onChange="(value) => this.onPgSelect({ target: { value: value } })"
+                />
+                            </div>
+                            <div class="ic-w-s ic-rgrid__gap" aria-hidden="true"/>
+                            <div class="rl-frow ic-w-m">
+                                <label>DB user</label>
+                                <input
+                  type="text"
+                  placeholder="odoo"
+                  t-att-disabled="(!isCreate and state.inst.deployed) || null"
+                  t-att-value="state.form.postgres_username"
+                  t-on-input="(ev) => this.onInput('postgres_username', ev)"
+                />
+                            </div>
+                            <div class="rl-frow ic-w-m">
+                                <label for="idet-postgres_password" id="idet-postgres_password-label">DB password</label>
+                                <PasswordInput
+                  id="'idet-postgres_password'"
+                  value="state.form.postgres_password"
+                  autoGenerate="true"
+                  hasValue="state.has_postgres_password"
+                  required="true"
+                  onChange="(val) => this.onPasswordChange('postgres_password', val)"
+                />
+                            </div>
                         </div>
                     </div>
-                </t>
-                <div class="rl-frow">
-                    <label>PostgreSQL version</label>
-                    <RlSelect
-            options="pgVersions"
-            value="state.form.postgres_version"
-            disabled="(!isCreate and state.inst.deployed)"
-            onChange="(value) => this.onPgSelect({ target: { value: value } })"
-          />
-                </div>
-                <div class="rl-frow">
-                    <label>DB user</label>
-                    <input
-            type="text"
-            placeholder="odoo"
-            t-att-disabled="(!isCreate and state.inst.deployed) || null"
-            t-att-value="state.form.postgres_username"
-            t-on-input="(ev) => this.onInput('postgres_username', ev)"
-          />
-                </div>
-                <div class="rl-frow rl-full">
-                    <label for="idet-postgres_password" id="idet-postgres_password-label">DB password</label>
-                    <PasswordInput
-            id="'idet-postgres_password'"
-            value="state.form.postgres_password"
-            autoGenerate="true"
-            hasValue="state.has_postgres_password"
-            required="true"
-            onChange="(val) => this.onPasswordChange('postgres_password', val)"
-          />
                 </div>
             </div>
         </t>
 
-        <!-- ── Networking ───────────────────────────────────────────────────── -->
+        <!-- ── Networking: the names the instance answers to, and what it
+             shows on them. ─────────────────────────────────────────────── -->
         <t t-if="state.tab === 'networking'">
-            <div class="rl-fgrid">
-                <div class="rl-frow rl-full">
-                    <label>Domains <span
-              class="rl-opt"
-            >— auto-generated if empty</span></label>
-                    <div class="ic-domains-list">
-                        <t
-              t-foreach="state.form.domains || []"
-              t-as="d"
-              t-key="d_index"
-            >
-                            <div class="ic-domain-row">
-                                <input
-                  type="text"
-                  class="ic-domain-hostname"
-                  placeholder="example.com"
-                  t-att-value="d.hostname"
-                  t-on-input="(ev) => this.onDomainChange(d_index, 'hostname', ev.target.value)"
-                />
-                                <input
-                  type="text"
-                  class="ic-domain-redirect"
-                  placeholder="redirect to (optional)"
-                  t-att-value="d.redirect_to"
-                  t-on-input="(ev) => this.onDomainChange(d_index, 'redirect_to', ev.target.value)"
-                />
-                                <label
-                  class="ic-domain-permanent"
-                  title="Permanent redirect (301) instead of temporary (302)."
-                  t-att-class="{ 'ic-domain-permanent--off': !d.redirect_to }"
-                >
+            <div class="ic-inst-col">
+                <section class="ic-set-block" aria-labelledby="idet-g-domains">
+                    <div class="ic-set-block__head">
+                        <h3 class="ic-set-block__title" id="idet-g-domains">Domains <span
+                  class="rl-opt"
+                >— auto-generated if empty</span></h3>
+                    </div>
+                    <div class="ic-set-block__body">
+                        <div class="ic-domains-list">
+                            <t
+                t-foreach="state.form.domains || []"
+                t-as="d"
+                t-key="d_index"
+              >
+                                <div class="ic-domain-row">
                                     <input
-                    type="checkbox"
-                    t-att-checked="d.redirect_permanent"
-                    t-att-disabled="!d.redirect_to"
-                    t-on-change="(ev) => this.onDomainChange(d_index, 'redirect_permanent', ev.target.checked)"
+                    type="text"
+                    class="ic-domain-hostname"
+                    placeholder="example.com"
+                    t-att-value="d.hostname"
+                    t-on-input="(ev) => this.onDomainChange(d_index, 'hostname', ev.target.value)"
                   />
-                                    <span>301</span>
-                                </label>
-                                <div
-                  class="ic-domain-cert"
-                  title="Automatic: the host decides — its own certificate when a CDN answers for this name and that certificate covers it, Let's Encrypt otherwise. Let's Encrypt: issue a certificate automatically. Existing certificate: serve a certificate held on the host (its default one on Host › Traefik, or one loaded by hand per RB-12); the deploy stops if the host holds none. No TLS: no TLS config for this router; the host proxy still redirects HTTP to HTTPS, so in practice this ends up self-signed."
-                >
-                                    <RlSelect
-                    options="certResolverOptions"
-                    value="d.cert_resolver || 'auto'"
-                    onChange="(value) => this.onDomainChange(d_index, 'cert_resolver', value)"
+                                    <input
+                    type="text"
+                    class="ic-domain-redirect"
+                    placeholder="redirect to (optional)"
+                    t-att-value="d.redirect_to"
+                    t-on-input="(ev) => this.onDomainChange(d_index, 'redirect_to', ev.target.value)"
                   />
+                                    <div class="ic-domain-tls">
+                                        <label
+                      class="ic-domain-permanent"
+                      title="Permanent redirect (301) instead of temporary (302)."
+                      t-att-class="{ 'ic-domain-permanent--off': !d.redirect_to }"
+                    >
+                                            <input
+                        type="checkbox"
+                        t-att-checked="d.redirect_permanent"
+                        t-att-disabled="!d.redirect_to"
+                        t-on-change="(ev) => this.onDomainChange(d_index, 'redirect_permanent', ev.target.checked)"
+                      />
+                                            <span>301</span>
+                                        </label>
+                                        <div
+                      class="ic-domain-cert"
+                      title="Automatic: the host decides — its own certificate when a CDN answers for this name and that certificate covers it, Let's Encrypt otherwise. Let's Encrypt: issue a certificate automatically. Existing certificate: serve a certificate held on the host (its default one on Host › Traefik, or one loaded by hand per RB-12); the deploy stops if the host holds none. No TLS: no TLS config for this router; the host proxy still redirects HTTP to HTTPS, so in practice this ends up self-signed."
+                    >
+                                            <RlSelect
+                        options="certResolverOptions"
+                        value="d.cert_resolver || 'auto'"
+                        onChange="(value) => this.onDomainChange(d_index, 'cert_resolver', value)"
+                      />
+                                        </div>
+                                    </div>
+                                    <button
+                    class="ic-domain-remove"
+                    title="Remove"
+                    t-on-click="() => this.removeDomain(d_index)"
+                  >
+                                        <t t-out="env.icon('x', 15)" />
+                                    </button>
+                                </div>
+                            </t>
+                            <button class="ic-domain-add" t-on-click="addDomain">
+                                + Add domain
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <t t-if="!isCreate and (state.form.odoo_proxy || 'traefik') === 'traefik'">
+                    <section class="ic-set-block" aria-labelledby="idet-g-public">
+                        <div class="ic-set-block__head">
+                            <h3 class="ic-set-block__title" id="idet-g-public">Public pages</h3>
+                        </div>
+                        <div class="ic-set-block__body">
+                            <div class="rl-ftoggle">
+                                <div>
+                                    <div
+                      class="rl-tl-label"
+                    >Allow Odoo's public website info page</div>
+                                    <div
+                      class="rl-th"
+                    >Odoo lists the installed apps and its version at /website/info. Blocked by default; a rebuild applies the change.</div>
                                 </div>
                                 <button
-                  class="ic-domain-remove"
-                  title="Remove"
-                  t-on-click="() => this.removeDomain(d_index)"
-                >
-                                    <t t-out="env.icon('x', 15)" />
-                                </button>
+                  type="button"
+                  t-att-class="'rl-sw' + (state.form.website_info_public ? ' on' : '')"
+                  role="switch"
+                  t-att-aria-checked="state.form.website_info_public ? 'true' : 'false'"
+                  aria-label="Toggle public website info page"
+                  t-on-click="() => { state.form.website_info_public = !state.form.website_info_public; state.saved = false; }"
+                />
                             </div>
-                        </t>
-                        <button class="ic-domain-add" t-on-click="addDomain">
-                            + Add domain
-                        </button>
-                    </div>
-                </div>
-                <div class="rl-frow rl-full">
-                    <div class="ic-smtp-note" t-esc="mailCaptureNotice"/>
-                </div>
-                <t t-if="showsRelayAuth">
-                    <div class="rl-frow">
-                        <label>SMTP authentication</label>
-                        <RlSelect
-            options="relayAuthOptions"
-            ariaLabel="'SMTP authentication'"
-            value="state.form.smtp_relay_auth"
-            onChange="(value) => this.onRelayAuthChange(value)"
-          />
-                    </div>
+                        </div>
+                    </section>
                 </t>
-                <div class="rl-frow">
-                    <label>SMTP host <span
-              t-if="!isOAuthRelay"
-              class="rl-opt"
-            >— leave empty to skip</span></label>
-                    <input
-            type="text"
-            placeholder="smtp.example.com"
-            t-att-value="state.form.smtp_relay_host"
-            t-att-readonly="isOAuthRelay ? 'readonly' : undefined"
-            t-on-input="(ev) => this.onInput('smtp_relay_host', ev)"
-          />
-                </div>
-                <div
-          class="rl-frow"
-          t-att-class="validator.fieldError('smtp_relay_port') ? 'has-error' : ''"
-        >
-                    <label>SMTP port</label>
-                    <input
+            </div>
+        </t>
+
+        <!-- ── Email (production): the relay its outgoing mail leaves by. A
+             staging's mail never leaves the server (Mails), so it has no
+             such tab; its relay values are kept, and copied by a clone. ── -->
+        <t t-if="state.tab === 'email'">
+            <div class="ic-inst-col">
+                <p class="ic-smtp-note ic-inst-lead" t-esc="mailCaptureNotice"/>
+                <section class="ic-set-block" aria-labelledby="idet-g-relay">
+                    <div class="ic-set-block__head">
+                        <h3 class="ic-set-block__title" id="idet-g-relay">Outgoing mail relay</h3>
+                    </div>
+                    <div class="ic-set-block__body">
+                        <div class="ic-rgrid">
+                            <t t-if="showsRelayAuth">
+                                <div class="rl-frow ic-w-m">
+                                    <label>SMTP authentication</label>
+                                    <RlSelect
+                    options="relayAuthOptions"
+                    ariaLabel="'SMTP authentication'"
+                    value="state.form.smtp_relay_auth"
+                    onChange="(value) => this.onRelayAuthChange(value)"
+                  />
+                                </div>
+                                <div class="ic-w-m ic-rgrid__gap" aria-hidden="true"/>
+                            </t>
+                            <div class="rl-frow ic-w-m">
+                                <label>SMTP host <span
+                    t-if="!isOAuthRelay"
+                    class="rl-opt"
+                  >— leave empty to skip</span></label>
+                                <input
+                  type="text"
+                  placeholder="smtp.example.com"
+                  t-att-value="state.form.smtp_relay_host"
+                  t-att-readonly="isOAuthRelay ? 'readonly' : undefined"
+                  t-on-input="(ev) => this.onInput('smtp_relay_host', ev)"
+                />
+                            </div>
+                            <div
+                class="rl-frow ic-w-s"
+                t-att-class="validator.fieldError('smtp_relay_port') ? 'has-error' : ''"
+              >
+                                <label>SMTP port</label>
+                                <input
                     t-att-aria-invalid="validator.fieldError('smtp_relay_port') ? 'true' : undefined"
                     t-att-aria-describedby="validator.fieldError('smtp_relay_port') ? 'idet-err-smtp_relay_port' : undefined"
-            type="number"
-            t-att-value="state.form.smtp_relay_port"
-            t-att-readonly="isOAuthRelay ? 'readonly' : undefined"
-            t-on-input="(ev) => this.onInput('smtp_relay_port', ev)"
-            t-on-blur="() => validator.touch('smtp_relay_port')"
-          />
-                    <t t-if="validator.fieldError('smtp_relay_port')">
-                        <span
-              class="ic-field-error"
+                  type="number"
+                  t-att-value="state.form.smtp_relay_port"
+                  t-att-readonly="isOAuthRelay ? 'readonly' : undefined"
+                  t-on-input="(ev) => this.onInput('smtp_relay_port', ev)"
+                  t-on-blur="() => validator.touch('smtp_relay_port')"
+                />
+                                <t t-if="validator.fieldError('smtp_relay_port')">
+                                    <span
+                    class="ic-field-error"
                       t-att-id="'idet-err-smtp_relay_port'"
-              t-esc="validator.fieldError('smtp_relay_port')"
-            />
-                    </t>
-                </div>
-                <div class="rl-frow">
-                    <label>SMTP encryption</label>
-                    <RlSelect
-            options="[{value:'none',label:'None'},{value:'starttls',label:'STARTTLS'},{value:'ssl',label:'SSL/TLS'}]"
-            value="state.form.smtp_relay_security"
-            disabled="isOAuthRelay"
-            onChange="(value) => { state.form.smtp_relay_security = value; state.saved = false; }"
-          />
-                </div>
-                <div class="rl-frow">
-                    <label t-if="isOAuthRelay">Sender mailbox</label>
-                    <label t-else="">SMTP user</label>
-                    <input
-            type="text"
-            t-att-placeholder="isOAuthRelay ? 'notifications@example.com' : undefined"
-            t-att-value="state.form.smtp_relay_user"
-            t-on-input="(ev) => this.onInput('smtp_relay_user', ev)"
-          />
-                </div>
-                <t t-if="!isOAuthRelay">
-                    <div class="rl-frow">
-                        <label for="idet-smtp_relay_password" id="idet-smtp_relay_password-label">SMTP password</label>
-                        <PasswordInput
-            id="'idet-smtp_relay_password'"
-            value="state.form.smtp_relay_password"
-            hasValue="state.has_smtp_relay_password"
-            onChange="(val) => this.onPasswordChange('smtp_relay_password', val)"
-          />
-                    </div>
-                </t>
-                <t t-else="">
-                    <div class="rl-frow">
-                        <label>Directory ID</label>
-                        <input
-            type="text"
-            placeholder="00000000-0000-0000-0000-000000000000"
-            t-att-value="state.form.smtp_relay_oauth_directory_id"
-            t-on-input="(ev) => this.onInput('smtp_relay_oauth_directory_id', ev)"
-          />
-                    </div>
-                    <div class="rl-frow">
-                        <label>Application (client) ID</label>
-                        <input
-            type="text"
-            placeholder="00000000-0000-0000-0000-000000000000"
-            t-att-value="state.form.smtp_relay_oauth_client_id"
-            t-on-input="(ev) => this.onInput('smtp_relay_oauth_client_id', ev)"
-          />
-                    </div>
-                    <div class="rl-frow">
-                        <label for="idet-smtp_relay_oauth_client_secret" id="idet-smtp_relay_oauth_client_secret-label">Client secret</label>
-                        <PasswordInput
-            id="'idet-smtp_relay_oauth_client_secret'"
-            value="state.form.smtp_relay_oauth_client_secret"
-            hasValue="state.has_smtp_relay_oauth_client_secret"
-            emptyHint.translate="Paste the Value of a client secret from Entra ID."
-            onChange="(val) => this.onPasswordChange('smtp_relay_oauth_client_secret', val)"
-          />
-                    </div>
-                    <div class="rl-frow rl-full">
-                        <div class="ic-smtp-note">
-                            <span>Register an app in Entra ID with the SMTP.SendAsApp permission and give it this mailbox in Exchange Online.</span>
-                            <t t-out="' '"/>
-                            <a
-                t-att-href="relayGuideUrl"
-                target="_blank"
-                rel="noopener"
-              >Step-by-step guide</a>
+                    t-esc="validator.fieldError('smtp_relay_port')"
+                  />
+                                </t>
+                            </div>
+                            <div class="rl-frow ic-w-s">
+                                <label>SMTP encryption</label>
+                                <RlSelect
+                  options="[{value:'none',label:'None'},{value:'starttls',label:'STARTTLS'},{value:'ssl',label:'SSL/TLS'}]"
+                  value="state.form.smtp_relay_security"
+                  disabled="isOAuthRelay"
+                  onChange="(value) => { state.form.smtp_relay_security = value; state.saved = false; }"
+                />
+                            </div>
+                            <div class="rl-frow ic-w-m">
+                                <label t-if="isOAuthRelay">Sender mailbox</label>
+                                <label t-else="">SMTP user</label>
+                                <input
+                  type="text"
+                  t-att-placeholder="isOAuthRelay ? 'notifications@example.com' : undefined"
+                  t-att-value="state.form.smtp_relay_user"
+                  t-on-input="(ev) => this.onInput('smtp_relay_user', ev)"
+                />
+                            </div>
+                            <t t-if="!isOAuthRelay">
+                                <div class="rl-frow ic-w-m">
+                                    <label for="idet-smtp_relay_password" id="idet-smtp_relay_password-label">SMTP password</label>
+                                    <PasswordInput
+                    id="'idet-smtp_relay_password'"
+                    value="state.form.smtp_relay_password"
+                    hasValue="state.has_smtp_relay_password"
+                    onChange="(val) => this.onPasswordChange('smtp_relay_password', val)"
+                  />
+                                </div>
+                            </t>
+                            <t t-else="">
+                                <div class="rl-frow ic-w-m">
+                                    <label for="idet-smtp_relay_oauth_client_secret" id="idet-smtp_relay_oauth_client_secret-label">Client secret</label>
+                                    <PasswordInput
+                    id="'idet-smtp_relay_oauth_client_secret'"
+                    value="state.form.smtp_relay_oauth_client_secret"
+                    hasValue="state.has_smtp_relay_oauth_client_secret"
+                    emptyHint.translate="Paste the Value of a client secret from Entra ID."
+                    onChange="(val) => this.onPasswordChange('smtp_relay_oauth_client_secret', val)"
+                  />
+                                </div>
+                                <div class="rl-frow ic-w-m">
+                                    <label>Directory ID</label>
+                                    <input
+                    type="text"
+                    placeholder="00000000-0000-0000-0000-000000000000"
+                    t-att-value="state.form.smtp_relay_oauth_directory_id"
+                    t-on-input="(ev) => this.onInput('smtp_relay_oauth_directory_id', ev)"
+                  />
+                                </div>
+                                <div class="rl-frow ic-w-m">
+                                    <label>Application (client) ID</label>
+                                    <input
+                    type="text"
+                    placeholder="00000000-0000-0000-0000-000000000000"
+                    t-att-value="state.form.smtp_relay_oauth_client_id"
+                    t-on-input="(ev) => this.onInput('smtp_relay_oauth_client_id', ev)"
+                  />
+                                </div>
+                                <div class="rl-frow ic-w-l">
+                                    <div class="ic-smtp-note">
+                                        <span>Register an app in Entra ID with the SMTP.SendAsApp permission and give it this mailbox in Exchange Online.</span>
+                                        <t t-out="' '"/>
+                                        <a
+                      t-att-href="relayGuideUrl"
+                      target="_blank"
+                      rel="noopener"
+                    >Step-by-step guide</a>
+                                    </div>
+                                </div>
+                            </t>
                         </div>
                     </div>
-                </t>
-                <t t-if="relayStatus">
-                    <div class="rl-frow rl-full ic-relay-status">
-                        <div class="ic-relay-status-line">
-                            <span class="rl-l">Relay</span>
-                            <span
-                class="rl-v"
-                t-att-class="relayStatus.tone"
-                t-esc="relayStatus.label"
-              />
-                            <span
-                t-if="relayStatus.detail"
-                class="ic-relay-status-detail"
-                t-esc="relayStatus.detail"
-              />
-                        </div>
-                        <button
-              type="button"
-              class="rl-btn rl-btn-ghost rl-btn-sm"
-              t-att-disabled="relayTestDisabledReason or state.relayTestLoading"
-              t-att-title="relayTestDisabledReason or undefined"
-              t-on-click="sendRelayTestMail"
-            >Send test mail</button>
-                        <span
-              t-if="relayTestDisabledReason"
-              class="ic-smtp-note"
-              t-esc="relayTestDisabledReason"
-            />
-                    </div>
-                </t>
+                </section>
 
-                <!-- Backup backend (production only) -->
-                <t t-if="state.form.environment === 'production'">
-                    <div class="rl-frow">
-                        <label>Backup backend
-                            <span class="rl-opt"> — production only</span>
-                        </label>
-                        <RlSelect
-              value="state.form.backup_backend_id"
-              options="backupBackendOptions"
-              disabled="backupBackendLocked"
-              emptyLabel.translate="— Use project/global default —"
-              onChange="(value) => this.onBackupBackendSelect({ target: { value: value } })"
-            />
-                    </div>
+                <t t-if="relayStatus">
+                    <section class="ic-set-block" aria-labelledby="idet-g-relay-status">
+                        <div class="ic-set-block__head">
+                            <h3 class="ic-set-block__title" id="idet-g-relay-status">Relay status</h3>
+                        </div>
+                        <div class="ic-set-block__body">
+                            <div class="ic-relay-status">
+                                <div class="ic-relay-status-line">
+                                    <span class="rl-l">Relay</span>
+                                    <span
+                      class="rl-v"
+                      t-att-class="relayStatus.tone"
+                      t-esc="relayStatus.label"
+                    />
+                                    <span
+                      t-if="relayStatus.detail"
+                      class="ic-relay-status-detail"
+                      t-esc="relayStatus.detail"
+                    />
+                                </div>
+                                <button
+                  type="button"
+                  class="rl-btn rl-btn-ghost rl-btn-sm"
+                  t-att-disabled="relayTestDisabledReason or state.relayTestLoading"
+                  t-att-title="relayTestDisabledReason or undefined"
+                  t-on-click="sendRelayTestMail"
+                >Send test mail</button>
+                                <span
+                  t-if="relayTestDisabledReason"
+                  class="ic-smtp-note"
+                  t-esc="relayTestDisabledReason"
+                />
+                            </div>
+                        </div>
+                    </section>
                 </t>
-                <t t-if="!isCreate">
-                    <div class="rl-ftoggle rl-full">
-                        <div>
-                            <div class="rl-tl-label">Auto-rebuild on push</div>
-                            <div class="rl-th">rebuild on push to unfrozen repos</div>
-                            <div t-if="gitlabHookWarning" class="rl-th ic-gitlab-hook-warn"
-                                 t-esc="gitlabHookWarning"/>
-                        </div>
-                        <button
-              type="button"
-              t-att-class="'rl-sw' + (state.form.auto_rebuild ? ' on' : '')"
-              role="switch"
-              t-att-aria-checked="state.form.auto_rebuild ? 'true' : 'false'"
-              aria-label="Toggle auto-rebuild"
-              t-on-click="() => { state.form.auto_rebuild = !state.form.auto_rebuild; state.saved = false; }"
-            />
+            </div>
+        </t>
+
+        <!-- ── Build (edit only): when the instance is rebuilt, and what the
+             rebuild does. ─────────────────────────────────────────────── -->
+        <t t-if="state.tab === 'build'">
+            <div class="ic-inst-col">
+                <section class="ic-set-block" aria-labelledby="idet-g-push">
+                    <div class="ic-set-block__head">
+                        <h3 class="ic-set-block__title" id="idet-g-push">On push</h3>
                     </div>
-                    <div class="rl-ftoggle rl-full">
-                        <div>
-                            <div
-                class="rl-tl-label"
-              >Auto-update modules on rebuild</div>
-                            <div
-                class="rl-th"
-              >runs click-odoo-update during rebuild and after a restore. Disable to skip module migrations and the safe boot test.</div>
+                    <div class="ic-set-block__body">
+                        <div class="rl-ftoggle">
+                            <div>
+                                <div class="rl-tl-label">Auto-rebuild on push</div>
+                                <div class="rl-th">rebuild on push to unfrozen repos</div>
+                                <div t-if="gitlabHookWarning" class="rl-th ic-gitlab-hook-warn"
+                                     t-esc="gitlabHookWarning"/>
+                            </div>
+                            <button
+                type="button"
+                t-att-class="'rl-sw' + (state.form.auto_rebuild ? ' on' : '')"
+                role="switch"
+                t-att-aria-checked="state.form.auto_rebuild ? 'true' : 'false'"
+                aria-label="Toggle auto-rebuild"
+                t-on-click="() => { state.form.auto_rebuild = !state.form.auto_rebuild; state.saved = false; }"
+              />
                         </div>
-                        <button
-              type="button"
-              t-att-class="'rl-sw' + (state.form.auto_update ? ' on' : '')"
-              role="switch"
-              t-att-aria-checked="state.form.auto_update ? 'true' : 'false'"
-              aria-label="Toggle auto-update"
-              t-on-click="() => { state.form.auto_update = !state.form.auto_update; state.saved = false; }"
-            />
                     </div>
-                    <div class="rl-ftoggle rl-full" t-if="state.form.auto_update">
-                        <div>
-                            <div
-                class="rl-tl-label"
-              >Test the new image before applying it</div>
-                            <div
-                class="rl-th"
-              >boots the new image on a copy of the database first; with large databases on ext4 it takes about 30 minutes for every 500 GB. Off, the rebuild applies it straight away and says so.</div>
-                        </div>
-                        <button
-              type="button"
-              t-att-class="'rl-sw' + (state.form.boot_test ? ' on' : '')"
-              role="switch"
-              t-att-aria-checked="state.form.boot_test ? 'true' : 'false'"
-              aria-label="Toggle the boot test"
-              t-on-click="() => { state.form.boot_test = !state.form.boot_test; state.saved = false; }"
-            />
+                </section>
+                <section class="ic-set-block" aria-labelledby="idet-g-rebuild">
+                    <div class="ic-set-block__head">
+                        <h3 class="ic-set-block__title" id="idet-g-rebuild">On rebuild</h3>
                     </div>
-                    <t t-if="(state.form.odoo_proxy || 'traefik') === 'traefik'">
-                        <div class="rl-ftoggle rl-full">
+                    <div class="ic-set-block__body">
+                        <div class="rl-ftoggle">
                             <div>
                                 <div
                   class="rl-tl-label"
-                >Allow Odoo's public website info page</div>
+                >Auto-update modules on rebuild</div>
                                 <div
                   class="rl-th"
-                >Odoo lists the installed apps and its version at /website/info. Blocked by default; a rebuild applies the change.</div>
+                >runs click-odoo-update during rebuild and after a restore. Disable to skip module migrations and the safe boot test.</div>
                             </div>
                             <button
                 type="button"
-                t-att-class="'rl-sw' + (state.form.website_info_public ? ' on' : '')"
+                t-att-class="'rl-sw' + (state.form.auto_update ? ' on' : '')"
                 role="switch"
-                t-att-aria-checked="state.form.website_info_public ? 'true' : 'false'"
-                aria-label="Toggle public website info page"
-                t-on-click="() => { state.form.website_info_public = !state.form.website_info_public; state.saved = false; }"
+                t-att-aria-checked="state.form.auto_update ? 'true' : 'false'"
+                aria-label="Toggle auto-update"
+                t-on-click="() => { state.form.auto_update = !state.form.auto_update; state.saved = false; }"
               />
                         </div>
-                    </t>
-                    <t t-if="state.form.environment === 'staging'">
-                        <div class="rl-ftoggle rl-full">
+                        <div class="rl-ftoggle ic-ftoggle--nested" t-if="state.form.auto_update">
                             <div>
-                                <div class="rl-tl-label">Never purge automatically</div>
+                                <div
+                  class="rl-tl-label"
+                >Test the new image before applying it</div>
                                 <div
                   class="rl-th"
-                >keep this staging out of the autopurge for good. For the permanent ones — a QA environment nobody logs into for months is still not disposable.</div>
+                >boots the new image on a copy of the database first; with large databases on ext4 it takes about 30 minutes for every 500 GB. Off, the rebuild applies it straight away and says so.</div>
                             </div>
                             <button
                 type="button"
-                t-att-class="'rl-sw' + (state.form.autopurge_exempt ? ' on' : '')"
+                t-att-class="'rl-sw' + (state.form.boot_test ? ' on' : '')"
                 role="switch"
-                t-att-aria-checked="state.form.autopurge_exempt ? 'true' : 'false'"
-                aria-label="Toggle never purge automatically"
-                t-on-click="() => { state.form.autopurge_exempt = !state.form.autopurge_exempt; state.saved = false; }"
+                t-att-aria-checked="state.form.boot_test ? 'true' : 'false'"
+                aria-label="Toggle the boot test"
+                t-on-click="() => { state.form.boot_test = !state.form.boot_test; state.saved = false; }"
               />
                         </div>
-                    </t>
-                </t>
+                    </div>
+                </section>
             </div>
         </t>
 
-        <!-- ── Config (edit only) ───────────────────────────────────────────── -->
+        <!-- ── Odoo Config (edit only) ──────────────────────────────────────── -->
         <t t-if="state.tab === 'config'">
             <div class="ic-code-editor-wrap">
                 <div class="ic-code-gutter">
@@ -2728,87 +2677,118 @@
             </div>
         </t>
 
-        <!-- ── Resources ───────────────────────────────────────────────────── -->
+        <!-- ── Resources: each service's two short fields ───────────────────── -->
         <t t-if="state.tab === 'resources'">
-            <div class="rl-fgrid">
-                <div class="rl-full ic-form-section-header"><h3>Odoo</h3></div>
-                <div class="rl-frow">
-                    <label>Memory limit</label>
-                    <input
-            type="text"
-            t-att-value="state.form.odoo_memory_limit"
-            t-on-input="(ev) => this.onInput('odoo_memory_limit', ev)"
-            placeholder="2g"
-          />
-                </div>
-                <div class="rl-frow">
-                    <label>CPUs</label>
-                    <input
-            type="number"
-            step="0.25"
-            t-att-value="state.form.odoo_cpus"
-            t-on-input="(ev) => this.onInput('odoo_cpus', ev)"
-          />
-                </div>
-
-                <div class="rl-full ic-form-section-header"><h3>Database</h3></div>
-                <div class="rl-frow">
-                    <label>Memory limit</label>
-                    <input
-            type="text"
-            t-att-value="state.form.db_memory_limit"
-            t-on-input="(ev) => this.onInput('db_memory_limit', ev)"
-            placeholder="1g"
-          />
-                </div>
-                <div class="rl-frow">
-                    <label>CPUs</label>
-                    <input
-            type="number"
-            step="0.25"
-            t-att-value="state.form.db_cpus"
-            t-on-input="(ev) => this.onInput('db_cpus', ev)"
-          />
-                </div>
-
-                <div class="rl-full ic-form-section-header"><h3>Backup</h3></div>
-                <div class="rl-frow">
-                    <label>Memory limit</label>
-                    <input
-            type="text"
-            t-att-value="state.form.backup_memory_limit"
-            t-on-input="(ev) => this.onInput('backup_memory_limit', ev)"
-            placeholder="512m"
-          />
-                </div>
-                <div class="rl-frow">
-                    <label>CPUs</label>
-                    <input
-            type="number"
-            step="0.05"
-            t-att-value="state.form.backup_cpus"
-            t-on-input="(ev) => this.onInput('backup_cpus', ev)"
-          />
-                </div>
-
-                <div class="rl-full ic-form-section-header"><h3>SMTP</h3></div>
-                <div class="rl-frow">
-                    <label>Memory limit</label>
-                    <input
-            type="text"
-            t-att-value="state.form.smtp_memory_limit"
-            t-on-input="(ev) => this.onInput('smtp_memory_limit', ev)"
-            placeholder="256m"
-          />
-                </div>
-                <div class="rl-frow">
-                    <label>CPUs</label>
-                    <input
-            type="number"
-            step="0.05"
-            t-att-value="state.form.smtp_cpus"
-            t-on-input="(ev) => this.onInput('smtp_cpus', ev)"
-          />
+            <div class="ic-inst-col">
+                <div class="ic-res-grid">
+                    <section class="ic-set-block" aria-labelledby="idet-g-res-odoo">
+                        <div class="ic-set-block__head">
+                            <h3 class="ic-set-block__title" id="idet-g-res-odoo">Odoo</h3>
+                        </div>
+                        <div class="ic-set-block__body">
+                            <div class="ic-rgrid">
+                                <div class="rl-frow ic-w-s">
+                                    <label>Memory limit</label>
+                                    <input
+                    type="text"
+                    t-att-value="state.form.odoo_memory_limit"
+                    t-on-input="(ev) => this.onInput('odoo_memory_limit', ev)"
+                    placeholder="2g"
+                  />
+                                </div>
+                                <div class="rl-frow ic-w-s">
+                                    <label>CPUs</label>
+                                    <input
+                    type="number"
+                    step="0.25"
+                    t-att-value="state.form.odoo_cpus"
+                    t-on-input="(ev) => this.onInput('odoo_cpus', ev)"
+                  />
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="ic-set-block" aria-labelledby="idet-g-res-db">
+                        <div class="ic-set-block__head">
+                            <h3 class="ic-set-block__title" id="idet-g-res-db">Database</h3>
+                        </div>
+                        <div class="ic-set-block__body">
+                            <div class="ic-rgrid">
+                                <div class="rl-frow ic-w-s">
+                                    <label>Memory limit</label>
+                                    <input
+                    type="text"
+                    t-att-value="state.form.db_memory_limit"
+                    t-on-input="(ev) => this.onInput('db_memory_limit', ev)"
+                    placeholder="1g"
+                  />
+                                </div>
+                                <div class="rl-frow ic-w-s">
+                                    <label>CPUs</label>
+                                    <input
+                    type="number"
+                    step="0.25"
+                    t-att-value="state.form.db_cpus"
+                    t-on-input="(ev) => this.onInput('db_cpus', ev)"
+                  />
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="ic-set-block" aria-labelledby="idet-g-res-backup">
+                        <div class="ic-set-block__head">
+                            <h3 class="ic-set-block__title" id="idet-g-res-backup">Backup</h3>
+                        </div>
+                        <div class="ic-set-block__body">
+                            <div class="ic-rgrid">
+                                <div class="rl-frow ic-w-s">
+                                    <label>Memory limit</label>
+                                    <input
+                    type="text"
+                    t-att-value="state.form.backup_memory_limit"
+                    t-on-input="(ev) => this.onInput('backup_memory_limit', ev)"
+                    placeholder="512m"
+                  />
+                                </div>
+                                <div class="rl-frow ic-w-s">
+                                    <label>CPUs</label>
+                                    <input
+                    type="number"
+                    step="0.05"
+                    t-att-value="state.form.backup_cpus"
+                    t-on-input="(ev) => this.onInput('backup_cpus', ev)"
+                  />
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="ic-set-block" aria-labelledby="idet-g-res-smtp">
+                        <div class="ic-set-block__head">
+                            <h3 class="ic-set-block__title" id="idet-g-res-smtp">SMTP</h3>
+                        </div>
+                        <div class="ic-set-block__body">
+                            <div class="ic-rgrid">
+                                <div class="rl-frow ic-w-s">
+                                    <label>Memory limit</label>
+                                    <input
+                    type="text"
+                    t-att-value="state.form.smtp_memory_limit"
+                    t-on-input="(ev) => this.onInput('smtp_memory_limit', ev)"
+                    placeholder="256m"
+                  />
+                                </div>
+                                <div class="rl-frow ic-w-s">
+                                    <label>CPUs</label>
+                                    <input
+                    type="number"
+                    step="0.05"
+                    t-att-value="state.form.smtp_cpus"
+                    t-on-input="(ev) => this.onInput('smtp_cpus', ev)"
+                  />
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </div>
         </t>
@@ -2869,9 +2849,36 @@
             </div>
         </t>
 
-        <!-- ── Backups ──────────────────────────────────────────────────────── -->
+        <!-- ── Backups: where a production's go, then the list ─────────────── -->
         <t t-if="state.tab === 'backups'">
-            <div class="ic-backups-panel">
+            <t t-if="state.form.environment === 'production'">
+                <div class="ic-inst-col">
+                    <section class="ic-set-block" aria-labelledby="idet-g-destination">
+                        <div class="ic-set-block__head">
+                            <h3 class="ic-set-block__title" id="idet-g-destination">Destination</h3>
+                        </div>
+                        <div class="ic-set-block__body">
+                            <div class="ic-rgrid">
+                                <div class="rl-frow ic-w-m">
+                                    <label>Backup backend</label>
+                                    <RlSelect
+                    value="state.form.backup_backend_id"
+                    options="backupBackendOptions"
+                    disabled="backupBackendLocked"
+                    emptyLabel.translate="— Use project/global default —"
+                    ariaLabel.translate="Backup backend"
+                    onChange="(value) => this.onBackupBackendSelect({ target: { value: value } })"
+                  />
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </t>
+            <t t-if="!isCreate and !state.inst.deployed">
+                <p class="rl-tabnote">Backups appear here after the first deploy.</p>
+            </t>
+            <div t-if="!isCreate and state.inst.deployed" class="ic-backups-panel">
                 <div class="ic-backups-toolbar">
                     <t t-if="state.inst.environment === 'production'">
                         <button
@@ -2915,8 +2922,7 @@
         >
                     <div class="ic-backups-info ic-backups-warning">
                         <t t-out="env.icon('alert', 15)" />
-                        No backup backend configured. Assign one in this instance's Networking tab,
-                        in the project settings, or set a global default in Settings › General.
+                        No backup backend configured. Choose one above, in the project settings, or set a global default in Settings › General.
                     </div>
                 </t>
 
