@@ -391,7 +391,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   its `timeout`), and one that landed as the script went into its trap
   killed it there: the instance's crons stayed paused until its next
   update. The first TERM now leaves through the trap, which ignores the
-  others and always reactivates the crons and drops their list.
+  others and runs its docker calls in a session of their own, out of the
+  stop's reach. It first removes the update's container, which `docker
+  compose run` had left running, and then reactivates the crons and drops
+  their list in one transaction: the list is never dropped with the
+  crons still off, and one that stays is what the next update restores
+  them from.
 - **A rebuild that ends before its restart leaves a mark on the server,
   and nothing puts its untried work in service (#96)**
   ([RB-42](docs/runbooks/RB-42-rebuild-left-unapplied.md)). A rebuild
