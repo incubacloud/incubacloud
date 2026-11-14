@@ -29,7 +29,8 @@ Its data migrations: 1.0.229's post-migrate deletes the Telegram bot
 tokens saved without a chat ID and the webhook secrets left without a
 URL, and `incubacloud_pitr` 1.0.16's end-migrate records where each
 instance archives and dates the purge of the archives switched off
-before it. The rest is the panel's assets and the Spanish catalogue.
+before it from the update, so each gets the whole backup window from
+then. The rest is the panel's assets and the Spanish catalogue.
 
 ### Changed
 
@@ -378,9 +379,8 @@ before it. The rest is the panel's assets and the Spanish catalogue.
   left before the cutoff and goes on; a failure raises `pitr_purge_failed`
   and is tried again a day later. Not for a stack configured outside the
   panel, nor an archived instance, whose archive goes with its record.
-  The 1.0.16 end-migrate dates the archives switched off before it, from
-  their last `pitr_disable` (unless a switch on was asked for after it) or
-  from the update, and the watch dates any left without one (RB-23 §6).
+  The 1.0.16 end-migrate dates the archives switched off before it from
+  the update, and the watch dates any left without one (RB-23 §6).
 - **A rebuild that moves the recovery archive says so.** A change of
   backend, of the project's folder or of the bucket started the archive
   at a new prefix and left the old one where it was, unannounced. Every

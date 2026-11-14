@@ -1128,31 +1128,8 @@ class CloudInstance(models.Model):
             "pitr_rendered_backend_id": False,
         })
 
-    def _pitr_last_switched_off(self):
-        """When the instance last stopped archiving, as its jobs say.
-
-        The end of the last ``pitr_disable`` that ended well, unless a
-        ``pitr_enable`` was asked for after it.
-
-        :return: a naive UTC datetime, or None when they do not say
-        """
-        self.ensure_one()
-        Job = self.env["cloud.job"].sudo()
-        off = Job.search([
-            ("instance_id", "=", self.id), ("state", "=", "done"),
-            ("job_type_id.code", "=", "pitr_disable"),
-            ("date_done", "!=", False),
-        ], order="date_done desc", limit=1)
-        if not off or Job.search_count([
-            ("instance_id", "=", self.id),
-            ("job_type_id.code", "=", "pitr_enable"),
-            ("create_date", ">", off.date_done),
-        ]):
-            return None
-        return off.date_done
-
     @api.model
-    def _pitr_schedule_leftover_purges(self, from_jobs=False):
+    def _pitr_schedule_leftover_purges(self):
         """Fix the purge date of instances switched off without one.
 
         Switched off before the purge existed, or without a ``pitr_disable``
@@ -1160,11 +1137,9 @@ class CloudInstance(models.Model):
         with a cluster recorded. Not a stack configured outside the panel
         (its runbook), nor an archived instance (its archive goes with the
         record, ``_archived_copy_extra_prefixes``). One instance that fails
-        does not stop the others.
+        does not stop the others. Dated from now, the update's too: the
+        window it gets is the one a switch off gives, whenever it was.
 
-        :param bool from_jobs: date it from the last switch off its jobs
-            record (``_pitr_last_switched_off``), the update's way; else,
-            and when they record none, from now
         :return: how many got a date
         :rtype: int
         """
@@ -1179,9 +1154,7 @@ class CloudInstance(models.Model):
                 with self.env.cr.savepoint():
                     if inst._pitr_active():
                         continue
-                    inst._pitr_schedule_purge(
-                        inst._pitr_last_switched_off() if from_jobs else None,
-                    )
+                    inst._pitr_schedule_purge()
                     scheduled += 1
             except Exception as exc:  # noqa: BLE001 — one must not stop all
                 _logger.warning(

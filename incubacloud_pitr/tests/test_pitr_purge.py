@@ -259,48 +259,16 @@ class TestSwitchingOnBeforeTheDate(_SwitchedOffCase):
 
 class TestAnArchiveSwitchedOffBeforeTheUpdate(_SwitchedOffCase):
 
-    def _disabled(self, days_ago):
-        """A ``pitr_disable`` that ended well *days_ago*."""
-        job = self._purge("x").job
-        job.job_type_id = self.env["cloud.job.type"].search(
-            [("code", "=", "pitr_disable")], limit=1,
-        )
-        job.state = "done"
-        self.env.flush_all()
-        done = fields.Datetime.now() - timedelta(days=days_ago)
-        self.env.cr.execute(
-            "UPDATE cloud_job SET date_done = %s WHERE id = %s", (done, job.id),
-        )
-        job.invalidate_recordset(["date_done"])
-        return job
-
-    def test_it_is_dated_from_its_switch_off_when_its_jobs_say(self):
-        job = self._disabled(20)
-        _run_migration(self.env)
-        self.assertEqual(self.inst.pitr_off_at, job.date_done)
-        self.assertEqual(
-            self.inst.pitr_purge_at, job.date_done + timedelta(days=14),
-        )
-        self.assertEqual(self.inst.pitr_rendered_prefix, PREFIX)
-        self.assertEqual(self.inst.pitr_rendered_backend_id, self.backend)
-
-    def test_else_from_the_update(self):
+    def test_it_is_dated_from_the_update(self):
+        """Switched off when the archive stayed: the whole window from now."""
         before = fields.Datetime.now().replace(microsecond=0)
         _run_migration(self.env)
         self.assertGreaterEqual(self.inst.pitr_off_at, before)
         self.assertEqual(
             self.inst.pitr_purge_at - self.inst.pitr_off_at, timedelta(days=14),
         )
-
-    def test_a_switch_on_after_its_last_switch_off_dates_it_from_the_update(self):
-        self._disabled(20)
-        enable = self._purge("x").job
-        enable.job_type_id = self.env["cloud.job.type"].search(
-            [("code", "=", "pitr_enable")], limit=1,
-        )
-        before = fields.Datetime.now().replace(microsecond=0)
-        _run_migration(self.env)
-        self.assertGreaterEqual(self.inst.pitr_off_at, before)
+        self.assertEqual(self.inst.pitr_rendered_prefix, PREFIX)
+        self.assertEqual(self.inst.pitr_rendered_backend_id, self.backend)
 
     def test_one_archiving_gets_no_date(self):
         self.inst.write({"pitr_enabled": True, "pitr_state": "ok"})
