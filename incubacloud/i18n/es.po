@@ -3136,6 +3136,7 @@ msgstr "Clonando…"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 #: code:addons/incubacloud/static/src/components/slide_over/slide_over.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "Close"
 msgstr "Cerrar"
 
@@ -4031,10 +4032,12 @@ msgid "Countries and browsers"
 msgstr "Países y navegadores"
 
 #. module: incubacloud
+#. odoo-javascript
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_closure__signal__country
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_hold__signal__country
 #: model_terms:ir.ui.view,arch_db:incubacloud.mail_session_notice
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_seen__kind__country
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "Country"
 msgstr "País"
 
@@ -5307,6 +5310,7 @@ msgstr "Borrador"
 #: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "Drag across a chart to zoom."
 msgstr "Arrastre sobre un gráfico para ampliar."
 
@@ -6314,6 +6318,7 @@ msgstr "Congelar todos"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "From"
 msgstr "Desde"
 
@@ -6709,6 +6714,7 @@ msgstr "No hay lecturas del disco de este servidor en este intervalo."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "No instance of this server answered requests in this window."
 msgstr ""
 "Ninguna instancia de este servidor respondió peticiones en este intervalo."
@@ -7199,6 +7205,7 @@ msgstr "Ninguna instancia de este servidor ha informado todavía."
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/metrics_charts.py:0
+#: code:addons/incubacloud/models/metrics_security.py:0
 msgid "No metrics central is configured."
 msgstr "No hay ninguna central de métricas configurada."
 
@@ -7294,6 +7301,7 @@ msgstr "PID"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "Program"
 msgstr "Programa"
 
@@ -7824,14 +7832,19 @@ msgstr ""
 "sigue intentándolo por sí solo."
 
 #. module: incubacloud
+#. odoo-javascript
 #. odoo-python
 #: code:addons/incubacloud/models/metrics_charts.py:0
+#: code:addons/incubacloud/models/metrics_security.py:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
 msgid "The metrics central could not answer."
 msgstr "La central de métricas no pudo responder."
 
 #. module: incubacloud
+#. odoo-javascript
 #. odoo-python
 #: code:addons/incubacloud/models/metrics_charts.py:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
 msgid "The metrics central is busy."
 msgstr "La central de métricas está ocupada."
 
@@ -9076,6 +9089,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__instance_id
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_metric_rule__scope__instance
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "Instance"
 msgstr "Instancia"
 
@@ -9299,6 +9313,7 @@ msgstr "Instancia:"
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__instance_ids
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__instance_ids
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "Instances"
 msgstr "Instancias"
 
@@ -13333,6 +13348,7 @@ msgstr "Leyendo configuración de la instancia..."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "Reading…"
 msgstr "Leyendo…"
 
@@ -13993,6 +14009,7 @@ msgstr "Reprocesar y purgar los eventos de webhooks de GitLab"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "Requests"
 msgstr "Peticiones"
 
@@ -18131,6 +18148,7 @@ msgstr "Comandos útiles:"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__user_id
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "User"
 msgstr "Usuario"
 
@@ -18511,6 +18529,7 @@ msgstr "¿Qué está pasando ahora?"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "What is happening?"
 msgstr "¿Qué está pasando?"
 
@@ -18583,7 +18602,9 @@ msgid "What to receive"
 msgstr "Qué recibir"
 
 #. module: incubacloud
+#. odoo-javascript
 #: model_terms:ir.ui.view,arch_db:incubacloud.mail_session_notice
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "When"
 msgstr "Cuándo"
 
@@ -19262,6 +19283,7 @@ msgstr "Sus servidores"
 #: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "Zoomed window."
 msgstr "Intervalo ampliado."
 
@@ -22303,7 +22325,9 @@ msgid "A job has one checkpoint."
 msgstr "Un trabajo tiene un solo punto de control."
 
 #. module: incubacloud
+#. odoo-javascript
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__attempts
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "Attempts"
 msgstr "Intentos"
 
@@ -25328,8 +25352,10 @@ msgid "SSH sign-ins"
 msgstr "inicios de sesión SSH"
 
 #. module: incubacloud
+#. odoo-javascript
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_security_events.py:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
 msgid "sudo commands"
 msgstr "comandos sudo"
 
@@ -25683,3 +25709,901 @@ msgstr ""
 #: code:addons/incubacloud/models/cloud_metric_rule.py:0
 msgid " Most attempts: %(sources)s."
 msgstr " Más intentos: %(sources)s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+#, python-format
+msgid ""
+"%(count)s security alerts are open on this server or its instances. They are"
+" listed in Alerts."
+msgstr ""
+"Hay %(count)s alertas de seguridad abiertas en este servidor o en sus "
+"instancias. Aparecen en Alertas."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "%(distinct)s addresses · %(window)s"
+msgstr "%(distinct)s direcciones · %(window)s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "(refused)"
+msgstr "(denegado)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "4xx"
+msgstr "4xx"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "5xx"
+msgstr "5xx"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "a password"
+msgstr "una contraseña"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Address"
+msgstr "Dirección"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Addresses fail2ban banned on this server per minute, by jail"
+msgstr ""
+"Direcciones que fail2ban bloqueó en este servidor por minuto, por jaula"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Addresses with the most attempts"
+msgstr "Direcciones con más intentos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Addresses with the most failed connections"
+msgstr "Direcciones con más conexiones fallidas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Agents: they write with a user that may only write"
+msgstr "Agentes: escriben con un usuario que solo puede escribir"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid ""
+"Agents: they write with the account's credential, which also reads; their "
+"next install moves them to their own user"
+msgstr ""
+"Agentes: escriben con la credencial de la cuenta, que también lee; su "
+"próxima instalación los pasa a su propio usuario"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "another key"
+msgstr "otra clave"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "another user"
+msgstr "otro usuario"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "attempts no instance was identified for"
+msgstr "intentos sin instancia identificada"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "auditd"
+msgstr "auditd"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "auditd records on the watched files per hour, by who"
+msgstr "Registros de auditd sobre los archivos vigilados por hora, por quién"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Banned now"
+msgstr "Bloqueada ahora"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Bans (last 7 days)"
+msgstr "Bloqueos (últimos 7 días)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "bans of the server"
+msgstr "bloqueos del servidor"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Behind a CDN: the origin admits only the CDN"
+msgstr "Tras una CDN: el origen solo admite a la CDN"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Behind a CDN: the origin also answers direct requests"
+msgstr "Tras una CDN: el origen también responde a peticiones directas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "By"
+msgstr "Por"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Calm"
+msgstr "En calma"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+msgid "Calm: no attack under way and no security alert open."
+msgstr ""
+"En calma: ningún ataque en curso y ninguna alerta de seguridad abierta."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Changes to watched files"
+msgstr "Cambios en archivos vigilados"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Could not read the lines."
+msgstr "No se pudieron leer las líneas."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Counted over the last %s lines of the window."
+msgstr "Contado sobre las últimas %s líneas del intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Country:"
+msgstr "País:"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "delivered"
+msgstr "entregadas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "dropped"
+msgstr "descartadas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Every instance (24 hours)"
+msgstr "Todas las instancias (24 horas)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "every source"
+msgstr "todos los orígenes"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "fail2ban"
+msgstr "fail2ban"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "fail2ban banned no address in this window."
+msgstr "fail2ban no bloqueó ninguna dirección en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "fail2ban bans"
+msgstr "Bloqueos de fail2ban"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "failed"
+msgstr "fallidas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "failed attempts in the range shown"
+msgstr "intentos fallidos en el intervalo mostrado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Failed SSH connections"
+msgstr "Conexiones SSH fallidas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Failed SSH connections to this server per minute"
+msgstr "Conexiones SSH fallidas a este servidor por minuto"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Failed web logins"
+msgstr "Inicios de sesión web fallidos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Failed web logins per instance"
+msgstr "Inicios de sesión web fallidos por instancia"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Failed web logins to every instance of this server per minute"
+msgstr ""
+"Inicios de sesión web fallidos en cada instancia de este servidor por minuto"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "File"
+msgstr "Archivo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Hardening: behind what the panel ships now"
+msgstr "Hardening: por detrás de lo que trae ahora el panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Hardening: current"
+msgstr "Hardening: al día"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Hardening: never applied from the panel"
+msgstr "Hardening: nunca aplicado desde el panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "HTTP and web logins of the instances"
+msgstr "HTTP e inicios de sesión web de las instancias"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Instances tried before"
+msgstr "Instancias que intentó antes"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Is the defence working?"
+msgstr "¿Funciona la defensa?"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid ""
+"Its servers do not send their security logs until the panel's provider "
+"allows them."
+msgstr ""
+"Sus servidores no envían sus registros de seguridad hasta que el proveedor "
+"del panel lo permita."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Key"
+msgstr "Clave"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "last 24 hours"
+msgstr "últimas 24 horas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "last 7 days"
+msgstr "últimos 7 días"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "last 7 days · newest first"
+msgstr "últimos 7 días · los más recientes primero"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "last 7 days · the program, never its arguments"
+msgstr "últimos 7 días · el programa, nunca sus argumentos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Last attempt"
+msgstr "Último intento"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "lifted"
+msgstr "levantados"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Lines delivered and dropped"
+msgstr "Líneas entregadas y descartadas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid ""
+"Lines this server's collector delivered to the central and dropped per "
+"minute"
+msgstr ""
+"Líneas que el recolector de este servidor entregó a la central y descartó "
+"por minuto"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Lines:"
+msgstr "Líneas:"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "local"
+msgstr "local"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "means over the range shown"
+msgstr "medias en el intervalo mostrado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Metrics view"
+msgstr "Vista de métricas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "no"
+msgstr "no"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid ""
+"No change to passwd, shadow, sudoers or the SSH configuration in this "
+"window."
+msgstr ""
+"Ningún cambio en passwd, shadow, sudoers ni la configuración de SSH en este "
+"intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "No change to the watched files in the last 7 days."
+msgstr "Ningún cambio en los archivos vigilados en los últimos 7 días."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "No failed SSH connection in the last 24 hours."
+msgstr "Ninguna conexión SSH fallida en las últimas 24 horas."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "No failed SSH connection to this server in this window."
+msgstr "Ninguna conexión SSH fallida a este servidor en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "No failed web login in this window."
+msgstr "Ningún inicio de sesión web fallido en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "No failed web login to the instances of this server in this window."
+msgstr ""
+"Ningún inicio de sesión web fallido en las instancias de este servidor en "
+"este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "no key"
+msgstr "sin clave"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "No line in this window."
+msgstr "Ninguna línea en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "No security line arrived from this server in this window."
+msgstr ""
+"No llegó ninguna línea de seguridad de este servidor en este intervalo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+msgid ""
+"No SSH, sudo, fail2ban or auditd line arrived from this server in the last "
+"15 minutes. A quiet server sends few; the Security logs not arriving alert "
+"says when they stop."
+msgstr ""
+"No llegó ninguna línea de SSH, sudo, fail2ban ni auditd de este servidor en "
+"los últimos 15 minutos. Un servidor tranquilo envía pocas; la alerta «No "
+"llegan los registros de seguridad» avisa cuando dejan de llegar."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "No sudo command in the last 7 days."
+msgstr "Ningún comando sudo en los últimos 7 días."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "No sudo command in this window."
+msgstr "Ningún comando sudo en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Nobody signed in over SSH in the last 7 days."
+msgstr "Nadie inició sesión por SSH en los últimos 7 días."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Nobody signed in over SSH in this window."
+msgstr "Nadie inició sesión por SSH en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "of the last %s attempts"
+msgstr "de los últimos %s intentos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "other"
+msgstr "otra"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "outside every job and console of the panel"
+msgstr "fuera de todo trabajo y consola del panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "per hour · by source"
+msgstr "por hora · por origen"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "per hour · by who"
+msgstr "por hora · por quién"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "per hour · the panel's key or another"
+msgstr "por hora · la clave del panel u otra"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Per instance"
+msgstr "Por instancia"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "per minute"
+msgstr "por minuto"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "per minute · by jail"
+msgstr "por minuto · por jaula"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "per minute · to the central"
+msgstr "por minuto · a la central"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Performance"
+msgstr "Rendimiento"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "root"
+msgstr "root"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Security"
+msgstr "Seguridad"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Security lines"
+msgstr "Líneas de seguridad"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Security lines this server sent per hour, by source"
+msgstr "Líneas de seguridad que envió este servidor por hora, por origen"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Security logs are not available on this panel yet"
+msgstr "Los registros de seguridad aún no están disponibles en este panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Security logs: off on this server"
+msgstr "Registros de seguridad: apagados en este servidor"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Security logs: sending"
+msgstr "Registros de seguridad: enviando"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Security logs: sending (last line read %s)"
+msgstr "Registros de seguridad: enviando (última línea leída: %s)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "See lines"
+msgstr "Ver líneas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Sign-ins over SSH"
+msgstr "Inicios de sesión por SSH"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Sign-ins, sudo and changes"
+msgstr "Inicios de sesión, sudo y cambios"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Something needs a look"
+msgstr "Algo requiere atención"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "SSH"
+msgstr "SSH"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "SSH attempts and bans"
+msgstr "Intentos SSH y bloqueos"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+#, python-format
+msgid ""
+"SSH brute force under way: %(failed)s failed connections in the last 10 "
+"minutes; fail2ban banned %(bans)s addresses in the last hour."
+msgstr ""
+"Fuerza bruta SSH en curso: %(failed)s conexiones fallidas en los últimos 10 "
+"minutos; fail2ban bloqueó %(bans)s direcciones en la última hora."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "SSH port: open to every address (fail2ban bans the attackers)"
+msgstr ""
+"Puerto SSH: abierto a todas las direcciones (fail2ban bloquea a los "
+"atacantes)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "SSH port: open to the panel and %s more addresses"
+msgstr "Puerto SSH: abierto al panel y a %s direcciones más"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "SSH sign-ins to this server per hour, by kind"
+msgstr "Inicios de sesión SSH en este servidor por hora, por tipo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "sudo"
+msgstr "sudo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "sudo commands on this server per hour, by kind"
+msgstr "Comandos sudo en este servidor por hora, por tipo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "system"
+msgstr "sistema"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "The addresses could not be counted: the central's logs did not answer."
+msgstr ""
+"No se pudieron contar las direcciones: los registros de la central no "
+"respondieron."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+msgid ""
+"The collector of the security logs on this server is not running: nothing "
+"new arrives from it."
+msgstr ""
+"El recolector de los registros de seguridad de este servidor no está en "
+"marcha: no llega nada nuevo de él."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "The collector reported nothing in this window."
+msgstr "El recolector no informó de nada en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "the panel"
+msgstr "el panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "the panel (Ansible)"
+msgstr "el panel (Ansible)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid ""
+"The panel signs in here without a key it can read: its sign-ins are told by "
+"user and address, not by key"
+msgstr ""
+"El panel entra aquí sin una clave que pueda leer: sus inicios de sesión se "
+"distinguen por usuario y dirección, no por clave"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "the panel's key"
+msgstr "la clave del panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "the panel's key from another address"
+msgstr "la clave del panel desde otra dirección"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "the panel's user"
+msgstr "el usuario del panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "the system"
+msgstr "el sistema"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "The web-login jail banned no address in the last 7 days."
+msgstr ""
+"La jaula del inicio de sesión web no bloqueó ninguna dirección en los "
+"últimos 7 días."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid ""
+"The window shown ends in the past: the diagnosis reads only the last minutes"
+" up to now. Reset the zoom to see it."
+msgstr ""
+"El intervalo mostrado termina en el pasado: el diagnóstico solo lee los "
+"últimos minutos hasta ahora. Restablezca el zoom para verlo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "This panel's central has no log store the panel can read."
+msgstr ""
+"La central de este panel no tiene un almacén de registros que el panel pueda"
+" leer."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid ""
+"This server answers through a CDN: its proxy sees the CDN's addresses, not "
+"the visitors', and the web-login jail is off. The figures per instance still"
+" count."
+msgstr ""
+"Este servidor responde a través de una CDN: su proxy ve las direcciones de "
+"la CDN, no las de los visitantes, y la jaula del inicio de sesión web está "
+"apagada. Las cifras por instancia siguen valiendo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "This server does not send its security logs"
+msgstr "Este servidor no envía sus registros de seguridad"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_security.py:0
+msgid "This server does not send its security logs."
+msgstr "Este servidor no envía sus registros de seguridad."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid ""
+"Turn on Send security logs in the server's Connection tab: its SSH sign-ins,"
+" sudo, fail2ban's bans, the changes to its sensitive files and its "
+"instances' failed web logins then show here."
+msgstr ""
+"Active Enviar registros de seguridad en la pestaña Conexión del servidor: "
+"sus inicios de sesión SSH, sudo, los bloqueos de fail2ban, los cambios en "
+"sus archivos sensibles y los inicios de sesión web fallidos de sus "
+"instancias aparecerán entonces aquí."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Under attack"
+msgstr "Bajo ataque"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "unidentified"
+msgstr "sin identificar"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_security.py:0
+msgid "Unknown kind of security lines."
+msgstr "Tipo de líneas de seguridad desconocido."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Users tried:"
+msgstr "Usuarios probados:"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Web logins"
+msgstr "Inicios de sesión web"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "web logins"
+msgstr "inicios de sesión web"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Whose"
+msgstr "De quién"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "yes"
+msgstr "sí"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "· %s different users"
+msgstr "· %s usuarios distintos"
