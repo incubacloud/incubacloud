@@ -313,9 +313,12 @@
   // The fade follows the bar's own scroll. A bar that fits has no scroll, so
   // its timeline is inactive and nothing fades; a browser without scroll
   // timelines shows no fade either. The second mask layer keeps the bottom
-  // pixel, the bar's rule, whole.
+  // pixel, the bar's rule, whole. The bar's own mask-image, two opaque
+  // layers, is what gives mask-size and mask-position their two values: on
+  // a bar with none, Chrome keeps only the first and the rule is lost.
   @supports (animation-timeline: scroll()) {
-    .rl-tabs { mask-size:100% calc(100% - 1px), 100% 1px; mask-position:top, bottom; mask-repeat:no-repeat;
+    .rl-tabs { mask-image:linear-gradient(#000, #000), linear-gradient(#000, #000);
+      mask-size:100% calc(100% - 1px), 100% 1px; mask-position:top, bottom; mask-repeat:no-repeat;
       animation-name:rl-tabs-edge; animation-timing-function:linear; animation-fill-mode:both;
       animation-timeline:scroll(self inline); } }
   .rl-tab { padding-block:9px; padding-inline:13px; background:none; border:none; border-block-end:2px solid transparent;
@@ -443,7 +446,11 @@
   .rl-frow-inline { display:flex; align-items:flex-end; gap:10px;
     > :first-child { flex:1 1 auto; min-inline-size:0; }
     > button { flex:none; } }
-  .rl-fgrid { display:grid; grid-template-columns:1fr 1fr; gap:14px 18px;
+  // A column never grows past its share: a long unbroken value (a URL, a
+  // select's option) wraps or shrinks inside it instead of widening the form.
+  .rl-fgrid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px 18px;
+    > * { min-inline-size:0; }
+    code { overflow-wrap:anywhere; }
     .rl-full { grid-column:1/-1; }
     .rl-frow { margin:0; } }
   .rl-tabnote { font-family:var(--rl-fb); font-size:12.5px; color:var(--rl-muted); margin-block-start:0; margin-inline:0; margin-block-end:16px; }
@@ -458,7 +465,9 @@
     &.on { background:var(--rl-green); border-color:transparent; &::after { left:18px; background:var(--rl-green-fg); } }
     &:disabled { opacity:.5; cursor:not-allowed; } }
 
-  .rl-formfoot { display:flex; align-items:center; gap:10px; justify-content:flex-end; margin-block-start:16px; padding-block-start:14px; border-block-start:1px solid var(--rl-line);
+  // A footer that does not fit wraps onto more lines rather than running
+  // off the page's start edge.
+  .rl-formfoot { display:flex; flex-wrap:wrap; align-items:center; gap:10px; justify-content:flex-end; margin-block-start:16px; padding-block-start:14px; border-block-start:1px solid var(--rl-line);
     .rl-ff-hint { margin-inline-end:auto; font-family:var(--rl-fb); font-size:12.5px; color:var(--rl-muted); } }
 
   // ── Custom select (RlSelect) ─────────────────────────────────────────────

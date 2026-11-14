@@ -189,6 +189,22 @@ panel's assets and the Spanish catalogue change.
   (#13).** Notification preferences open on what is saved: a Telegram bot
   token or a webhook signing secret typed before Cancel is dropped, where
   the next Save sent it and replaced the stored one.
+- **Forms, footers, the save bar and the tab bars fit a phone (#13).** A
+  form's footer (`.rl-formfoot`) wraps onto more lines instead of running
+  off the page's start edge, as a new instance's «Fill in the required
+  fields *» did at 390 px. A form's grid (`.rl-fgrid`) no longer grows
+  past its column: a host's General tab, where the URL the agents write
+  to set every field, note and the host pool's select wider than the
+  screen and a change scrolled the page sideways, now fits, and the URL
+  wraps. On a phone the save bar always takes two lines, the text and
+  then *Discard* and *Save changes* together at the end, in every
+  language, where a longer text left *Save changes* alone on the second
+  line. A tab bar that scrolls keeps its bottom rule at every point of
+  its scroll; scrolled to its end it lost it. On an instance's Backups
+  tab at 768 px and under, a backup's date has a place of its own under
+  its size instead of being drawn over «S3 chain». A host's field notes
+  (`.ic-form-note`) are set in the text font at 12.5 px in `--rl-muted`,
+  as the rest of the panel's help, instead of 11 px italics.
 
 ### Tests
 

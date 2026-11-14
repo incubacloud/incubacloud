@@ -1277,7 +1277,7 @@ button:active:not(:disabled),
     .ic-app .rl-grid-3,
     .ic-app .rl-fgrid,
     .ic-app .rl-ovcards {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
 
     // The slide-over (job history, alerts) is sized for a desktop
@@ -1463,16 +1463,22 @@ button:active:not(:disabled),
         grid-template-columns: 1fr auto;
         grid-template-areas:
             "type     size"
-            "contents contents"
+            "contents date"
             "actions  actions";
 
         td:nth-child(1) { grid-area: type; font-weight: 600; font-size: 13.5px; }
         td:nth-child(2),
         td:nth-child(3) {
             grid-area: contents;
-            display: inline;
             color: var(--rl-muted);
             font-size: 12px;
+        }
+        // The date has a cell of its own, under the size: sharing the
+        // contents' cell, it was drawn over them.
+        td:nth-child(3) {
+            grid-area: date;
+            text-align: right;
+            white-space: nowrap;
         }
         td:nth-child(4) {
             grid-area: size;
