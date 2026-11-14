@@ -458,7 +458,7 @@ STUB
     [[ "$calls" == *"compose start db odoo smtp"* ]]
 }
 
-@test "boot-test stopped as a detached step does keeps its trap's docker calls out of the later TERMs" {
+@test "boot-test stopped as a detached step keeps its trap's docker calls out of the later TERMs" {
     # The trap ignores the TERMs after the first one, and the docker client
     # does not: it sets its own handlers and dies of them, and the trap's
     # ``|| true`` hid it. Here the stub's slow part dies of a TERM as the
