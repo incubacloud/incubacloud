@@ -74,10 +74,15 @@ describe("TabBar «More»", () => {
 
     test("the bar shows its tabs and the button, the list closed", async () => {
         await mountBar();
-        expect(queryAll(".rl-tabs > button.rl-tab[role=tab]").map((el) => el.textContent.trim()))
+        expect(queryAll(".rl-tabs > button.rl-tab[role=tab]:not(.ic-tabbar__more)")
+            .map((el) => el.textContent.trim()))
             .toEqual(["Overview", "General", "Networking"]);
         expect(".ic-tabbar__more").toHaveText(/^More\s*▾$/);
+        expect(".ic-tabbar__more").toHaveAttribute("role", "tab");
+        expect(".ic-tabbar__more").toHaveAttribute("aria-selected", "false");
         expect(".ic-tabbar__more").toHaveAttribute("aria-expanded", "false");
+        expect(".ic-tabbar__more").not.toHaveAttribute("aria-haspopup");
+        expect(".ic-tabbar__more").not.toHaveAttribute("aria-controls");
         expect(".ic-tabbar__menu").toHaveCount(0);
     });
 
@@ -86,6 +91,7 @@ describe("TabBar «More»", () => {
         await click(".ic-tabbar__more");
         await animationFrame();
         expect(".ic-tabbar__more").toHaveAttribute("aria-expanded", "true");
+        expect(".ic-tabbar__more").toHaveAttribute("aria-controls", queryOne(".ic-tabbar__menu").id);
         expect(".rl-tabs .ic-tabbar__menu").toHaveCount(0);
         expect(".ic-tabbar > .ic-tabbar__menu").toHaveCount(1);
         expect(queryAll(".ic-tabbar__menu button.rl-tab[role=tab]").map((el) => el.textContent.trim()))
@@ -102,6 +108,7 @@ describe("TabBar «More»", () => {
         expect(chosen).toEqual(["database"]);
         expect(".ic-tabbar__menu").toHaveCount(0);
         expect(".ic-tabbar__more").toHaveClass("active");
+        expect(".ic-tabbar__more").toHaveAttribute("aria-selected", "true");
         expect(".ic-tabbar__more").toHaveText(/^Database\s*▾$/);
         expect(".rl-tabs > button.rl-tab.active").toHaveCount(1);
         expect(".ic-tabbar__more").toBeFocused();
@@ -199,9 +206,12 @@ describe("InstanceDetail — tabs and marks", () => {
         comp.state = {
             form: { environment, name: "prod", smtp_relay_port: 587, auto_rebuild: false },
             inst: create ? null : { environment, deployed },
+            selectedTags: [],
+            pipDeps: "",
+            aptDeps: "",
         };
         comp.validator = { fieldError: () => null };
-        comp._savedForm = JSON.stringify(comp.state.form);
+        comp._savedForm = JSON.stringify(comp._editedValues());
         return comp;
     }
 
@@ -245,13 +255,36 @@ describe("InstanceDetail — tabs and marks", () => {
         expect(comp.markedTabs).toEqual(["build"]);
     });
 
+    test("tags mark General and dependencies mark Dependencies, as the save bar counts them", () => {
+        const comp = page();
+        comp.state.selectedTags = [{ id: 3, name: "client" }];
+        expect(comp.markedTabs).toEqual(["general"]);
+        comp.state.pipDeps = "requests";
+        expect(comp.markedTabs).toEqual(["general", "deps"]);
+        expect(comp.unsavedCount).toBe(2);
+        comp.state.selectedTags = [];
+        comp.state.pipDeps = "";
+        comp.state.aptDeps = "curl";
+        expect(comp.markedTabs).toEqual(["deps"]);
+        expect(comp.unsavedCount).toBe(1);
+    });
+
     test("a field to fix marks its tab too", () => {
         const comp = page();
         comp.validator = { fieldError: (f) => (f === "smtp_relay_port" ? "bad" : null) };
         expect(comp.markedTabs).toEqual(["email"]);
     });
 
-    test("every field maps to a tab of the page", () => {
+    test("every field the save bar counts maps to a tab of the page", () => {
+        // What a loaded instance's save bar counts: the form, the tags and
+        // the dependencies. Only the fields no tab edits have no tab.
+        const comp = page();
+        comp.state.versionFacts = {};
+        comp._applyInstanceData({ name: "prod", environment: "production", odoo_version: "19.0" }, [], []);
+        const unmapped = Object.keys(comp._editedValues()).filter((f) => !(f in FIELD_TABS));
+        expect(unmapped.sort()).toEqual([
+            "environment", "odoo_initial_lang", "odoo_proxy", "odoo_version", "postgres_dbname",
+        ]);
         const all = new Set([
             ...keys(page().instanceTabs.tabs), ...keys(page().instanceTabs.more),
             ...keys(page({ environment: "staging" }).instanceTabs.more),

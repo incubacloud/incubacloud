@@ -21,8 +21,10 @@
                         type="button"
                         t-ref="more"
                         t-att-class="'rl-tab ic-tabbar__more' + (activeInMenu ? ' active' : '')"
-                        aria-haspopup="true"
+                        role="tab"
+                        t-att-aria-selected="activeInMenu ? 'true' : 'false'"
                         t-att-aria-expanded="state.open ? 'true' : 'false'"
+                        t-att-aria-controls="state.open ? menuId : undefined"
                         t-on-click="toggle">
                     <t t-esc="moreLabel"/>
                     <t t-if="moreMarked">
@@ -33,6 +35,7 @@
                 </button>
             </div>
             <div t-if="state.open"
+                 t-att-id="menuId"
                  class="ic-tabbar__menu"
                  role="tablist"
                  aria-orientation="vertical"
