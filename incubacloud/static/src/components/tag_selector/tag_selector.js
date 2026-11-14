@@ -35,6 +35,7 @@ export function tagDotStyle(tag) {
  *   onAdd     — (tag) => void
  *   onRemove  — (tagId) => void
  *   onCreate  — async (name) => tag object  (called when creating new tag)
+ *   id        — the input's id, so a <label for> names it (optional)
  */
 export class TagSelector extends Component {
     static template = "incubacloud.TagSelector";
@@ -44,6 +45,7 @@ export class TagSelector extends Component {
         onAdd:     { type: Function },
         onRemove:  { type: Function },
         onCreate:  { type: Function },
+        id:        { type: String, optional: true },
     };
 
     setup() {

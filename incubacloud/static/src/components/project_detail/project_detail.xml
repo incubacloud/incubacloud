@@ -147,126 +147,165 @@
                         <!-- Body -->
                         <div class="ic-pd-body">
 
-                            <!-- General tab -->
+                            <!-- General tab: one page of group cards on the
+                                 12-column grid (form standard §2, §3) -->
                             <t t-if="state.tab === 'general'">
-                                <div class="rl-fgrid">
-                                    <div class="rl-frow"
-                                         t-att-class="validator.fieldError('name') ? 'has-error' : ''">
-                                        <label>Name <span class="rl-req">*</span></label>
-                                        <input
+                                <div class="ic-rec-col">
+                                    <div class="ic-set-block">
+                                        <div class="ic-set-block__body">
+                                            <div class="ic-rgrid">
+                                                <div class="rl-frow ic-w-m"
+                                                     t-att-class="validator.fieldError('name') ? 'has-error' : ''">
+                                                    <label for="pd-name">Name <span class="rl-req">*</span></label>
+                                                    <input id="pd-name"
                     t-att-aria-invalid="validator.fieldError('name') ? 'true' : undefined"
                     t-att-aria-describedby="validator.fieldError('name') ? 'pd-err-name' : undefined"
-                                               t-att-value="state.form.name"
-                                               t-on-input="(ev) => this.onInput('name', ev)"
-                                               t-on-blur="() => validator.touch('name')"/>
-                                        <t t-if="validator.fieldError('name')">
-                                            <span class="ic-field-error"
+                                                           t-att-value="state.form.name"
+                                                           t-on-input="(ev) => this.onInput('name', ev)"
+                                                           t-on-blur="() => validator.touch('name')"/>
+                                                    <t t-if="validator.fieldError('name')">
+                                                        <span class="ic-field-error"
                       t-att-id="'pd-err-name'" t-esc="validator.fieldError('name')"/>
-                                        </t>
-                                    </div>
-                                    <div class="rl-frow">
-                                        <label>Author</label>
-                                        <input
-                                               placeholder="IncubaCloud"
-                                               t-att-value="state.form.project_author"
-                                               t-on-input="(ev) => this.onInput('project_author', ev)"/>
-                                    </div>
-                                    <div class="rl-frow"
-                                         t-att-class="validator.fieldError('odoo_version') ? 'has-error' : ''">
-                                        <label>Odoo version <span class="rl-req">*</span></label>
-                                        <RlSelect options="odooVersions"
-                    ariaInvalid="validator.fieldError('odoo_version') ? true : false"
-                    ariaDescribedby="validator.fieldError('odoo_version') ? 'pd-err-odoo_version' : undefined"
-                                                  value="state.form.odoo_version"
-                                                  onChange="(value) => this.onInput('odoo_version', { target: { value: value } })"
-                                                  ariaLabel="'Odoo version'"/>
-                                        <t t-if="validator.fieldError('odoo_version')">
-                                            <span class="ic-field-error"
-                      t-att-id="'pd-err-odoo_version'" t-esc="validator.fieldError('odoo_version')"/>
-                                        </t>
-                                    </div>
-                                    <div class="rl-frow">
-                                        <label>Initial language</label>
-                                        <div class="ic-lang-picker">
-                                            <input type="text"
-                                                   placeholder="— default (en_US) —"
-                                                   t-att-value="state.langSearch"
-                                                   t-on-input="onLangSearchInput"
-                                                   t-on-focus="() => { this._ensureLangs(); this.state.langOpen = true; }"
-                                                   t-on-blur="onLangBlur"/>
-                                            <t t-if="state.langOpen">
-                                                <div class="ic-lang-dropdown">
-                                                    <t t-if="state.langsLoading">
-                                                        <div class="ic-lang-option" style="opacity:0.5">Loading…</div>
-                                                    </t>
-                                                    <t t-else="">
-                                                        <div class="ic-lang-option ic-lang-option-default"
-                                                             t-on-mousedown="() => this.selectLang(null)">
-                                                            — default (en_US) —
-                                                        </div>
-                                                        <t t-foreach="filteredLangs" t-as="lang" t-key="lang.id">
-                                                            <div t-att-class="'ic-lang-option' + (state.form.odoo_initial_lang === lang.id ? ' selected' : '')"
-                                                                 t-on-mousedown="() => this.selectLang(lang)"
-                                                                 t-esc="lang.name + ' (' + lang.code + ')'"/>
-                                                        </t>
                                                     </t>
                                                 </div>
-                                            </t>
+                                                <div class="rl-frow ic-w-s"
+                                                     t-att-class="validator.fieldError('odoo_version') ? 'has-error' : ''">
+                                                    <label for="pd-odoo_version">Odoo version <span class="rl-req">*</span></label>
+                                                    <RlSelect id="'pd-odoo_version'"
+                                                              options="odooVersions"
+                    ariaInvalid="validator.fieldError('odoo_version') ? true : false"
+                    ariaDescribedby="validator.fieldError('odoo_version') ? 'pd-err-odoo_version' : undefined"
+                                                              value="state.form.odoo_version"
+                                                              onChange="(value) => this.onInput('odoo_version', { target: { value: value } })"
+                                                              ariaLabel="'Odoo version'"/>
+                                                    <t t-if="validator.fieldError('odoo_version')">
+                                                        <span class="ic-field-error"
+                      t-att-id="'pd-err-odoo_version'" t-esc="validator.fieldError('odoo_version')"/>
+                                                    </t>
+                                                </div>
+                                                <div class="ic-w-s ic-rgrid__gap" aria-hidden="true"/>
+                                                <div class="rl-frow ic-w-l">
+                                                    <label for="pd-tags">Tags</label>
+                                                    <TagSelector
+                                                        id="'pd-tags'"
+                                                        selected="state.selectedTags"
+                                                        available="state.allTags"
+                                                        onAdd.bind="addTag"
+                                                        onRemove.bind="removeTag"
+                                                        onCreate.bind="createTag"
+                                                    />
+                                                </div>
+                                                <div class="rl-frow ic-w-l">
+                                                    <label for="pd-description">Description</label>
+                                                    <textarea id="pd-description" rows="5"
+                                                              t-att-value="state.form.description"
+                                                              t-on-input="(ev) => this.onInput('description', ev)"/>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="rl-frow">
-                                        <label>License</label>
-                                        <RlSelect options="[
-                                                      { value: 'no_license',        label: 'No license' },
-                                                      { value: 'Apache-2.0',        label: 'Apache 2.0' },
-                                                      { value: 'BSL-1.0',           label: 'Boost Software License 1.0' },
-                                                      { value: 'AGPL-3.0-or-later', label: 'GNU AGPL 3.0 or later' },
-                                                      { value: 'LGPL-3.0-or-later', label: 'GNU LGPL 3.0 or later' },
-                                                      { value: 'MIT',               label: 'MIT' },
-                                                      { value: 'OEEL-1.0',          label: 'Odoo Enterprise Edition License v1.0' },
-                                                      { value: 'OPL-1.0',           label: 'Odoo Proprietary License v1.0' },
-                                                  ]"
-                                                  value="state.form.project_license"
-                                                  onChange="(value) => this.onInput('project_license', { target: { value: value } })"/>
-                                    </div>
-                                    <div class="rl-frow">
-                                        <label>Backup destination <span class="rl-opt">— only for production</span></label>
-                                        <RlSelect options="backupBackendOptions"
-                                                  value="state.form.backup_backend_id"
-                                                  disabled="backupBackendLocked"
-                                                  emptyLabel.translate="— Use global default —"
-                                                  onChange="(value) => this.onBackendChange({ target: { value: value } })"/>
-                                    </div>
-                                    <div class="rl-ftoggle rl-full">
-                                        <div>
-                                            <div class="rl-tl-label">Preview instances for pull requests and merge requests</div>
-                                            <div class="rl-th">opening a pull request (GitHub) or a merge request (GitLab) on a repository a production instance follows creates a staging on the same host, with the request's branch and a neutralized copy of production data. It is rebuilt on every push and deleted when the request closes.</div>
+
+                                    <!-- What every instance of the project starts with -->
+                                    <section class="ic-set-block" aria-labelledby="pd-g-instances">
+                                        <div class="ic-set-block__head">
+                                            <h3 class="ic-set-block__title" id="pd-g-instances">Instances</h3>
                                         </div>
-                                        <button
-                                            type="button"
-                                            t-att-class="'rl-sw' + (state.form.pr_reviews_enabled ? ' on' : '')"
-                                            role="switch"
-                                            t-att-aria-checked="state.form.pr_reviews_enabled ? 'true' : 'false'"
-                                            aria-label="Toggle pull request and merge request previews"
-                                            t-on-click="() => { state.form.pr_reviews_enabled = !state.form.pr_reviews_enabled; }"
-                                        />
-                                    </div>
-                                    <div class="rl-frow rl-full">
-                                        <label>Tags</label>
-                                        <TagSelector
-                                            selected="state.selectedTags"
-                                            available="state.allTags"
-                                            onAdd.bind="addTag"
-                                            onRemove.bind="removeTag"
-                                            onCreate.bind="createTag"
-                                        />
-                                    </div>
-                                    <div class="rl-frow rl-full">
-                                        <label>Description</label>
-                                        <textarea rows="5"
-                                                  t-att-value="state.form.description"
-                                                  t-on-input="(ev) => this.onInput('description', ev)"/>
-                                    </div>
+                                        <div class="ic-set-block__body">
+                                            <div class="ic-rgrid">
+                                                <div class="rl-frow ic-w-m">
+                                                    <label for="pd-lang">Initial language</label>
+                                                    <div class="ic-lang-picker">
+                                                        <input id="pd-lang" type="text"
+                                                               placeholder="— default (en_US) —"
+                                                               t-att-value="state.langSearch"
+                                                               t-on-input="onLangSearchInput"
+                                                               t-on-focus="() => { this._ensureLangs(); this.state.langOpen = true; }"
+                                                               t-on-blur="onLangBlur"/>
+                                                        <t t-if="state.langOpen">
+                                                            <div class="ic-lang-dropdown">
+                                                                <t t-if="state.langsLoading">
+                                                                    <div class="ic-lang-option" style="opacity:0.5">Loading…</div>
+                                                                </t>
+                                                                <t t-else="">
+                                                                    <div class="ic-lang-option ic-lang-option-default"
+                                                                         t-on-mousedown="() => this.selectLang(null)">
+                                                                        — default (en_US) —
+                                                                    </div>
+                                                                    <t t-foreach="filteredLangs" t-as="lang" t-key="lang.id">
+                                                                        <div t-att-class="'ic-lang-option' + (state.form.odoo_initial_lang === lang.id ? ' selected' : '')"
+                                                                             t-on-mousedown="() => this.selectLang(lang)"
+                                                                             t-esc="lang.name + ' (' + lang.code + ')'"/>
+                                                                    </t>
+                                                                </t>
+                                                            </div>
+                                                        </t>
+                                                    </div>
+                                                </div>
+                                                <div class="rl-frow ic-w-m">
+                                                    <label for="pd-backup_backend">Backup destination <span class="rl-opt">— only for production</span></label>
+                                                    <RlSelect id="'pd-backup_backend'"
+                                                              options="backupBackendOptions"
+                                                              value="state.form.backup_backend_id"
+                                                              disabled="backupBackendLocked"
+                                                              emptyLabel.translate="— Use global default —"
+                                                              onChange="(value) => this.onBackendChange({ target: { value: value } })"/>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <!-- A staging per pull or merge request; the
+                                         explanation folds under How it works -->
+                                    <SettingsBlock title.translate="Pull request previews"
+                                                   how.translate="Opening a pull request (GitHub) or a merge request (GitLab) on a repository a production instance follows creates a staging on the same host, with the request's branch and a neutralized copy of production data. It is rebuilt on every push and deleted when the request closes.">
+                                        <div class="ic-set-block__body">
+                                            <div class="rl-ftoggle">
+                                                <div class="rl-tl-label" id="pd-pr_reviews-label">Preview instances for pull requests and merge requests</div>
+                                                <button
+                                                    type="button"
+                                                    t-att-class="'rl-sw' + (state.form.pr_reviews_enabled ? ' on' : '')"
+                                                    role="switch"
+                                                    t-att-aria-checked="state.form.pr_reviews_enabled ? 'true' : 'false'"
+                                                    aria-labelledby="pd-pr_reviews-label"
+                                                    t-on-click="() => { state.form.pr_reviews_enabled = !state.form.pr_reviews_enabled; }"
+                                                />
+                                            </div>
+                                        </div>
+                                    </SettingsBlock>
+
+                                    <!-- The answers of the project's repository template -->
+                                    <section class="ic-set-block" aria-labelledby="pd-g-template">
+                                        <div class="ic-set-block__head">
+                                            <h3 class="ic-set-block__title" id="pd-g-template">Project template</h3>
+                                        </div>
+                                        <div class="ic-set-block__body">
+                                            <div class="ic-rgrid">
+                                                <div class="rl-frow ic-w-m">
+                                                    <label for="pd-author">Author</label>
+                                                    <input id="pd-author"
+                                                           placeholder="IncubaCloud"
+                                                           t-att-value="state.form.project_author"
+                                                           t-on-input="(ev) => this.onInput('project_author', ev)"/>
+                                                </div>
+                                                <div class="rl-frow ic-w-m">
+                                                    <label for="pd-license">License</label>
+                                                    <RlSelect id="'pd-license'"
+                                                              options="[
+                                                                  { value: 'no_license',        label: 'No license' },
+                                                                  { value: 'Apache-2.0',        label: 'Apache 2.0' },
+                                                                  { value: 'BSL-1.0',           label: 'Boost Software License 1.0' },
+                                                                  { value: 'AGPL-3.0-or-later', label: 'GNU AGPL 3.0 or later' },
+                                                                  { value: 'LGPL-3.0-or-later', label: 'GNU LGPL 3.0 or later' },
+                                                                  { value: 'MIT',               label: 'MIT' },
+                                                                  { value: 'OEEL-1.0',          label: 'Odoo Enterprise Edition License v1.0' },
+                                                                  { value: 'OPL-1.0',           label: 'Odoo Proprietary License v1.0' },
+                                                              ]"
+                                                              value="state.form.project_license"
+                                                              onChange="(value) => this.onInput('project_license', { target: { value: value } })"/>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
                                 </div>
                             </t>
 
@@ -565,7 +604,7 @@
                     so if it is gone you get an error instead of an empty instance.
                 </p>
                 <div class="ic-revive-field">
-                    <label>Host</label>
+                    <label for="pd-revive-host">Host</label>
                     <t t-if="state.reviveModal.loading">
                         <span class="ic-revive-loading">Loading hosts…</span>
                     </t>
@@ -575,7 +614,8 @@
                         </span>
                     </t>
                     <t t-else="">
-                        <RlSelect options="reviveHostOptions"
+                        <RlSelect id="'pd-revive-host'"
+                                  options="reviveHostOptions"
                                   value="state.reviveModal.hostId"
                                   ariaLabel="'Host to revive on'"
                                   placeholder.translate="Pick a host"
@@ -621,9 +661,10 @@
                 <!-- The name is asked for from memory or from the row
                      behind the dialog: it is NOT rendered selectable in
                      here, or the barrier would evaporate. -->
-                <label class="ic-remove-typed-label">
+                <label class="ic-remove-typed-label" for="pd-delete-typed">
                     To delete it, type the instance name:
-                    <input type="text"
+                    <input id="pd-delete-typed"
+                           type="text"
                            class="ic-remove-typed"
                            autocomplete="off"
                            spellcheck="false"

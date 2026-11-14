@@ -17,6 +17,7 @@
                 <!-- Input -->
                 <input
                     class="ic-tag-input"
+                    t-att-id="props.id"
                     type="text"
                     placeholder="Add tag…"
                     t-att-value="state.input"
