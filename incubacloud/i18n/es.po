@@ -22642,6 +22642,12 @@ msgstr "%s resultados"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings_form/settings_form.js:0
+msgid "%s changed"
+msgstr "%s cambiados"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 #: code:addons/incubacloud/static/src/components/settings_form/settings_form.js:0
 msgid "%s settings"
@@ -22658,6 +22664,12 @@ msgstr "/h"
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 msgid "/min"
 msgstr "/min"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings_form/settings_form.js:0
+msgid "1 changed"
+msgstr "1 cambiado"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -23900,12 +23912,6 @@ msgstr "una dirección que el panel no ha podido conocer"
 #: code:addons/incubacloud/models/cloud_session_guard.py:0
 msgid "browser family"
 msgstr "familia de navegador"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings_form/settings_form.xml:0
-msgid "changed"
-msgstr "cambiados"
 
 #. module: incubacloud
 #. odoo-javascript
