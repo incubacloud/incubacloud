@@ -23,16 +23,44 @@ _logger = logging.getLogger(__name__)
 
 
 def _typed_or_stored(typed, stored):
-    """Return the secret typed in a form, or else the stored one.
+    """Return the token typed in a form, or else the stored one, trimmed.
 
-    :param typed: what the request carried; anything but a non-empty
-        string counts as nothing typed
-    :param stored: a callable returning the stored secret
-    :return: the secret, or ``False`` when there is none
+    A token pasted with a space or a newline at an end would otherwise
+    make a URL that ``urllib`` refuses.
+
+    :param typed: what the request carried; anything but a string with
+        more than spaces counts as nothing typed
+    :param stored: a callable returning the stored token
+    :return: the token, or ``False`` when there is none
     """
-    if isinstance(typed, str) and typed:
-        return typed
-    return stored()
+    if isinstance(typed, str) and typed.strip():
+        return typed.strip()
+    return (stored() or '').strip() or False
+
+
+def _without_token(exc, token):
+    """Return the text of *exc* with *token* masked, fit for the log.
+
+    ``urllib`` quotes the URL it refuses, and the bot token is in its
+    path.
+
+    :param exc: the exception a call to Telegram raised
+    :param token: the bot token in the URL called
+    :return: the exception's type and text, the token replaced by ``***``
+    """
+    return f'{type(exc).__name__}: {str(exc).replace(token, "***")}'
+
+
+def _telegram_refused():
+    """Return the refusal of a Telegram check to an account it is not for.
+
+    The preferences' checks are the internal users', as the save is.
+
+    :return: the answer, or None when the caller may run them
+    """
+    if request.env.user._is_internal():
+        return None
+    return {'ok': False, 'error': 'Not available for this account'}
 
 
 # ── Python scripts executed inside the Odoo container via docker exec ─────────
@@ -538,6 +566,10 @@ class InstanceConnectController(http.Controller):
                 'The webhook secret can be %(max)s characters at most.',
                 max=too_long,
             )}
+        if isinstance(cloud_telegram_bot_token, str):
+            # Trimmed, as the checks trim it: a pasted newline would make
+            # the URL of every message one ``urllib`` refuses.
+            cloud_telegram_bot_token = cloud_telegram_bot_token.strip()
         if cloud_telegram_bot_token:
             vals['cloud_telegram_bot_token'] = cloud_telegram_bot_token
         if cloud_telegram_chat_id is not None:
@@ -589,6 +621,9 @@ class InstanceConnectController(http.Controller):
             save a token only with a chat ID, so the one being set up
             comes here instead of being saved first.
         """
+        refused = _telegram_refused()
+        if refused:
+            return refused
         token = _typed_or_stored(
             bot_token, request.env.user._get_cloud_telegram_bot_token,
         )
@@ -605,7 +640,9 @@ class InstanceConnectController(http.Controller):
             with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — only Telegram API (HTTPS)
                 data = json.loads(resp.read())
         except Exception as exc:
-            _logger.warning('telegram getUpdates failed: %s', exc)
+            _logger.warning(
+                'telegram getUpdates failed: %s', _without_token(exc, token),
+            )
             return {'ok': False, 'error': 'Failed to contact Telegram API'}
         if not data.get('ok'):
             return {'ok': False, 'error': data.get('description', 'Unknown error')}
@@ -632,6 +669,9 @@ class InstanceConnectController(http.Controller):
         :param chat_id: the chat ID in the preferences, saved or not;
             without one, the stored chat ID is used
         """
+        refused = _telegram_refused()
+        if refused:
+            return refused
         user = request.env.user
         token = _typed_or_stored(bot_token, user._get_cloud_telegram_bot_token)
         if isinstance(chat_id, str):
@@ -661,7 +701,9 @@ class InstanceConnectController(http.Controller):
             with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — only Telegram API (HTTPS)
                 data = json.loads(resp.read())
         except Exception as exc:
-            _logger.warning('telegram sendTest failed: %s', exc)
+            _logger.warning(
+                'telegram sendTest failed: %s', _without_token(exc, token),
+            )
             return {'ok': False, 'error': 'Failed to contact Telegram API'}
         if not data.get('ok'):
             return {'ok': False, 'error': data.get('description', 'Unknown error')}

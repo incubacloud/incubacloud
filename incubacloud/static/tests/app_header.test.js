@@ -277,6 +277,74 @@ describe("AppHeader — notification preferences", () => {
         expect(header.state.webhookEnabled).toBe(false);
     });
 
+    test("a save the server refuses keeps the modal open and says why", async () => {
+        patchWithCleanup(rpc, {
+            _rpc(url) {
+                if (url === "/cloud/save_user_preferences") {
+                    return Promise.resolve({ ok: false, error: "Webhook URL rejected: no" });
+                }
+                return Promise.resolve({});
+            },
+        });
+        const header = standIn();
+        const toasts = [];
+        header.env = {
+            toast: {
+                success(msg) { toasts.push(["success", msg]); },
+                error(msg) { toasts.push(["error", msg]); },
+            },
+        };
+        Object.assign(header.state, {
+            showNotifModal: true, telegramEnabled: false, webhookEnabled: false,
+        });
+        await header.saveNotifPrefs();
+        expect(toasts).toEqual([["error", "Webhook URL rejected: no"]]);
+        expect(header.state.showNotifModal).toBe(true);
+        expect(header.state.notifSaving).toBe(false);
+    });
+
+    test("a chat ID or a URL of spaces counts as empty", async () => {
+        const saved = [];
+        patchWithCleanup(rpc, {
+            _rpc(url, params) {
+                if (url === "/cloud/save_user_preferences") {
+                    saved.push(params);
+                }
+                return Promise.resolve({ ok: true });
+            },
+        });
+        const header = standIn();
+        Object.assign(header.state, {
+            telegramEnabled: true, telegramTokenConfigured: true,
+            _telegramToken: "", telegramChatId: "   ",
+            webhookEnabled: false,
+        });
+        await header.saveNotifPrefs();
+        expect(saved).toHaveLength(0);
+        expect(Object.keys(header.state.notifErrors)).toEqual(["telegramChatId"]);
+        Object.assign(header.state, {
+            notifErrors: {}, telegramEnabled: false, webhookEnabled: true,
+            webhookSecretConfigured: true, _webhookSecret: "", webhookUrl: "  ",
+        });
+        await header.saveNotifPrefs();
+        expect(saved).toHaveLength(0);
+        expect(Object.keys(header.state.notifErrors)).toEqual(["webhookUrl"]);
+    });
+
+    test("a card's header follows its switch, as Email's does", () => {
+        const header = standIn();
+        Object.assign(header.state, {
+            telegramEnabled: true, telegramTokenConfigured: true,
+            webhookEnabled: true, webhookUrl: "https://hooks.example.com/cloud",
+        });
+        expect(header.telegramConfigured).toBe(true);
+        expect(header.webhookConfigured).toBe(true);
+        header.toggleTelegram();
+        header.toggleWebhook();
+        expect(header.telegramConfigured).toBe(false);
+        expect(header.webhookConfigured).toBe(false);
+    });
+
     test("Detect and Send test carry what the card shows and save nothing", async () => {
         const calls = [];
         patchWithCleanup(rpc, {

@@ -123,12 +123,14 @@ export class AppHeader extends Component {
         return this.state.emailEnabled;
     }
 
+    // Telegram's and the webhook's follow their switch, as Email's does.
+
     get telegramConfigured() {
-        return this.state.telegramTokenConfigured;
+        return this.state.telegramEnabled && this.state.telegramTokenConfigured;
     }
 
     get webhookConfigured() {
-        return !!this.state.webhookUrl;
+        return this.state.webhookEnabled && !!this.state.webhookUrl;
     }
 
     /**
@@ -343,12 +345,13 @@ export class AppHeader extends Component {
     }
 
     async _savePrefsSilent() {
-        // Persist current form values without closing the modal. A
+        // Persist current form values without closing the modal, and
+        // answer what the server answered. A
         // channel switched off goes with its address empty, which the
         // server takes as off: it deletes the channel's secret too.
         const telegram = this.state.telegramEnabled;
         const webhook = this.state.webhookEnabled;
-        await rpc("/cloud/save_user_preferences", {
+        return await rpc("/cloud/save_user_preferences", {
             cloud_notification_level: this.state.notifLevel,
             cloud_notification_mode: this.state.notifMode,
             cloud_email_enabled: this.state.emailEnabled,
@@ -456,7 +459,8 @@ export class AppHeader extends Component {
             const hasToken = telegram && (
                 this.state._telegramToken || this.state.telegramTokenConfigured
             );
-            const hasChatId = telegram && !!this.state.telegramChatId;
+            // The server trims them: spaces alone are no address.
+            const hasChatId = telegram && !!this.state.telegramChatId.trim();
             if (hasToken && !hasChatId) {
                 this._notifFieldError(
                     "telegramChatId", "telegram",
@@ -475,7 +479,7 @@ export class AppHeader extends Component {
             const hasSecret = webhook && (
                 this.state._webhookSecret || this.state.webhookSecretConfigured
             );
-            const hasUrl = webhook && !!this.state.webhookUrl;
+            const hasUrl = webhook && !!this.state.webhookUrl.trim();
             if (hasSecret && !hasUrl) {
                 this._notifFieldError(
                     "webhookUrl", "webhook",
@@ -483,7 +487,14 @@ export class AppHeader extends Component {
                 );
                 return;
             }
-            await this._savePrefsSilent();
+            const res = await this._savePrefsSilent();
+            if (res?.ok === false) {
+                // Nothing was saved: the modal stays open on what to fix.
+                this.env.toast?.error(
+                    res.error || _t("Failed to save notification preferences"),
+                );
+                return;
+            }
             this.env.toast?.success(_t("Notification preferences saved"));
             this.state.showNotifModal = false;
         } catch (_) {
