@@ -3,6 +3,7 @@
 ``pitr_enable``     settle, install wal-g, archiving on, first base copy
 ``pitr_disable``    archiving off, the agent removed
 ``pitr_base_backup`` daily: a base copy, then whatever left the window
+``pitr_purge``      once its date came, the archive of an instance switched off
 ``pitr_status``     every ten minutes: what the archiver and the agent say
 ``pitr_restore``    the database to a moment, the filestore with it
 
@@ -28,8 +29,17 @@ from odoo.addons.incubacloud.models.abstract_executor import (
     CANCELLED_WHILE_RUNNING,
     AbstractSSHExecutor,
 )
+from odoo.addons.incubacloud.models.purge_archived_executor import (
+    PURGE_ARCHIVED_EXIT_ALREADY_EMPTY as PURGE_EMPTY_EXIT,
+)
 
-from ._constants import ALERT_MODULES, WALG_SHA256, WALG_VERSION
+from ._constants import (
+    ALERT_MODULES,
+    ALERT_PURGE_FAILED,
+    ENV_FILE,
+    WALG_SHA256,
+    WALG_VERSION,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -72,6 +82,16 @@ _STATUS_RE = re.compile(r"^IC_PITR_STATUS (.+)$", re.MULTILINE)
 _RESTORE_RE = re.compile(r"^IC_PITR_RESTORE (.+)$", re.MULTILINE)
 _PURGED_RE = re.compile(r"^IC_PITR_PURGED (\d+)$", re.MULTILINE)
 _SETTLED_RE = re.compile(r"^IC_PITR_SETTLED (\w+)$", re.MULTILINE)
+#: The steps of ``pitr_purge``: the deletion, then the host's credentials;
+#: the one step of a purge that no longer applies.
+PURGE_STEP_LABEL = "Empty the switched-off archive"
+PURGE_FORGET_LABEL = "Remove the recovery credentials"
+PURGE_IDLE_LABEL = "Nothing to empty"
+#: ``backup_purge_archived.sh``'s exit codes ``pitr_purge`` explains.
+PURGE_FAILURES = {
+    20: "its environment never reached the server",
+    21: "the storage rejected the destination's credentials",
+}
 #: The line ``restart_db`` prints once it started odoo again.
 _ODOO_RESTARTED = "IC_PITR_ODOO_RESTARTED"
 
@@ -651,14 +671,174 @@ class PitrDisableExecutor(_PitrExecutor):
         )]
 
     async def on_success(self, results):
-        """Off; the archive stays in the bucket until the instance goes."""
-        self._inst().sudo().write({"pitr_state": "off"})
+        """Off; the archive stays for the window, then ``pitr_purge`` goes.
+
+        The purge date is fixed here, when archiving stopped
+        (``cloud.instance._pitr_schedule_purge``).
+        """
+        inst = self._inst()
+        inst.sudo().write({"pitr_state": "off"})
         self._pitr_resolve(ALERT_FAILING, ALERT_LAGGING, ALERT_BASE_MISSING)
-        self._sys("✓ Continuous recovery is off. The archive stays in the bucket.")
+        inst._pitr_schedule_purge()
+        if inst.pitr_purge_at:
+            self._sys(
+                "✓ Continuous recovery is off. The archive stays in the "
+                "bucket until "
+                f"{fields.Datetime.to_string(inst.pitr_purge_at)} UTC, then "
+                "it is emptied; switched on again before then, it is kept."
+            )
+        else:
+            self._sys("✓ Continuous recovery is off. Nothing was archived.")
 
     async def on_failure(self, results, errors):
         """Still on; tried again in a day (``_pitr_reconcile``)."""
         self._log_errors(errors)
+
+
+class PitrPurgeExecutor(_PitrExecutor):
+    """Empty the archive of an instance switched off once its date came.
+
+    Not with the host's ``pitr.env``, which may be gone or hold another
+    destination: the job uploads an environment of its own, 0600 in its
+    directory (``_upload_private_files``), with the destination's
+    credentials, the prefix last rendered (``_pitr_purge_target``) and
+    the moment archiving stopped as ``PURGE_BEFORE``, and runs core's
+    ``backup_purge_archived.sh``, the deletion every purge shares. A
+    switch on that crossed it loses only what predates the switch off.
+    Then the host's ``pitr.env`` goes, and the record forgets the archive
+    (``_pitr_forget_archive``).
+
+    Idempotent: a run again finds nothing before the cutoff (10, taken
+    as done) and goes on to what is left. A job whose cutoff is no longer
+    the instance's when it starts (switched on again, or off again since)
+    touches nothing.
+    """
+
+    _job_type = "pitr_purge"
+    #: Set once per run by ``_will_purge``: before_execute and
+    #: get_commands decide alike.
+    _purging = None
+
+    def _before(self):
+        """The cutoff the job was queued with (``pitr_off_at``), a string."""
+        return (self.job.payload or {}).get("before") or ""
+
+    def _will_purge(self):
+        """Whether this run empties anything (``_pitr_purge_pending``)."""
+        if self._purging is None:
+            before = self._before()
+            self._purging = bool(before) and self._inst()._pitr_purge_pending(before)
+        return self._purging
+
+    def _env_path(self):
+        """Remote path of the purge's environment, in the job's directory."""
+        return self._job_path("pitr-purge.env")
+
+    def _env_content(self):
+        """The environment of the deletion program (``lib/purge_prefix.sh``).
+
+        The variables core's archived purge gives it: ``DST``, the cutoff
+        and the destination's credentials.
+
+        :rtype: str
+        """
+        backend, prefix = self._inst()._pitr_purge_target()
+        backend = backend.sudo()
+        cutoff = fields.Datetime.to_datetime(self._before())
+        lines = [f"DST={prefix}", f"PURGE_BEFORE={cutoff.isoformat()}"]
+        if backend.s3_access_key_id:
+            lines.append(f"AWS_ACCESS_KEY_ID={backend.s3_access_key_id}")
+        if backend.s3_secret_access_key:
+            lines.append(f"AWS_SECRET_ACCESS_KEY={backend.s3_secret_access_key}")
+        if backend.s3_endpoint_url:
+            lines.append(f"AWS_ENDPOINT_URL={backend.s3_endpoint_url}")
+        return "\n".join(lines) + "\n"
+
+    async def before_execute(self, transport):
+        """Put the environment on the host, owner-only; never in an argument."""
+        if self._will_purge():
+            await self._upload_private_files(
+                transport, {self._env_path(): self._env_content()},
+            )
+
+    def get_commands(self):
+        """The deletion, then the host's recovery credentials."""
+        if not self._will_purge():
+            return [(PURGE_IDLE_LABEL, "true")]
+        image = (
+            self.env["cloud.settings"].sudo()._get_system().archived_purge_image
+        )
+        # The directory as every step names it (``~`` left to the shell);
+        # one already gone has no credentials left to remove.
+        forget = (
+            f"if cd {self._inst_dir(self._inst())} 2>/dev/null; then"
+            f" rm -f {ENV_FILE}; fi"
+        )
+        return [
+            (
+                PURGE_STEP_LABEL,
+                self.run_script(
+                    "backup_purge_archived.sh", [self._env_path(), image],
+                ),
+                {"stop_on_failure": True},
+            ),
+            (PURGE_FORGET_LABEL, forget),
+        ]
+
+    def parse_results(self, results):
+        """An archive already empty before the cutoff (10) is done."""
+        step = results.get(PURGE_STEP_LABEL) or {}
+        if step.get("exit_status") == PURGE_EMPTY_EXIT:
+            results = {**results, PURGE_STEP_LABEL: {**step, "exit_status": 0}}
+        return super().parse_results(results)
+
+    async def on_success(self, results):
+        """Forget the archive, unless the instance archives again."""
+        inst = self._inst()
+        if PURGE_IDLE_LABEL in results:
+            self._sys(
+                "Nothing emptied: continuous recovery was switched on again, "
+                "or off again, since this purge was queued."
+            )
+            return
+        self._pitr_resolve(ALERT_PURGE_FAILED)
+        if inst._pitr_purge_pending(self._before()):
+            inst._pitr_forget_archive()
+            self._sys(
+                f"✓ The continuous recovery archive of '{inst.name}', "
+                f"switched off on {self._before()} UTC, is emptied."
+            )
+            return
+        self._sys(
+            f"✓ What was archived before {self._before()} UTC is emptied. "
+            "Continuous recovery was switched on again meanwhile: what it "
+            "archives since is kept."
+        )
+
+    async def on_failure(self, results, errors):
+        """Say why; the watch tries again in a day."""
+        self._log_errors(errors)
+        inst = self._inst()
+        _backend, prefix = inst._pitr_purge_target()
+        step = results.get(PURGE_STEP_LABEL) or {}
+        status = step.get("exit_status")
+        if not prefix:
+            why = "the instance has no backup destination to empty it from"
+        elif status in PURGE_FAILURES:
+            why = PURGE_FAILURES[status]
+        elif step and status in (0, PURGE_EMPTY_EXIT):
+            why = (
+                f"the archive was emptied, but {ENV_FILE} could not be "
+                "removed from its server"
+            )
+        else:
+            why = "the job's log says why"
+        self._pitr_alert(
+            ALERT_PURGE_FAILED,
+            f"The continuous recovery archive of '{inst.name}', switched "
+            f"off on {self._before()} UTC, could not be emptied at {prefix or '?'}: "
+            f"{why}. The panel tries again in a day (RB-23 §6).",
+        )
 
 
 class PitrBaseBackupExecutor(_PitrExecutor):

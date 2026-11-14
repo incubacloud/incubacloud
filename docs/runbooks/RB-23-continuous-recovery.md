@@ -3,7 +3,10 @@
 **Severity:** critical · **When:** a `pitr_failing`, `pitr_archive_lagging`
 or `pitr_base_missing` alert; a restore to a moment that never ended; an
 instance that moved host or changed backend and is no longer archiving; a
-`pitr_prefix_left` alert, an archive a delete left in the bucket.
+`pitr_prefix_changed` alert, an archive a backend change left behind; a
+`pitr_prefix_left` alert, an archive a delete left in the bucket; a
+`pitr_purge_failed` alert, an archive switched off that could not be
+emptied.
 
 How it works, in one paragraph (the rest is in
 [architecture.md](../architecture.md#continuous-recovery-incubacloud_pitr)):
@@ -62,6 +65,8 @@ db$ SELECT dedup_key, audience, message, create_date FROM cloud_alert
 | `pitr_base_missing` | *first base copy failed* / *no base copy for 36 h* | Nothing (or nothing recent) to restore from. |
 | `pitr_prefix_left` (warning, on no server) | *The continuous recovery archive of … was left in the bucket* / *… was left behind* | The instance was deleted while its host had no `.docker/pitr.env`: its archive is still in the bucket, at the prefix named or, with no destination, at one to find. See §5. |
 | `pitr_prefix_left` (warning, on no server) | *… is not emptied with its archived copy* | An instance archived before 1.0.229 whose chain path does not say where its archive is: deleting it empties the chain only. See §5. |
+| `pitr_prefix_changed` (warning) | *… now goes to … what it archived before stays at …* | A rebuild rendered the archive at another prefix or destination (a backend changed, the project's folder renamed, a bucket edited). The old prefix keeps what was archived there and nothing empties it. See §4. |
+| `pitr_purge_failed` (warning) | *… switched off on … could not be emptied* | The purge of an archive switched off (`pitr_purge`) failed: no destination, credentials refused, or the job's log says why. The watch tries again in a day. See §6. |
 
 ## 2. Diagnose on the host
 
@@ -168,9 +173,16 @@ rebuild that follows a backend change). What to expect:
 - **A change of backend, or of the project's folder: the old prefix stays
   where it was, and nothing empties it.** The housekeeping reaches only the
   prefix the instance archives to now, with the destination it has now,
-  and a delete empties that one. Once its window has passed and nobody
-  needs a restore to before the change, empty the old prefix by hand as in
-  §5.
+  and a delete or a purge empties that one. Every rebuild that writes
+  `pitr.env` keeps the prefix and destination it rendered
+  (`pitr_rendered_prefix`, `pitr_rendered_backend_id`); one that renders
+  another raises `pitr_prefix_changed` on the instance, keyed by the old
+  prefix, naming the destination it is on and the day from which no
+  restore needs it (the change plus the backup window). From that day,
+  empty the old prefix by hand as in §5, with that destination's
+  credentials, then resolve the alert. A destination edited in place
+  (bucket or path) shows as another prefix; its endpoint or keys changed
+  in place do not.
 
 ## 5. An archive left in the bucket
 
@@ -204,19 +216,59 @@ $ rclone purge ":s3,provider=Other,env_auth=true,endpoint='<endpoint>':<bucket>/
 Check first that `<path>` ends in `<name>-pitr` and names the deleted
 instance: a purge of the bucket, or of the folder, takes every instance on
 the destination. Then resolve the alert. Switching continuous recovery
-off empties nothing: the archive stays until the instance is deleted.
+off empties the archive later, by itself (§6).
 
 Core refuses an instance name ending in `-pitr` from 1.0.229 on, and
 continuous recovery is not switched on for `x` while an instance
 `x-pitr` (active or archived) is in the same folder: its chain would be
 under `x`'s recovery prefix, and emptying either would empty both.
 
+## 6. An archive switched off
+
+Switching continuous recovery off (the card, or a plan without it) keeps
+the archive for the backup window the instance has then, and empties it
+after (1.0.229). `pitr_disable`, once it ends well, fixes the dates on
+the instance: `pitr_off_at` (archiving stopped) and `pitr_purge_at`
+(`pitr_off_at` plus the window). They are not recalculated: a plan that
+lowers the retention switches it off too. Switching on again before
+`pitr_purge_at` clears them and cancels a purge still waiting; the archive
+is kept.
+
+Once `pitr_purge_at` has come, the watch queues `pitr_purge` (jobs drawer:
+*Empty a Switched-Off Recovery Archive*). It does not use the host's
+`pitr.env`: it uploads an environment of its own (0600, in the job's
+directory, removed when it ends) with the destination's credentials, the
+prefix last rendered and `PURGE_BEFORE` = `pitr_off_at`, and runs
+`backup_purge_archived.sh`; then it removes `.docker/pitr.env` from the
+instance's directory, and the panel forgets the clusters, base copies and
+dates. Only what was archived before the switch off goes: a switch on
+that crossed a running purge keeps what it archived since, and the record.
+
+```sql
+db$ SELECT name, pitr_state, pitr_cluster_id, pitr_off_at, pitr_purge_at,
+           pitr_rendered_prefix
+    FROM cloud_instance
+    WHERE pitr_purge_at IS NOT NULL ORDER BY pitr_purge_at;
+```
+
+`pitr_purge_failed` says why it failed: no backup destination (give it
+one, or empty the prefix by hand as in §5), the storage refused the
+credentials (fix them on the destination), or the job's log. The watch
+tries again a day after the failure; **Retry** in the jobs drawer runs it
+at once. A run again is harmless: it finds nothing left before the cutoff
+and goes on. A stack configured outside the panel is not purged (its
+runbook), nor an archived instance, whose archive goes with its record
+(§5). An instance switched off before 1.0.229 got its dates from the
+update: from its last `pitr_disable`, or from the update when its jobs do
+not say.
+
 ## Rollback
 
 Switching continuous recovery off from the card stops archiving and
 drops the PostgreSQL settings on the next rebuild; nothing else changes
-for the instance, and its archive stays in the bucket until the instance
-is deleted. The nightly backups are independent of it.
+for the instance, and its archive stays in the bucket for the backup
+window, then it is emptied (§6). Switching on again before then keeps it.
+The nightly backups are independent of it.
 
 ## See also
 

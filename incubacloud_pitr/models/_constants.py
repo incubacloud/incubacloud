@@ -27,6 +27,15 @@ ALERT_MODULES = "pitr_modules_not_updated"
 ALERT_PREFIX_LEFT = "pitr_prefix_left"
 #: The line the delete's purge prints when it finds no credentials.
 PREFIX_LEFT_MARK = "IC_PITR_PREFIX_LEFT"
+#: The alert of a rebuild that rendered the archive at another prefix or
+#: destination than the last one: the old prefix keeps what was archived
+#: there, and nothing empties it (RB-23 §4). Keyed by the old prefix,
+#: resolved by the person who empties it.
+ALERT_PREFIX_CHANGED = "pitr_prefix_changed"
+#: The alert of a ``pitr_purge`` that could not empty the archive of an
+#: instance switched off: raised by the job, resolved by one that ends
+#: well or a switch on that keeps the archive.
+ALERT_PURGE_FAILED = "pitr_purge_failed"
 
 WALG_VERSION = "v3.0.9"
 #: ``wal-g-pg-20.04-<arch>``: built against glibc 2.29, which every
