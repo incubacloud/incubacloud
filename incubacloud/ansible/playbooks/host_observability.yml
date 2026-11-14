@@ -115,6 +115,16 @@
     ic_filestore_hourly_below_mb: 6144
 
   tasks:
+    - name: Read the address the panel connects from
+      # The first word of SSH_CONNECTION, without become: sudo clears it.
+      # The panel keeps it among its addresses for this server (plan #84,
+      # A1), as the hardening does.
+      ansible.builtin.command: printenv SSH_CONNECTION
+      become: false
+      register: ic_panel_connection
+      changed_when: false
+      failed_when: false
+
     - name: Detect whether Traefik runs on this host
       # Traefik's metrics port is deliberately NOT published to the host:
       # publishing on 127.0.0.1 would be unreachable from vmagent's
@@ -1306,6 +1316,12 @@
           ic_journal_persistent: "{{ ic_journal_dir.stat.isdir | default(false) }}"
           ic_instances_labelled: "{{ ic_instances | length }}"
           ic_write_url_installed: "{{ ic_write_url }}"
+          # Which credential the agents write with: agent or account.
+          ic_write_user_installed: "{{ ic_write_user_kind }}"
+          # The address the panel came in from and the uid it signs in
+          # as, both read without become (plan #84, A1 and M2).
+          ic_panel_source: "{{ (ic_panel_connection.stdout | default('')).split(' ') | first | truncate(64, true, '') }}"
+          ic_panel_uid: "{{ ansible_user_uid | default('') }}"
           # installed, failed or off, and what failed.
           ic_pg_collector: "{{ ic_pg_collector }}"
           ic_pg_collector_error: "{{ ic_pg_collector_error }}"

@@ -267,7 +267,12 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         self._sent_central_ca_fingerprint = settings._central_agents_ca_fingerprint()
         # Kept for on_success: what the host tried is judged against them.
         self._direct_probes = host._direct_reach_probes(offer) if offer else []
-        account, token = settings._metrics_auth()
+        # The agents' own user once the central knows it, the account's
+        # credential until then (plan #84, A2).
+        user, token, kind = settings._metrics_agent_auth()
+        account = settings.metrics_account or ""
+        # Kept for on_success: the server records which one it holds.
+        self._sent_write_user = kind
         # Kept for on_success: a switch moved meanwhile is applied again.
         self._sent_collect_pg = bool(settings.metrics_collect_pg)
         # Both: the switch alone would install Fluent Bit on a panel that
@@ -304,8 +309,11 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             # debugging honest: what you see in the agent config is what
             # you will see in the series.
             "ic_account": account,
-            "ic_remote_write_user": account,
+            "ic_remote_write_user": user,
             "ic_remote_write_token": token,
+            # Which of the two that is, ``agent`` or ``account``: the
+            # playbook says it back with what it installed.
+            "ic_write_user_kind": kind,
             "ic_instances": [
                 self._labels_as_data(self._instance_labels(inst))
                 for inst in instances
@@ -446,6 +454,8 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         installed = str(facts.get("ic_write_url_installed") or "")
         if installed:
             host.sudo().write({"metrics_agents_write_url": installed})
+        self._record_write_user(host, facts)
+        self._record_panel_identity(host, facts)
         self._record_central_ca(host)
         if getattr(self, "_checks_central", False):
             self._report_central_reach(host, facts)
@@ -463,6 +473,46 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
                 self.env["cloud.host"]._direct_path_changed(
                     f"direct URLs reached from {host.name} changed",
                 )
+
+    def _record_write_user(self, host, facts):
+        """Record on *host* which credential its agents now write with.
+
+        What the playbook says it installed (``ic_write_user_installed``),
+        or what this executor sent when a playbook from before says
+        nothing. Nothing when this executor did not render the install's
+        variables (a job resumed elsewhere).
+
+        :param host: the ``cloud.host`` the install ran on.
+        :param dict facts: what the playbook exported.
+        """
+        kind = str(facts.get("ic_write_user_installed") or "").strip()
+        if kind not in ("agent", "account"):
+            kind = getattr(self, "_sent_write_user", None)
+        if kind and host.metrics_write_user != kind:
+            host.sudo().write({"metrics_write_user": kind})
+        if kind == "agent":
+            self._sys("The agents write with their own user, which may only write.")
+        elif kind == "account":
+            self._sys(
+                "The agents write with the account's credential: the "
+                "central does not know the agents' own user yet."
+            )
+
+    def _record_panel_identity(self, host, facts):
+        """Record the address and the uid the panel came in with.
+
+        Both read on the server without ``become`` (sudo clears
+        ``SSH_CONNECTION``): the address joins the panel's addresses the
+        server keeps (A1), the uid tells the panel's changes in auditd's
+        records (M2).
+
+        :param host: the ``cloud.host`` the install ran on.
+        :param dict facts: what the playbook exported.
+        """
+        host._record_panel_source(facts.get("ic_panel_source"))
+        uid = str(facts.get("ic_panel_uid") or "").strip()
+        if uid.isdigit() and host.security_panel_uid != uid:
+            host.sudo().write({"security_panel_uid": uid})
 
     def _record_central_ca(self, host):
         """Record on *host* the fingerprint of the authority this install gave its agents.
@@ -545,9 +595,9 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
     def _revision_to_record(self, host, facts):
         """Return the revision this install leaves on *host*, or None for none.
 
-        None when the database collector's switch, or this server's Send
-        security logs, moved while the install ran: the install applied
-        the old value. The collector's switch already asked the
+        None when the database collector's switch, this server's Send
+        security logs, or the credential the agents are to write with
+        moved while the install ran: the install applied the old value. The collector's switch already asked the
         reconciliation cron to re-apply every server, and the server's
         switch queued an install of its own; recording the current
         revision would cancel the first for this one.
@@ -570,6 +620,15 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             self._sys(
                 "Send security logs changed on this server during this "
                 "install: it is applied again."
+            )
+            return None
+        sent_user = getattr(self, "_sent_write_user", None)
+        if sent_user is not None and sent_user != settings._metrics_agent_auth()[2]:
+            # The agents' user came into force while this ran: the
+            # reconciliation applies it (A2).
+            self._sys(
+                "The agents' credential changed during this install: it is "
+                "applied again."
             )
             return None
         return AGENTS_REVISION

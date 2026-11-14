@@ -20,7 +20,11 @@ replaces that one-shot event with a state that converges: it is the
 authority, the setup chain is only an accelerator, and turning
 observability on is itself the instruction to enrol everything pending.
 """
+import ipaddress
+import json
 import logging
+from datetime import timedelta
+from operator import itemgetter
 
 import asyncssh
 
@@ -57,6 +61,30 @@ _UNFINISHED_JOB_STATES = ("queued", "pending", "enqueued", "wait_dependencies", 
 #: sudo from anyone else's. A change re-applies that host's agents.
 _AGENTS_HOST_FIELDS = ("security_logs_enabled", "key_file", "user", "login_type")
 
+#: The panel's addresses a server keeps (``security_panel_sources``): the
+#: last five seen, each forgotten 30 days after it was last seen (plan
+#: #84, A1). Odoo.sh moves a panel between machines, and a NAT may change
+#: its address: an address the panel left must not stay the panel's.
+PANEL_SOURCES_KEPT = 5
+PANEL_SOURCE_TTL = timedelta(days=30)
+
+
+def _panel_source_network(address):
+    """Return the network an address of the panel is compared by, or None.
+
+    IPv4 by the address itself, IPv6 by its /64: a host with a /64 may
+    leave by any address of it.
+
+    :param str address: an address, as text.
+    :rtype: ipaddress.IPv4Network | ipaddress.IPv6Network | None
+    """
+    try:
+        ip = ipaddress.ip_address((address or "").strip())
+    except ValueError:
+        return None
+    prefix = 64 if ip.version == 6 else 32
+    return ipaddress.ip_network(f"{ip}/{prefix}", strict=False)
+
 
 class CloudHost(models.Model):
     _inherit = "cloud.host"
@@ -70,6 +98,37 @@ class CloudHost(models.Model):
              "and kept there 90 days. This server can add to them but cannot "
              "delete them. Off stops sending; what was sent expires on its "
              "own.",
+    )
+
+    metrics_write_user = fields.Selection(
+        [("agent", "Agents' user"), ("account", "Account credential")],
+        string="Agents write with",
+        readonly=True,
+        copy=False,
+        help="The credential this server's agents were last installed with: "
+             "the agents' own user, which may only write, or the account's, "
+             "which also reads every server's logs and metrics. Empty: "
+             "installed by a version before 1.0.230. The account's read "
+             "credential is rotated once every server writes with the "
+             "agents' user.",
+    )
+    security_panel_uid = fields.Char(
+        string="Panel's uid on the server",
+        readonly=True,
+        copy=False,
+        help="The uid of the user the panel signs in as on this server, as "
+             "the agents' install read it: what tells the panel's changes "
+             "from anyone else's in auditd's records.",
+    )
+    security_panel_sources = fields.Text(
+        string="Panel's addresses seen",
+        readonly=True,
+        copy=False,
+        groups="incubacloud.group_cloud_manager",
+        help="The addresses the panel was seen connecting from by the "
+             "agents' install and by the hardening, with when, as JSON: the "
+             "last five, each forgotten 30 days after it was last seen. "
+             "Never taken from a notice or from a log line.",
     )
 
     @api.model
@@ -169,6 +228,141 @@ class CloudHost(models.Model):
                 "fingerprint: %s", self.id, exc,
             )
             return []
+
+    # ── The panel's addresses ─────────────────────────────────────────────
+
+    def _panel_sources_kept(self):
+        """Return the panel's addresses this server keeps, newest first.
+
+        Those seen within ``PANEL_SOURCE_TTL``; what cannot be read counts
+        for nothing.
+
+        :return: ``[{"address": str, "seen": datetime}]``.
+        :rtype: list[dict]
+        """
+        self.ensure_one()
+        try:
+            raw = json.loads(self.sudo().security_panel_sources or "[]")
+        except ValueError:
+            return []
+        if not isinstance(raw, list):
+            return []
+        horizon = fields.Datetime.now() - PANEL_SOURCE_TTL
+        kept = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            address = str(item.get("address") or "")
+            try:
+                seen = fields.Datetime.to_datetime(item.get("seen"))
+            except (TypeError, ValueError):
+                continue
+            if not seen or seen < horizon or _panel_source_network(address) is None:
+                continue
+            kept.append({"address": address, "seen": seen})
+        kept.sort(key=itemgetter("seen"), reverse=True)
+        return kept
+
+    def _write_panel_sources(self, kept):
+        """Store *kept* as this server's panel addresses.
+
+        :param list kept: as :meth:`_panel_sources_kept` returns them.
+        """
+        self.ensure_one()
+        value = json.dumps([
+            {"address": item["address"],
+             "seen": fields.Datetime.to_string(item["seen"])}
+            for item in kept[:PANEL_SOURCES_KEPT]
+        ]) if kept else False
+        if (self.sudo().security_panel_sources or False) != value:
+            self.sudo().write({"security_panel_sources": value})
+
+    def _record_panel_source(self, address):
+        """Record that the panel was seen connecting from *address* now.
+
+        Only from what a job of the panel read on the server
+        (``SSH_CONNECTION``, without ``become``): never from Odoo.sh's
+        notice of a new address, which carries no credential, nor from a
+        log line. An address of the same IPv6 /64 as one kept replaces it.
+
+        :param str address: the first word of ``SSH_CONNECTION``.
+        :return: whether an address was recorded.
+        :rtype: bool
+        """
+        self.ensure_one()
+        address = str(address or "").strip().split(" ")[0]
+        network = _panel_source_network(address)
+        if network is None:
+            return False
+        address = str(ipaddress.ip_address(address))
+        kept = [
+            item for item in self._panel_sources_kept()
+            if _panel_source_network(item["address"]) != network
+        ]
+        kept.insert(0, {"address": address, "seen": fields.Datetime.now()})
+        self._write_panel_sources(kept)
+        return True
+
+    def _panel_source_known(self, address):
+        """Return whether *address* is one this server saw the panel come from.
+
+        :param str address: an address, as text.
+        :rtype: bool
+        """
+        self.ensure_one()
+        network = _panel_source_network(address)
+        if network is None:
+            return False
+        return any(
+            _panel_source_network(item["address"]) == network
+            for item in self._panel_sources_kept()
+        )
+
+    @api.model
+    def _forget_panel_source(self, address):
+        """Forget *address* as the panel's on every server.
+
+        Called when the alert of a change of the panel's address closes:
+        the address it left is no longer the panel's.
+
+        :param str address: the address the panel left.
+        :return: how many servers forgot it.
+        :rtype: int
+        """
+        network = _panel_source_network(address)
+        if network is None:
+            return 0
+        forgot = 0
+        hosts = self.sudo().with_context(active_test=False).search([
+            ("security_panel_sources", "!=", False),
+        ])
+        for host in hosts:
+            kept = host._panel_sources_kept()
+            left = [
+                item for item in kept
+                if _panel_source_network(item["address"]) != network
+            ]
+            if len(left) != len(kept):
+                host._write_panel_sources(left)
+                forgot += 1
+        return forgot
+
+    @api.model
+    def _metrics_every_host_writes_as_agent(self):
+        """Return whether no server of this panel writes with the account's credential.
+
+        Every active server whose agents were installed, or failed to be,
+        was last installed with the agents' user. One installed before
+        1.0.230 (empty) or with the account's credential holds it.
+
+        :rtype: bool
+        """
+        holding = self.sudo().search_count([
+            ("active", "=", True),
+            ("metrics_agents_state", "in", ("installed", "failed")),
+            ("metrics_write_user", "!=", "agent"),
+        ])
+        return holding == 0
 
     def write(self, vals):
         """Re-apply a host's agents when what they read from it changes.
@@ -386,6 +580,9 @@ class CloudHost(models.Model):
         # And the central, when its last deployment ran an older one or
         # its certificate is to be renewed.
         self._reconcile_central_revision()
+        # The agents' write-only user, and the read credential's rotation
+        # once no server holds it (plan #84, A2).
+        self.env["cloud.settings"].sudo()._reconcile_metrics_credentials()
         # The single name's pending check, and whether a server writes
         # from outside the central's list.
         self._reconcile_central_name()

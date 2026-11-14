@@ -59,11 +59,13 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
             self._ensure_central_secrets(mint_delete_key=False)
         )
         granted = set((settings.metrics_accounts_deployed or "").split())
-        new = [user for user, _password in accounts if user not in granted]
-        revoked = granted - {user for user, _p in accounts}
+        users = {account["username"] for account in accounts}
+        new = users - granted
+        revoked = granted - users
+        names = {account["account"] for account in accounts}
         self._sys(
             f"Syncing the access-control list on {self._host().name}: "
-            f"{len(accounts)} account(s) total, {len(new)} to grant, "
+            f"{len(names)} account(s) total, {len(new)} user(s) to grant, "
             f"{len(revoked)} to revoke."
         )
         return {
