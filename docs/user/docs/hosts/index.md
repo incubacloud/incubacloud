@@ -105,6 +105,8 @@ Everything you run there affects the whole server and every instance on it.
   This is also the list a new staging on this host starts with — each staging
   then keeps its own, on its own **Whitelist** tab.
 - Audit who did what on the host (Host detail → Audit Logs)
+- See who signed in over SSH, used `sudo` or failed to sign in to an instance
+  (Host detail → Metrics → Security, [Security logs](security.md))
 - Import an instance that was already running on the host
   (Host detail → Import Instance)
 
