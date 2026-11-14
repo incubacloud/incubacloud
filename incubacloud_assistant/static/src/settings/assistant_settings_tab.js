@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, onMounted, onWillStart, onWillUnmount, status, useState } from "@odoo/owl";
+import { Component, onWillStart, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { user } from "@web/core/user";
@@ -9,6 +9,7 @@ import { RlSelect } from "@incubacloud/components/rl_select/rl_select";
 import {
     SettingAdvanced, SettingField, SettingRow, SettingsBlock,
 } from "@incubacloud/components/settings_form/settings_form";
+import { useSettingsSave } from "@incubacloud/components/settings_form/use_settings_save";
 import { modelOptions, money, roleLabel, settingsChanges } from "../assistant_format";
 
 /** Settings → Assistant: provider, key, models, users, limits and usage. */
@@ -59,8 +60,14 @@ export class AssistantSettingsTab extends Component {
         this._loaded = null;
         this.locale = (user.lang || "en_US").replace("_", "-");
         onWillStart(() => this.load());
-        onMounted(() => this._register());
-        onWillUnmount(() => this.env.unregisterSettingsSave?.("AssistantSettings"));
+        // Joins Settings' save registry once the form holds what the server has.
+        this.settingsSave = useSettingsSave({
+            key: "AssistantSettings",
+            save: () => this._save(),
+            state: this.state,
+            writeOnly: ["api_key", "clear_api_key", "accept_ai_terms"],
+            ready: () => Boolean(this._loaded),
+        });
     }
 
     /** Read the settings, the provider's models, the users and the usage. */
@@ -105,21 +112,10 @@ export class AssistantSettingsTab extends Component {
         this.state.termsUrl = data.terms_url || "";
     }
 
-    /** Join Settings' save registry once the form holds what the server has. */
-    _register() {
-        if (this._loaded && status(this) === "mounted") {
-            this.env.registerSettingsSave?.("AssistantSettings", () => this._save(), this.state, [
-                "api_key",
-                "clear_api_key",
-                "accept_ai_terms",
-            ]);
-        }
-    }
-
     /** Load again after a failure, and join Settings if it worked. */
     async reload() {
         await this.load();
-        this._register();
+        this.settingsSave.register();
     }
 
     /**
@@ -452,7 +448,7 @@ export class AssistantSettingsTab extends Component {
                 this.env.toast?.warning?.(result.warning);
                 // Settings keeps what was sent, the switch on, as saved: the
                 // switch stayed off, and the form as it is now is what is saved.
-                this._register();
+                this.settingsSave.register();
             }
         }
         return result;

@@ -1,11 +1,12 @@
 /** @odoo-module **/
 
-import { Component, onMounted, onWillStart, onWillUnmount, status, useState } from "@odoo/owl";
+import { Component, onMounted, onWillStart, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { confirmVia } from "../../utils/use_confirm";
 import { SettingAdvanced, SettingField, SettingsBlock } from "../settings_form/settings_form";
+import { useSettingsSave } from "../settings_form/use_settings_save";
 
 /** The App's fields, saved together through /cloud/save_github_app. */
 export const GITHUB_APP_FIELDS = Object.freeze([
@@ -49,11 +50,14 @@ export class GithubSettingsBlock extends Component {
             },
         });
         onWillStart(() => this.load());
-        onMounted(() => {
-            this._register();
-            this._checkUrlParams();
+        this.settingsSave = useSettingsSave({
+            key: "GitHub",
+            save: () => this._save(),
+            state: this.state,
+            writeOnly: WRITE_ONLY,
+            ready: () => this.loaded,
         });
-        onWillUnmount(() => this.env.unregisterSettingsSave?.("GitHub"));
+        onMounted(() => this._checkUrlParams());
     }
 
     /** Read the App and the token's state. */
@@ -85,17 +89,10 @@ export class GithubSettingsBlock extends Component {
         }
     }
 
-    /** Join the page's save bar, once loaded and while mounted. */
-    _register() {
-        if (this.loaded && status(this) === "mounted") {
-            this.env.registerSettingsSave?.("GitHub", () => this._save(), this.state, WRITE_ONLY);
-        }
-    }
-
     /** Load again after a failure, and join the save bar if it worked. */
     async reload() {
         await this.load();
-        this._register();
+        this.settingsSave.register();
     }
 
     /** Say how the App's creation on GitHub went, when it sent us back here. */

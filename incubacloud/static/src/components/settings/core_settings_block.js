@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, onMounted, onWillStart, onWillUnmount, status, useState } from "@odoo/owl";
+import { Component, onWillStart, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { announceJob } from "../../utils/job_queue";
@@ -11,6 +11,7 @@ import { RlSelect } from "../rl_select/rl_select";
 import {
     SettingAdvanced, SettingField, SettingRow, SettingsBlock,
 } from "../settings_form/settings_form";
+import { useSettingsSave } from "../settings_form/use_settings_save";
 
 /**
  * The fields each part of the panel's own settings holds, by the section it
@@ -188,8 +189,13 @@ export class CoreSettingsBlock extends Component {
         // The page's record of what is saved, for "Save first".
         this.formStore = this.env.settingsForm ? useState(this.env.settingsForm.store) : null;
         onWillStart(() => this.load());
-        onMounted(() => this._register());
-        onWillUnmount(() => this.env.unregisterSettingsSave?.(this.key));
+        this.settingsSave = useSettingsSave({
+            key: () => this.key,
+            save: () => this._save(),
+            state: this.state,
+            writeOnly: WRITE_ONLY,
+            ready: () => this.loaded,
+        });
     }
 
     /** @returns {string} the key the part saves under */
@@ -236,20 +242,10 @@ export class CoreSettingsBlock extends Component {
         }
     }
 
-    /**
-     * Join the page's save bar, once the form holds what the server has and
-     * only while mounted (a retry can answer after the page moved on).
-     */
-    _register() {
-        if (this.loaded && status(this) === "mounted") {
-            this.env.registerSettingsSave?.(this.key, () => this._save(), this.state, WRITE_ONLY);
-        }
-    }
-
     /** Load again after a failure, and join the save bar if it worked. */
     async reload() {
         await this.load();
-        this._register();
+        this.settingsSave.register();
     }
 
     /**

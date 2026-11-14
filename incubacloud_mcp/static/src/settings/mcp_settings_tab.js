@@ -1,11 +1,12 @@
 /** @odoo-module **/
 
-import { Component, onMounted, onWillStart, onWillUnmount, status, useState } from "@odoo/owl";
+import { Component, onWillStart, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { changedSettings, settingsView } from "../connect_agent/connect_agent_format";
 import { McpAutoApproval } from "../auto_approval/auto_approval";
 import { SettingField, SettingsBlock } from "@incubacloud/components/settings_form/settings_form";
+import { useSettingsSave } from "@incubacloud/components/settings_form/use_settings_save";
 
 /** Settings → Agents (MCP): the agents' OAuth issuer and this panel's MCP URL. */
 export class McpSettingsTab extends Component {
@@ -28,9 +29,16 @@ export class McpSettingsTab extends Component {
         // Registered once mounted, and only if it loaded, as core's Rates
         // tab is: a tab Settings cancelled while it loaded never mounts,
         // and one that failed to load shows the error and Retry instead
-        // of a form, joining once a retry loads it.
-        onMounted(() => this._register());
-        onWillUnmount(() => this.env.unregisterSettingsSave?.("McpSettings"));
+        // of a form, joining once a retry loads it. Settings then saves
+        // it, and counts it as an unsaved change, only while its form
+        // differs from what was read. Read-only, where the platform sets
+        // both, it does not join: there is nothing to save.
+        this.settingsSave = useSettingsSave({
+            key: "McpSettings",
+            save: () => this._save(),
+            state: this.state,
+            ready: () => Boolean(this._loaded) && !this.view.readonly,
+        });
     }
 
     /** Read the MCP's settings. */
@@ -50,28 +58,10 @@ export class McpSettingsTab extends Component {
         }
     }
 
-    /**
-     * Join Settings' save registry, once the form holds what the server has.
-     *
-     * Only while mounted: a retry can answer after its tab was taken down
-     * (Settings loading again), and that tab must not stand in for the
-     * one now on screen. Settings then saves it, and counts it as an
-     * unsaved change, only while its form differs from what was read.
-     * Read-only, where the platform sets both, it does not join: there
-     * is nothing to save.
-     */
-    _register() {
-        if (this._loaded && !this.view.readonly && status(this) === "mounted") {
-            this.env.registerSettingsSave?.(
-                "McpSettings", () => this._save(), this.state, [],
-            );
-        }
-    }
-
     /** Load again after a failure, and join Settings if it worked. */
     async reload() {
         await this.load();
-        this._register();
+        this.settingsSave.register();
     }
 
     /** Read-only where the platform sets them (see `settingsView`). */

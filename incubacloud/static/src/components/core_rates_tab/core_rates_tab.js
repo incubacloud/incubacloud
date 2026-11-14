@@ -1,9 +1,10 @@
 /** @odoo-module **/
 
-import { Component, useState, useEnv, onWillStart, onMounted, onWillUnmount, status } from "@odoo/owl";
+import { Component, useState, useEnv, onWillStart } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { SettingAdvanced, SettingField, SettingsBlock } from "../settings_form/settings_form";
+import { useSettingsSave } from "../settings_form/use_settings_save";
 
 export const CORE_RATE_DEFAULTS = Object.freeze({
     rate_limit_webhook_per_min: 300,
@@ -27,7 +28,7 @@ export class CoreRatesTab extends Component {
 
     setup() {
         this.env = useEnv();
-        // Whether the form holds what the server has (see onMounted).
+        // Whether the form holds what the server has (see settingsSave).
         this.loaded = false;
         this.state = useState({
             loading: true,
@@ -43,8 +44,12 @@ export class CoreRatesTab extends Component {
         // the error and Retry instead of a form of defaults, and joins
         // once a retry loads it. Settings saves the tab, and warns before
         // leaving, only while the form differs from what it loaded.
-        onMounted(() => this._register());
-        onWillUnmount(() => this.env.unregisterSettingsSave?.("CoreRates"));
+        this.settingsSave = useSettingsSave({
+            key: "CoreRates",
+            save: () => this._save(),
+            state: this.state,
+            ready: () => this.loaded,
+        });
     }
 
     async load() {
@@ -98,25 +103,10 @@ export class CoreRatesTab extends Component {
         }
     }
 
-    /**
-     * Join Settings' save registry, once the form holds what the server has.
-     *
-     * Only while mounted: a retry can answer after its tab was taken down
-     * (Settings loading again), and that tab must not stand in for the
-     * one now on screen.
-     */
-    _register() {
-        if (this.loaded && status(this) === "mounted") {
-            this.env.registerSettingsSave?.(
-                "CoreRates", () => this._save(), this.state, [],
-            );
-        }
-    }
-
     /** Load again after a failure, and join Settings if it worked. */
     async reload() {
         await this.load();
-        this._register();
+        this.settingsSave.register();
     }
 
     /**
