@@ -12,7 +12,8 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
 from ..net.hostname import is_host_address
-from . import sftp_dst
+from ..net.outbound import OutboundError, _resolve_public
+from . import sftp_dst, ssh_host_keys
 from .cloud_instance import _GLOBAL_BACKUP_PARAM
 from .encrypted_char import EncryptedChar, EncryptedText
 from .password_utils import generate_password
@@ -214,11 +215,153 @@ class CloudBackupBackend(models.Model):
 
     @api.depends("sftp_known_hosts")
     def _compute_sftp_host_key_fingerprint(self):
-        Host = self.env["cloud.host"]
         for rec in self:
-            rec.sftp_host_key_fingerprint = Host._known_hosts_fingerprint(
+            rec.sftp_host_key_fingerprint = ssh_host_keys.fingerprint(
                 rec.sudo().sftp_known_hosts,
             ) or False
+
+    # ── SFTP server key ─────────────────────────────────────────────────────
+
+    #: Raised when the SFTP server presents another key than the trusted one.
+    _SFTP_HOST_KEY_ALERT_CODE = "backup_sftp_host_key_changed"
+
+    @api.model
+    def _sftp_network_policy(self):
+        """Return where this panel may connect to an SFTP server.
+
+        ``'any'`` in the core: a self-hosted panel reaches a NAS or a
+        server on its private network. A layer may answer ``'public'``.
+
+        :rtype: str
+        """
+        return "any"
+
+    def _sftp_address(self):
+        """Return the address the panel dials for this destination.
+
+        Always the destination's server, never one read from a DST. With
+        the ``'public'`` policy every address of the name must be public
+        and the one checked is returned, so the connection does not
+        resolve the name a second time. On the hosts the name is resolved
+        again, which is safe: with the server key pinned, a name that
+        turned inward only reaches a key exchange that is refused.
+
+        :rtype: str
+        :raise UserError: when the policy refuses the server
+        """
+        self.ensure_one()
+        host = (self.sftp_host or "").strip()
+        if self._sftp_network_policy() != "public":
+            return host
+        try:
+            return _resolve_public(host, self.sftp_port or 22, version=4)
+        except OutboundError as exc:
+            raise UserError(_(
+                "%(host)s must resolve to public addresses only: this panel "
+                "connects only to SFTP servers on a public address.",
+                host=host,
+            )) from exc
+
+    def _sftp_presented_line(self):
+        """Read the key the server presents, filed under the URL's name.
+
+        The line is labelled with the server as the URL names it
+        (``host`` on 22, ``[host]:port`` otherwise), which is what
+        duplicity's paramiko looks up, whatever address was dialled.
+
+        :return: the ``known_hosts`` line
+        :rtype: str
+        :raise UserError: when the server cannot be reached, presents no
+            key, or a key type paramiko does not read
+        """
+        self.ensure_one()
+        if self.backend_type != "sftp":
+            raise UserError(_("Only an SFTP destination has a server key."))
+        address = self._sftp_address()
+        try:
+            key = ssh_host_keys.presented_host_key(address, self.sftp_port)
+        except (asyncssh.Error, OSError, TimeoutError) as exc:
+            raise UserError(_(
+                "Could not read the key of %(host)s:%(port)s: %(error)s",
+                host=self.sftp_host, port=self.sftp_port,
+                error=str(exc) or type(exc).__name__,
+            )) from exc
+        if not key:
+            raise UserError(_("The server presented no key."))
+        line = ssh_host_keys.known_hosts_line(
+            self.sftp_host, self.sftp_port, key,
+        )
+        kind = ssh_host_keys.key_type(line)
+        if kind not in ssh_host_keys.ACCEPTED_KEY_TYPES:
+            raise UserError(_(
+                "The server presents a %(type)s key, which the backups "
+                "cannot check. Offer an Ed25519, ECDSA or RSA host key.",
+                type=kind,
+            ))
+        return line
+
+    def _sftp_read_host_key(self):
+        """Report the key the server presents now, trusting nothing.
+
+        :return: ``fingerprint`` and ``key_type`` presented now, and
+            ``trusted_fingerprint`` (``''`` when none is trusted)
+        :rtype: dict
+        """
+        self.ensure_one()
+        line = self._sftp_presented_line()
+        return {
+            "fingerprint": ssh_host_keys.fingerprint(line),
+            "key_type": ssh_host_keys.key_type(line),
+            "trusted_fingerprint": self.sftp_host_key_fingerprint or "",
+        }
+
+    def _sftp_trust_host_key(self, expected_fingerprint):
+        """Trust the server key a person saw, if the server still presents it.
+
+        The key is read again and compared with *expected_fingerprint*,
+        the one the person approved: a server that presents another one in
+        between is refused, logged and audited, and nothing is stored.
+
+        :param str expected_fingerprint: the ``SHA256:…`` the person saw
+        :return: the fingerprint now trusted
+        :rtype: str
+        :raise UserError: when the presented key is not the approved one
+        """
+        self.ensure_one()
+        line = self._sftp_presented_line()
+        found = ssh_host_keys.fingerprint(line)
+        Audit = self.env["cloud.audit.log"].sudo()
+        if not expected_fingerprint or found != expected_fingerprint:
+            _logger.warning(
+                "[sftp %s] refused to trust %s: %s was approved",
+                self.name, found, expected_fingerprint,
+            )
+            Audit.create({
+                "action": "SFTP server key refused",
+                "details": (
+                    f"backup destination {self.name} (id {self.id}): "
+                    f"presented {found}, approved {expected_fingerprint}"
+                ),
+            })
+            raise UserError(_(
+                "The server now presents %(found)s, not the key you "
+                "approved (%(approved)s). Read the key again and compare it "
+                "with the one your provider shows.",
+                found=found, approved=expected_fingerprint or "-",
+            ))
+        self.sudo().write({
+            "sftp_known_hosts": line,
+            "sftp_host_key_trusted_at": fields.Datetime.now(),
+            "sftp_host_key_trusted_by": self.env.user.id,
+        })
+        Audit.create({
+            "action": "SFTP server key trusted",
+            "details": f"backup destination {self.name} (id {self.id}): {found}",
+        })
+        self.env["cloud.alert"].sudo().resolve_alert(
+            self._SFTP_HOST_KEY_ALERT_CODE, key=self._alert_key(),
+        )
+        return found
 
     # ── SFTP validation ─────────────────────────────────────────────────────
 

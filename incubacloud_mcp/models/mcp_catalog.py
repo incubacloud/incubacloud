@@ -79,6 +79,8 @@ CORE_EXCLUDED = {
     "/cloud/delete_git_hook": _GIT_HOOKS,
     "/cloud/reprocess_git_event": _GIT_HOOKS,
     "/cloud/sftp_backend_regenerate_key": _SFTP_KEYS,
+    "/cloud/sftp_backend_read_host_key": _SFTP_KEYS,
+    "/cloud/sftp_backend_trust_host_key": _SFTP_KEYS,
     "/cloud/generate_host_key": (
         "The new server form's SSH key; credentials are only written in the "
         "panel (decision 6)."
