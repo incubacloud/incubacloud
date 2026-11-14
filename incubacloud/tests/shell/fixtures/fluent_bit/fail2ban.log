@@ -1,0 +1,9 @@
+2026-11-09 17:59:37,702 fail2ban.filter         [6563]: INFO    [sshd] Found 172.31.2.1 - 2026-11-09 17:59:37
+2026-11-09 17:59:39,034 fail2ban.actions        [6563]: NOTICE  [sshd] Ban 172.31.2.1
+2026-11-09 17:59:41,189 fail2ban.actions        [6563]: NOTICE  [sshd] Unban 172.31.2.1
+2026-11-09 18:00:02,001 fail2ban.actions        [6563]: NOTICE  [sshd] Restore Ban 172.31.2.4
+2026-11-09 18:00:03,002 fail2ban.actions        [6563]: NOTICE  [sshd] 172.31.2.4 already banned
+2026-11-09 18:00:04,003 fail2ban.filter         [6563]: INFO    [incubacloud-weblogin] Found 198.51.100.7 - 2026-11-09 18:00:04
+2026-11-09 18:00:05,004 fail2ban.actions        [6563]: NOTICE  [incubacloud-weblogin] Ban 198.51.100.7
+2026-11-09 18:00:06,005 fail2ban.actions        [6563]: NOTICE  [recidive] Ban 192.0.2.9
+2026-11-09 18:00:07,006 fail2ban.server         [6563]: INFO    Starting Fail2ban v1.1.0

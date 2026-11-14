@@ -4,10 +4,11 @@ Used by the Odoo tests of the agents' configuration and, standalone, by
 ``tests/shell/fluent_bit_lines.bats``, which runs the real Fluent Bit image
 on the rendered files::
 
-    python3 _agents_playbook.py OUTDIR
+    python3 _agents_playbook.py OUTDIR [OVERRIDES_JSON]
 
 writes ``fluent-bit.yaml``, ``classify.lua`` and ``panel.lua`` there, with
-the Loki output sent to a stand-in on ``loki:3100``.
+the Loki output sent to a stand-in on ``loki:3100`` and the variables of
+OVERRIDES_JSON, when given, over :func:`defaults`.
 
 Only what the templates use is reproduced: Jinja with Ansible's
 ``trim_blocks`` and the filters ``bool``, ``to_json`` and ``urlsplit``.
@@ -137,6 +138,8 @@ def defaults(**overrides):
         "ic_vmagent_image": "vmagent",
         "ic_has_traefik": False,
         "ic_instances": [],
+        "ic_write_user_kind": "account",
+        "ic_weblogin_per_minute": 600,
     }
     values.update(overrides)
     return values
@@ -162,16 +165,20 @@ def fluent_bit_files(**overrides):
     }
 
 
-def main(outdir):
+def main(outdir, overrides=None):
     """Write Fluent Bit's files into *outdir*, sending to ``loki:3100``.
 
     :param str outdir: an existing directory.
+    :param str overrides: a JSON object of variables over the defaults.
     """
-    files = fluent_bit_files(ic_logs_url="http://loki:3100/loki/api/v1/push")
+    extra = json.loads(overrides) if overrides else {}
+    files = fluent_bit_files(
+        **(extra | {"ic_logs_url": "http://loki:3100/loki/api/v1/push"}),
+    )
     for name, content in files.items():
         with open(os.path.join(outdir, name), "w", encoding="utf-8") as fh:
             fh.write(content)
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)

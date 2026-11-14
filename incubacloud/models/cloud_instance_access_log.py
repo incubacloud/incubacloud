@@ -9,7 +9,12 @@ it, which is the difference between an alert and an answer.
 Deliberately read on demand over SSH rather than shipped anywhere:
 
 * the data stays on the host that produced it, which matters because
-  these lines contain the IP addresses of somebody else's end users;
+  these lines contain the IP addresses of somebody else's end users.
+  One thing of them leaves the host since 1.0.230, where the host sends
+  its security logs: for each failed login to an instance's web form,
+  the address, the instance's id and the time, in a line the agents
+  write (plan #84, C1.9). The request, its path, the host asked for and
+  the user never do;
 * it reuses the panel's existing SSH path, so there is no new central
   component to secure, size or keep alive;
 * and it is enough for the question being asked — "who is hitting this
