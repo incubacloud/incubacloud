@@ -166,6 +166,17 @@ class TestSecurityRuleJudgement(_RuleCase):
         rule._sync_alerts([(labels, 0.0)])
         self.assertFalse(self._alerts("security_logs_silent"))
 
+    def test_the_silence_rule_confirms_on_a_second_reading(self):
+        """As shipped, one reading of 1 raises nothing; the second does."""
+        rule = self.env.ref("incubacloud.metric_rule_security_logs_silent").sudo()
+        self.assertEqual(rule.confirm_cycles, 2)
+        rule.active = True
+        labels = {"host_id": str(self.host.id)}
+        rule._sync_alerts([(labels, 1.0)])
+        self.assertFalse(self._alerts("security_logs_silent"))
+        rule._sync_alerts([(labels, 1.0)])
+        self.assertTrue(self._alerts("security_logs_silent"))
+
     def test_one_target_is_judged_on_its_worst_sample(self):
         """A server renamed in the window answers twice; the breach is kept."""
         rule = self._shipped("metric_rule_security_ssh_bruteforce")

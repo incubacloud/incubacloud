@@ -390,8 +390,12 @@
         <field name="name">Security logs not arriving</field>
         <field name="sequence">103</field>
         <field name="code">security_logs_silent</field>
-        <!-- Every condition already measures over its own window. -->
-        <field name="confirm_cycles">1</field>
+        <!-- Two readings, as the other silence rules that read an
+             instant: a line counted and not yet delivered when the
+             counters were scraped, or a Loki down for a minute while
+             VictoriaMetrics is up, must not tell every server to install
+             its agents again (Fable's final review of F4, B6). -->
+        <field name="confirm_cycles">2</field>
         <!-- 1 for a server whose security logs are on, when any of three
              holds (review M3):
              1. Fluent Bit's exporter has not answered once in 15 minutes;
