@@ -680,12 +680,14 @@ class PitrDisableExecutor(_PitrExecutor):
         The purge date is fixed here, when archiving stopped
         (``cloud.instance._pitr_schedule_purge``), anew: a date left by a
         switch on that did not clear it would hold an old cutoff, and what
-        was archived since would never go.
+        was archived since would never go. Not when it was already off: a
+        run on an instance waiting for its purge keeps the dates it has.
         """
         inst = self._inst()
+        was_on = (inst.pitr_state or "off") != "off"
         inst.sudo().write({"pitr_state": "off"})
         self._pitr_resolve(ALERT_FAILING, ALERT_LAGGING, ALERT_BASE_MISSING)
-        inst._pitr_schedule_purge(again=True)
+        inst._pitr_schedule_purge(again=was_on)
         if inst.pitr_purge_at:
             self._sys(
                 "✓ Continuous recovery is off. The archive stays in the "

@@ -221,7 +221,10 @@ $ rclone purge ":s3,provider=Other,env_auth=true,endpoint='<endpoint>':<bucket>/
 Check first that `<path>` ends in `<name>-pitr` and names the deleted
 instance: a purge of the bucket, or of the folder, takes every instance on
 the destination. Then resolve the alert. Switching continuous recovery
-off empties the archive later, by itself (§6).
+off empties the archive later, by itself (§6). Before deleting a switched
+off instance whose folder or destination changed, empty by hand the prefix
+in `pitr_rendered_prefix`: the delete reads the one the host's `pitr.env`
+names now.
 
 Core refuses an instance name ending in `-pitr` from 1.0.229 on, and
 continuous recovery is not switched on for `x` while an instance
