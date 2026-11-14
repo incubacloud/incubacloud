@@ -1,4 +1,6 @@
 import { describe, expect, test } from "@odoo/hoot";
+import { patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { rpc } from "@web/core/network/rpc";
 import { AppHeader } from "@incubacloud/components/app_header/app_header";
 
 /**
@@ -120,5 +122,60 @@ describe("AppHeader — static props definition", () => {
 
     test("template name is set", () => {
         expect(AppHeader.template).toBe("incubacloud.AppHeader");
+    });
+});
+
+describe("AppHeader — notification preferences", () => {
+    /**
+     * An AppHeader stand-in for the notification modal's methods: the
+     * state they read, and a toast that records nothing.
+     *
+     * @returns {object} the stand-in
+     */
+    function standIn() {
+        const comp = Object.create(AppHeader.prototype);
+        comp.state = {
+            showUserMenu: false, showNotifModal: false, expandedSection: null,
+            notifMuted: [], notifProjects: [], notifSaving: false,
+        };
+        comp.env = { toast: { success() {}, error() {} } };
+        return comp;
+    }
+
+    test("a token and a secret typed, then Cancel: the next Save sends neither", async () => {
+        const saved = [];
+        patchWithCleanup(rpc, {
+            _rpc(url, params) {
+                if (url === "/cloud/get_user_preferences") {
+                    return Promise.resolve({
+                        cloud_telegram_configured: true, cloud_telegram_chat_id: "42",
+                        cloud_webhook_configured: true,
+                        cloud_webhook_url: "https://hooks.example.com/cloud",
+                    });
+                }
+                if (url === "/cloud/get_projects") {
+                    return Promise.resolve({ items: [] });
+                }
+                if (url === "/cloud/save_user_preferences") {
+                    saved.push(params);
+                }
+                return Promise.resolve({});
+            },
+        });
+        const header = standIn();
+        await header.openNotifModal();
+        header.onTelegramTokenChange("typed-then-cancelled");
+        header.onWebhookSecretChange("typed-then-cancelled");
+        header.closeNotifModal();
+
+        await header.openNotifModal();
+        // The fields open on what the form holds: nothing, so «Stored».
+        expect(header.state._telegramToken).toBe("");
+        expect(header.state._webhookSecret).toBe("");
+        await header.saveNotifPrefs();
+        expect(saved).toHaveLength(1);
+        // "" keeps the stored token and secret.
+        expect(saved[0].cloud_telegram_bot_token).toBe("");
+        expect(saved[0].cloud_webhook_secret).toBe("");
     });
 });

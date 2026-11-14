@@ -49,11 +49,13 @@ export class AppHeader extends Component {
             notifSaving: false,
             // Telegram
             telegramTokenConfigured: false,
+            _telegramToken: "",    // a new bot token typed, "" keeps the stored one
             telegramChatId: "",
             telegramDetecting: false,
             telegramTesting: false,
             // Webhook
             webhookSecretConfigured: false,
+            _webhookSecret: "",    // a new signing secret typed, "" keeps the stored one
             webhookUrl: "",
         });
 
@@ -337,9 +339,16 @@ export class AppHeader extends Component {
         });
     }
 
+    /**
+     * Open the notification preferences on what is saved: a token or a
+     * secret typed before a Cancel is dropped, so the next Save keeps the
+     * stored ones.
+     */
     async openNotifModal() {
         this.state.showUserMenu = false;
         this.state.expandedSection = null;
+        this.state._telegramToken = "";
+        this.state._webhookSecret = "";
         try {
             const prefs = await rpc("/cloud/get_user_preferences", {});
             this.state.notifLevel = prefs?.cloud_notification_level || "failures";
