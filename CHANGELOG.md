@@ -38,6 +38,92 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   and the drop-in covers it. A host stuck there now comes back with
   `systemctl kill cloud-init-hotplugd.service`.
 
+## [1.0.230] — unreleased
+
+The servers' agents write to the metrics central with a user of their own
+that may only write, so root on one server no longer reads the logs and
+metrics of the account's other servers; the panel's read credential is
+rotated once no server holds it. The security logs carry the server's id,
+and the instances' failed web logins are counted per instance and sent as
+a line of their own. The panel learns its own addresses from the servers.
+Every server's agents are installed again (revision 4), five servers a
+pass, and the central is deployed again (revision 2). The hardening's
+recipe changes (it hands the panel the address it connected from), so
+hardened servers read as hardened with an older recipe until it is
+re-applied.
+
+The update adds columns and no data migration: the agents' user is minted
+by the central's next deployment or account sync.
+
+### Added
+
+- **The agents' own user on the central, handed out by state (#84).**
+  Each account has a second vmauth user, `<account>-agent`, that reaches
+  `/w/` and `/lw/` alone and is forced to the account's label and Loki
+  tenant (`cloud.settings.metrics_agent_token`). The agents write with it
+  only once the central's list carries it, with the account's credential
+  until then, and every server is applied again the moment it comes into
+  force; a module that hands a panel its credentials hands this one only
+  once its central knows it (`_metrics_credentials_injected`). Each server
+  records which one its agents hold (`cloud.host.metrics_write_user`).
+- **The read credential is rotated once no server holds it (#84).** When
+  every active server whose agents were installed writes with the agents'
+  user, the agents' reconciliation mints a new read credential; the
+  account sync puts it on the central beside the old one (two passwords
+  for one vmauth user), the panel moves to it once the central carries it
+  (`metrics_credentials_deployed` keeps a digest of each credential in
+  force) and the next sync drops the old one. From then on the account's
+  user only reads, with at most 8 requests in flight
+  (`READ_MAX_CONCURRENT`, provisional until measured).
+- **The instances' failed web logins, per instance (#84).** Where a
+  server sends its security logs, Fluent Bit reads the proxy's access log:
+  a native grep keeps the `POST`s to `/web/login`, the classification
+  keeps what the web-login jail counts as failed and names the instance
+  by its Traefik prefix (the longest, with `https-` or not) or by a
+  service a module put in front of it, else `0`. It counts
+  `ic_weblogin_failed_total{instance_id}` and sends
+  `weblogin failed ip=… instance=… t=…` with `source="weblogin"`, never
+  the request, its path, the host asked for or the user, at most 600 a
+  minute (`ic_weblogin_per_minute`, provisional); above that they are
+  counted and not sent. fail2ban's `Found` lines of that jail stay on the
+  server, as repeats without the instance.
+- **The panel's addresses and uid on each server (#84).** The agents'
+  install and the hardening read `SSH_CONNECTION` without `become`, and
+  the panel keeps the last five addresses it came from per server, each
+  forgotten 30 days after it was last seen, IPv6 by its /64
+  (`cloud.host.security_panel_sources`, for whoever manages servers);
+  the old address is forgotten when the alert of a change of the panel's
+  address closes, and none is ever learned from that notice. The install
+  records the uid the panel signs in as (`security_panel_uid`).
+
+### Changed
+
+- **Loki's lines carry `host_id` (#84).** Beside `host`, which is not
+  unique and does not follow a rename; lines sent before have none.
+- **An account's read routes serve `query` and `query_range` alone
+  (#84).** On `/r/` and `/lr/`, and the operator's `/admin-r/` those two
+  and `health`: `series`, `labels`, label values, `metadata`, `rules`,
+  `status/buildinfo` and the log index went with Grafana. RB-11 says so.
+- **Loki answers up to 5000 series a query (#84).** `max_query_series`,
+  provisional until measured; Loki's default, 500, breaks a query of the
+  top source addresses during a distributed attack.
+
+### Fixed
+
+- **A new configuration of Loki applies (#84).** The central's deployment
+  restarts Loki when its configuration changed; before, `up -d` left it
+  running on the old one, so a new retention never applied.
+
+### Tests
+
+- **The Fluent Bit bats read every fixture they need (#84).** The
+  `audit.log` and `fail2ban.log` fixtures of `fluent_bit_lines.bats` were
+  ignored by `*.log` and never committed; they are, with the access log's.
+  The bats check the classification of the failed web logins against the
+  jail's own filter on the same lines.
+
+---
+
 ## [1.0.229] — 2026-11-14
 
 The panel's help text is easier to read, its switches and tab bars say
