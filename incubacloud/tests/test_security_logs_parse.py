@@ -563,6 +563,46 @@ class TestReading(TransactionCase):
         self.assertEqual(event["file"], "/etc/sudoers.d/90-x")
         self.assertEqual(event["auid"], 1001)
 
+    def test_a_long_window_is_read_in_tranches_newest_first(self):
+        """No request spans more than a tranche; the window is read whole.
+
+        Loki splits a request into subqueries and refuses one whose
+        subqueries fill its queue (429): seven days in one request were
+        refused by Loki 2.9 as it comes (QA of 15-nov-2026).
+        """
+        tranche = logs.TRANCHE_SECONDS * SECOND
+        end = 2 * tranche + 10 * SECOND
+        mocked = self._get(
+            _streams((4, end - 5 * SECOND, "c")),
+            _streams((4, tranche + SECOND, "b")),
+            _streams((4, 3 * SECOND, "a")),
+        )
+        lines, cut = logs.read_last_lines(BASE, "{x}", 0, end, pages=1, limit=3)
+        self.assertEqual([line.line for line in lines], ["a", "b", "c"])
+        self.assertFalse(cut)
+        windows = [(call.kwargs["params"]["start"], call.kwargs["params"]["end"])
+                   for call in mocked.call_args_list]
+        self.assertEqual(windows, [
+            (end - tranche, end), (end - 2 * tranche, end - tranche),
+            (0, end - 2 * tranche),
+        ])
+
+    def test_the_sample_is_shared_by_the_tranches(self):
+        """The pages and lines of a sample are of the whole window, not of each tranche."""
+        tranche = logs.TRANCHE_SECONDS * SECOND
+        end = 3 * tranche
+        mocked = self._get(
+            _streams((4, end - 2, "e"), (4, end - 1, "f")),
+            _streams((4, end - tranche - 3, "b"), (4, end - tranche - 2, "c"),
+                     (4, end - tranche - 1, "d")),
+            _streams((4, end - tranche - 4, "a")),
+        )
+        lines, cut = logs.read_last_lines(BASE, "{x}", 0, end, pages=2, limit=3)
+        self.assertEqual([line.line for line in lines], ["a", "b", "c", "d", "e", "f"])
+        self.assertTrue(cut)
+        asked = [call.kwargs["params"]["limit"] for call in mocked.call_args_list]
+        self.assertEqual(asked, [3, 3, 1])
+
     def test_a_busy_central_is_no_outage(self):
         """A 429 is asked once more, then raised as busy: no alert."""
         alerts = self.env["cloud.alert"].sudo()
