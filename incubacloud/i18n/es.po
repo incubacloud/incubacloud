@@ -15,6 +15,419 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"%(fields)s cannot be set by hand: the panel generates the key and records "
+"the server key you confirm."
+msgstr ""
+"%(fields)s no se puede establecer a mano: el panel genera la clave y "
+"registra la clave del servidor que usted confirma."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"%(host)s must resolve to public addresses only: this panel connects only to "
+"SFTP servers on a public address."
+msgstr ""
+"%(host)s debe resolver solo a direcciones públicas: este panel solo se "
+"conecta a servidores SFTP con dirección pública."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/purge_archived_executor.py:0
+msgid ""
+"%(path)s is not on the server of the backup destination %(name)s: nothing "
+"was deleted."
+msgstr ""
+"%(path)s no está en el servidor del destino de copia %(name)s: no se ha "
+"borrado nada."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/purge_archived_executor.py:0
+msgid "%(path)s is not one instance's folder: nothing was deleted."
+msgstr "%(path)s no es la carpeta de una instancia: no se ha borrado nada."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "%(what)s does not handle %(type)s destinations."
+msgstr "%(what)s no admite destinos de tipo %(type)s."
+
+#. module: incubacloud
+#: model:mail.template,body_html:incubacloud.mail_template_backup_usage_alert
+msgid ""
+"<div>\n"
+"    <p>Hello,</p>\n"
+"    <p>The backup backend\n"
+"        <strong t-out=\"object.name\"/>\n"
+"        is currently at\n"
+"        <strong><t t-out=\"ctx.get('backup_alert_pct_used')\"/>%</strong>\n"
+"        of its configured quota\n"
+"        (<t t-out=\"round(object.last_measured_gb, 2)\"/> GB used of\n"
+"        <t t-out=\"object.quota_gb\"/> GB quota; alert threshold is\n"
+"        <t t-out=\"ctx.get('backup_alert_threshold_pct')\"/>%).</p>\n"
+"    <p>Destination: <code t-out=\"object.backup_dst\"/></p>\n"
+"    <p>To stop receiving these alerts, raise the quota, lower the\n"
+"        threshold to <code>-1</code> (disabled), or move objects out\n"
+"        of the bucket.</p>\n"
+"    <p>This alert will not re-fire for at least 7 days while usage\n"
+"        remains above the threshold.</p>\n"
+"</div>\n"
+"        "
+msgstr ""
+"<div>\n"
+"    <p>Hola,</p>\n"
+"    <p>El backend de backup\n"
+"        <strong t-out=\"object.name\"/>\n"
+"        está actualmente al\n"
+"        <strong><t t-out=\"ctx.get('backup_alert_pct_used')\"/>%</strong>\n"
+"        de su cuota configurada\n"
+"        (<t t-out=\"round(object.last_measured_gb, 2)\"/> GB usados de\n"
+"        <t t-out=\"object.quota_gb\"/> GB de cuota; el umbral de aviso es\n"
+"        <t t-out=\"ctx.get('backup_alert_threshold_pct')\"/>%).</p>\n"
+"    <p>Destino: <code t-out=\"object.backup_dst\"/></p>\n"
+"    <p>Para dejar de recibir estos avisos, suba la cuota, baje el\n"
+"        umbral a <code>-1</code> (desactivado) o mueva objetos fuera\n"
+"        del bucket.</p>\n"
+"    <p>Este aviso no se repetirá en al menos 7 días mientras el uso\n"
+"        siga por encima del umbral.</p>\n"
+"</div>\n"
+"        "
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"A backup destination keeps its type: create a new destination for the other "
+"type."
+msgstr ""
+"Un destino de copia conserva su tipo: cree un destino nuevo para el otro "
+"tipo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "A destination keeps its type: create another one for the other type."
+msgstr "Un destino conserva su tipo: cree otro para el otro tipo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid ""
+"A new key pair replaces this one. Add the new public key to the server's "
+"authorized_keys and keep the old line until every instance on this "
+"destination has been rebuilt: until then they log in with the old key."
+msgstr ""
+"Un par de claves nuevo sustituye a este. Añada la nueva clave pública al "
+"authorized_keys del servidor y mantenga la línea anterior hasta que se hayan"
+" reconstruido todas las instancias de este destino: hasta entonces inician "
+"sesión con la clave anterior."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__sftp_public_key
+msgid "Add this line to the server's authorized_keys."
+msgstr "Añada esta línea al authorized_keys del servidor."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid ""
+"Add this line to the user's ~/.ssh/authorized_keys. restrict keeps the key "
+"to file transfers; leave it out if your provider does not accept options."
+msgstr ""
+"Añada esta línea al ~/.ssh/authorized_keys del usuario. restrict limita la "
+"clave a la transferencia de ficheros; quítelo si su proveedor no acepta "
+"opciones."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"An SFTP server has no bucket lifecycle: let the backup cron delete old "
+"backups, or nobody."
+msgstr ""
+"Un servidor SFTP no tiene ciclo de vida de bucket: deje que el cron de "
+"copias borre las antiguas, o nadie."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid ""
+"Another server or port drops the trusted server key. Read and trust the new "
+"one before the next deploy or rebuild of the instances on this destination: "
+"until then they are refused."
+msgstr ""
+"Otro servidor u otro puerto quita la clave de servidor de confianza. Lea la "
+"nueva y confíe en ella antes del siguiente despliegue o reconstrucción de "
+"las instancias de este destino: hasta entonces se rechazan."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Backup path"
+msgstr "Ruta de copia"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Change"
+msgstr "Cambiar"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Change the SFTP server"
+msgstr "Cambiar el servidor SFTP"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Chosen when creating: it cannot change afterwards."
+msgstr "Se elige al crearlo: después no se puede cambiar."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid ""
+"Compare it with the fingerprint your provider shows before you trust it."
+msgstr ""
+"Compárela con la huella que muestra su proveedor antes de confiar en ella."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/purge_archived_executor.py:0
+msgid ""
+"Confirm the SFTP server's key on the backup destination %(name)s: nothing "
+"was deleted."
+msgstr ""
+"Confirme la clave del servidor SFTP en el destino de copia %(name)s: no se "
+"ha borrado nada."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Confirm the SFTP server's key on the backup destination %(name)s: read it, "
+"compare it and trust it, then try again."
+msgstr ""
+"Confirme la clave del servidor SFTP en el destino de copia %(name)s: léala, "
+"compárela y confíe en ella; después vuelva a intentarlo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Connection successful — the folder is writable, %(free)s GB free."
+msgstr ""
+"Conexión correcta: se puede escribir en la carpeta y quedan %(free)s GB "
+"libres."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Connection successful — the folder is writable."
+msgstr "Conexión correcta: se puede escribir en la carpeta."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Copied."
+msgstr "Copiado."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Copy"
+msgstr "Copiar"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Could not copy: select the text and copy it."
+msgstr "No se pudo copiar: seleccione el texto y cópielo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "Could not read the key of %(host)s:%(port)s: %(error)s"
+msgstr "No se pudo leer la clave de %(host)s:%(port)s: %(error)s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Could not read the server's key."
+msgstr "No se pudo leer la clave del servidor."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Could not regenerate the key."
+msgstr "No se pudo regenerar la clave."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid "Could not use the SFTP server: %(error)s"
+msgstr "No se pudo usar el servidor SFTP: %(error)s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Encryption"
+msgstr "Cifrado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Enter a host name or an IPv4 address"
+msgstr "Introduzca un nombre de host o una dirección IPv4"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "Enter the SFTP server as a host name or an IPv4 address."
+msgstr "Introduzca el servidor SFTP como nombre de host o dirección IPv4."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Folder"
+msgstr "Carpeta"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__sftp_path
+msgid ""
+"Folder under the user's home (e.g. backups). Start with / for an absolute "
+"path."
+msgstr ""
+"Carpeta dentro del directorio personal del usuario (p. ej., backups). "
+"Empiece por / para una ruta absoluta."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"IPv6 addresses are not supported for SFTP yet: enter a host name instead."
+msgstr ""
+"Las direcciones IPv6 aún no se admiten para SFTP: introduzca un nombre de "
+"host."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Keys"
+msgstr "Claves"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "New key generated: add it to the server."
+msgstr "Clave nueva generada: añádala al servidor."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid ""
+"Not trusted yet: instances cannot back up to this destination until you "
+"trust the server's key."
+msgstr ""
+"Aún no es de confianza: las instancias no pueden hacer copias en este "
+"destino hasta que confíe en la clave del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "Only an SFTP destination has a key."
+msgstr "Solo un destino SFTP tiene clave."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "Only an SFTP destination has a server key."
+msgstr "Solo un destino SFTP tiene clave de servidor."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Port must be between 1 and 65535"
+msgstr "El puerto debe estar entre 1 y 65535"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Public key for the server's authorized_keys"
+msgstr "Clave pública para el authorized_keys del servidor"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "Read and trust the SFTP server's key first."
+msgstr "Lea primero la clave del servidor SFTP y confíe en ella."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Read the server key"
+msgstr "Leer la clave del servidor"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Regenerate"
+msgstr "Regenerar"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Regenerate key"
+msgstr "Regenerar clave"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Regenerate the SFTP key"
+msgstr "Regenerar la clave SFTP"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__backend_type__sftp
+msgid "SFTP"
+msgstr "SFTP"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__sftp_path
+msgid "SFTP Path"
+msgstr "Ruta SFTP"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__sftp_port
+msgid "SFTP Port"
+msgstr "Puerto SFTP"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__sftp_private_key
+msgid "SFTP Private Key"
+msgstr "Clave privada SFTP"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__sftp_public_key
+msgid "SFTP Public Key"
+msgstr "Clave pública SFTP"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__sftp_host
+msgid "SFTP Server"
+msgstr "Servidor SFTP"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__sftp_user
+msgid "SFTP User"
+msgstr "Usuario SFTP"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Send Telegram notifications"
@@ -28,6 +441,250 @@ msgstr "Enviar notificaciones al webhook"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Server"
+msgstr "Servidor"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__sftp_host_key_fingerprint
+msgid "Server Key Fingerprint"
+msgstr "Huella de la clave del servidor"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Server is required"
+msgstr "El servidor es obligatorio"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Server key"
+msgstr "Clave del servidor"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Server key trusted."
+msgstr "Clave del servidor marcada como de confianza."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
+msgid ""
+"Set up an S3-compatible or SFTP destination to enable automated backups for "
+"your instances."
+msgstr ""
+"Configure un destino compatible con S3 o SFTP para habilitar copias "
+"automáticas en sus instancias."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__sftp_host_key_trusted_at
+msgid "Sftp Host Key Trusted At"
+msgstr "Clave del servidor confiada el"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__sftp_host_key_trusted_by
+msgid "Sftp Host Key Trusted By"
+msgstr "Clave del servidor confiada por"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid "Testing this type of destination is not supported."
+msgstr "No se admite la prueba de este tipo de destino."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "The SFTP key of %(name)s cannot be read: generate a new one."
+msgstr "No se puede leer la clave SFTP de %(name)s: genere una nueva."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"The SFTP key of the backup destination %(name)s cannot be read. Generate a "
+"new one, add it to the server and try again."
+msgstr ""
+"No se puede leer la clave SFTP del destino de copia %(name)s. Genere una "
+"nueva, añádala al servidor y vuelva a intentarlo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The SFTP path may hold letters, digits, dots, dashes and underscores between"
+" slashes, without empty, . or .. parts."
+msgstr ""
+"La ruta SFTP puede contener letras, dígitos, puntos, guiones y guiones bajos"
+" entre barras, sin partes vacías, . ni .."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "The SFTP port goes from 1 to 65535."
+msgstr "El puerto SFTP va de 1 a 65535."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The SFTP server of the backup destination %(name)s presents the key "
+"%(presented)s, not the trusted %(trusted)s. Backups to it fail until the key"
+" is checked and trusted again."
+msgstr ""
+"El servidor SFTP del destino de copia %(name)s presenta la clave "
+"%(presented)s, no la de confianza %(trusted)s. Las copias a él fallan hasta "
+"que se compruebe la clave y se vuelva a confiar en ella."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The SFTP user may hold letters, digits, dots, dashes and underscores, up to "
+"100 characters."
+msgstr ""
+"El usuario SFTP puede contener letras, dígitos, puntos, guiones y guiones "
+"bajos, hasta 100 caracteres."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"The backup path of %(instance)s (%(path)s) is not on the server of its "
+"destination %(name)s (%(user)s@%(host)s, port %(port)s). A path on another "
+"SFTP server is not supported."
+msgstr ""
+"La ruta de copia de %(instance)s (%(path)s) no está en el servidor de su "
+"destino %(name)s (%(user)s@%(host)s, puerto %(port)s). No se admite una ruta"
+" en otro servidor SFTP."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"The backup path of %(instance)s (%(path)s) must end in a folder of its own: "
+"it would be shared with other instances."
+msgstr ""
+"La ruta de copia de %(instance)s (%(path)s) debe terminar en una carpeta "
+"propia: si no, la compartiría con otras instancias."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid ""
+"The connection test runs from this panel; the backups run from each server "
+"that hosts an instance. A server that only accepts some addresses must "
+"accept both. Changing an instance's destination starts a new backup chain: "
+"the earlier backups stay where they were."
+msgstr ""
+"La prueba de conexión se hace desde este panel; las copias, desde cada "
+"servidor que aloja una instancia. Un servidor que solo acepte algunas "
+"direcciones debe aceptar ambas. Cambiar el destino de una instancia empieza "
+"una cadena de copias nueva: las copias anteriores se quedan donde estaban."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "The key was not trusted."
+msgstr "No se pudo confiar en la clave."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid ""
+"The panel generates a key for this destination when you create it. You then "
+"add it to the server and confirm the server's key here."
+msgstr ""
+"El panel genera una clave para este destino al crearlo. Después usted la "
+"añade al servidor y confirma aquí la clave del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid "The server did not answer in time."
+msgstr "El servidor no respondió a tiempo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The server now presents %(found)s, not the key you approved (%(approved)s). "
+"Read the key again and compare it with the one your provider shows."
+msgstr ""
+"El servidor presenta ahora %(found)s, no la clave que usted aprobó "
+"(%(approved)s). Lea la clave de nuevo y compárela con la que muestra su "
+"proveedor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "The server presented no key."
+msgstr "El servidor no presentó ninguna clave."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The server presents a %(type)s key, which the backups cannot check. Offer an"
+" Ed25519, ECDSA or RSA host key."
+msgstr ""
+"El servidor presenta una clave %(type)s, que las copias no pueden comprobar."
+" Ofrezca una clave de host Ed25519, ECDSA o RSA."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid ""
+"The server presents the key %(presented)s, not the trusted %(trusted)s. "
+"Check it with your provider before trusting it."
+msgstr ""
+"El servidor presenta la clave %(presented)s, no la de confianza %(trusted)s."
+" Compruébela con su proveedor antes de confiar en ella."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "The server presents this"
+msgstr "El servidor presenta esta clave de tipo"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid ""
+"The server refused the key. Add this line to the user's authorized_keys: "
+"%(key)s"
+msgstr ""
+"El servidor rechazó la clave. Añada esta línea al authorized_keys del "
+"usuario: %(key)s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The server, port and user of %(name)s cannot change: %(instances)s keep "
+"their copy on the current server. Create a new destination for the other "
+"server."
+msgstr ""
+"El servidor, el puerto y el usuario de %(name)s no pueden cambiar: "
+"%(instances)s conservan su copia en el servidor actual. Cree un destino "
+"nuevo para el otro servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid "The user may not write in %(path)s."
+msgstr "El usuario no puede escribir en %(path)s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid "This destination is not SFTP."
+msgstr "Este destino no es SFTP."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Toggle Telegram notifications"
 msgstr "Activar/desactivar las notificaciones por Telegram"
@@ -37,6 +694,32 @@ msgstr "Activar/desactivar las notificaciones por Telegram"
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Toggle webhook notifications"
 msgstr "Activar/desactivar las notificaciones al webhook"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid ""
+"Too many connections to SFTP servers in the last hour. Try again later."
+msgstr ""
+"Demasiadas conexiones a servidores SFTP en la última hora. Vuelva a "
+"intentarlo más tarde."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Trust this key"
+msgstr "Confiar en esta clave"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__sftp_known_hosts
+msgid "Trusted Server Key"
+msgstr "Clave de servidor de confianza"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Trusted by"
+msgstr "Confiada por"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -801,47 +1484,6 @@ msgstr "7 d"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "7d"
 msgstr "7d"
-
-#. module: incubacloud
-#: model:mail.template,body_html:incubacloud.mail_template_backup_usage_alert
-msgid ""
-"<div>\n"
-"    <p>Hello,</p>\n"
-"    <p>The backup backend\n"
-"        <strong t-out=\"object.name\"/>\n"
-"        is currently at\n"
-"        <strong><t t-out=\"ctx.get('backup_alert_pct_used')\"/>%</strong>\n"
-"        of its configured quota\n"
-"        (<t t-out=\"round(object.last_measured_gb, 2)\"/> GB used of\n"
-"        <t t-out=\"object.quota_gb\"/> GB quota; alert threshold is\n"
-"        <t t-out=\"ctx.get('backup_alert_threshold_pct')\"/>%).</p>\n"
-"    <p>Bucket: <code t-out=\"object.s3_bucket\"/></p>\n"
-"    <p>To stop receiving these alerts, raise the quota, lower the\n"
-"        threshold to <code>-1</code> (disabled), or move objects out\n"
-"        of the bucket.</p>\n"
-"    <p>This alert will not re-fire for at least 7 days while usage\n"
-"        remains above the threshold.</p>\n"
-"</div>\n"
-"        "
-msgstr ""
-"<div>\n"
-"    <p>Hola,</p>\n"
-"    <p>El backend de backup\n"
-"        <strong t-out=\"object.name\"/>\n"
-"        está actualmente al\n"
-"        <strong><t t-out=\"ctx.get('backup_alert_pct_used')\"/>%</strong>\n"
-"        de su cuota configurada\n"
-"        (<t t-out=\"round(object.last_measured_gb, 2)\"/> GB usados de\n"
-"        <t t-out=\"object.quota_gb\"/> GB de cuota; el umbral de aviso es\n"
-"        <t t-out=\"ctx.get('backup_alert_threshold_pct')\"/>%).</p>\n"
-"    <p>Bucket: <code t-out=\"object.s3_bucket\"/></p>\n"
-"    <p>Para dejar de recibir estos avisos, sube la cuota, baja el\n"
-"        umbral a <code>-1</code> (desactivado) o mueve objetos fuera\n"
-"        del bucket.</p>\n"
-"    <p>Este aviso no se repetirá en al menos 7 días mientras el uso\n"
-"        siga por encima del umbral.</p>\n"
-"</div>\n"
-"        "
 
 #. module: incubacloud
 #: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
@@ -15040,16 +15682,6 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
-msgid ""
-"Set up an S3-compatible destination to enable automated backups for your "
-"instances."
-msgstr ""
-"Configure un destino compatible con S3 para habilitar copias automáticas en "
-"sus instancias."
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
 msgid "Set up by hand →"
 msgstr "Configurar a mano →"
@@ -17803,6 +18435,16 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid ""
+"Under the user's home; start with / for an absolute path. Each instance "
+"writes to its own folder inside it."
+msgstr ""
+"Dentro del directorio personal del usuario; empiece por / para una ruta "
+"absoluta. Cada instancia escribe en su propia carpeta dentro de ella."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Unexpected error during connection test."
 msgstr "Error inesperado durante la prueba de conexión."
@@ -18099,6 +18741,12 @@ msgstr "Usuario"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__user_agent
 msgid "User Agent"
 msgstr "Agente de usuario"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "User is required"
+msgstr "El usuario es obligatorio"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -19773,6 +20421,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "key:"
+msgstr "y huella:"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 #: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
@@ -20360,6 +21014,18 @@ msgstr "traefik.yml"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "traefik.yml is required"
 msgstr "traefik.yml es obligatorio"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "u123456-sub1"
+msgstr "u123456-sub1"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "u123456.your-storagebox.de"
+msgstr "u123456.your-storagebox.de"
 
 #. module: incubacloud
 #. odoo-javascript
