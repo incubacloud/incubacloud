@@ -120,6 +120,10 @@ def parse(dst):
     parsed = urlparse(dst or "")
     if parsed.scheme != SCHEME:
         raise DstError(f"not an {SCHEME}:// destination")
+    if "?" in dst or "#" in dst:
+        # urlparse drops them from the path: what follows would be read
+        # by one reader and not by another.
+        raise DstError("a query or a fragment does not belong in the destination")
     if parsed.password is not None:
         raise DstError("a password does not belong in the destination")
     user = parsed.username or ""
@@ -129,9 +133,12 @@ def parse(dst):
     if not USER_RE.match(user):
         raise DstError(f"user name not allowed: {user!r}")
     try:
-        port = parsed.port or 22
+        port = parsed.port
     except ValueError as exc:
         raise DstError("the port is not a number from 1 to 65535") from exc
+    if port == 0:
+        raise DstError("the port is not a number from 1 to 65535")
+    port = port or 22
     raw = parsed.path
     if raw.startswith("/"):
         raw = raw[1:]
