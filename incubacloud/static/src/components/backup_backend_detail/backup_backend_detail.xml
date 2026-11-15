@@ -340,7 +340,7 @@
                     t-on-blur="() => validator.touch('sftp_host')"
                   />
                                             <t t-if="validator.fieldError('sftp_host')">
-                                                <span class="ic-field-error" id="bbd-err-sftp_host" t-esc="validator.fieldError('sftp_host')"/>
+                                                <span class="ic-field-error" t-att-id="'bbd-err-sftp_host'" t-esc="validator.fieldError('sftp_host')"/>
                                             </t>
                                         </div>
                                         <div
@@ -359,7 +359,7 @@
                     t-on-blur="() => validator.touch('sftp_port')"
                   />
                                             <t t-if="validator.fieldError('sftp_port')">
-                                                <span class="ic-field-error" id="bbd-err-sftp_port" t-esc="validator.fieldError('sftp_port')"/>
+                                                <span class="ic-field-error" t-att-id="'bbd-err-sftp_port'" t-esc="validator.fieldError('sftp_port')"/>
                                             </t>
                                         </div>
                                         <div
@@ -377,7 +377,7 @@
                     t-on-blur="() => validator.touch('sftp_user')"
                   />
                                             <t t-if="validator.fieldError('sftp_user')">
-                                                <span class="ic-field-error" id="bbd-err-sftp_user" t-esc="validator.fieldError('sftp_user')"/>
+                                                <span class="ic-field-error" t-att-id="'bbd-err-sftp_user'" t-esc="validator.fieldError('sftp_user')"/>
                                             </t>
                                         </div>
                                         <div class="rl-frow ic-w-m">
