@@ -1103,6 +1103,11 @@ msgid "A sample at each step of the window"
 msgstr "Una muestra en cada paso del intervalo"
 
 #. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_security_event_identity_uniq
+msgid "A security event is remembered once."
+msgstr "Un evento de seguridad se guarda una sola vez."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
 msgid ""
