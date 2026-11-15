@@ -245,6 +245,35 @@ then. The rest is the panel's assets and the Spanish catalogue.
 
 ### Fixed
 
+- **A server no longer restarts by itself for its updates: the panel
+  restarts it.** A hardened host with Auto Security Updates restarted at
+  04:00 UTC whenever an update asked for it (unattended-upgrades'
+  `Automatic-Reboot`), and cut whatever the panel ran there: a rebuild, a
+  backup, a step run apart. Hardening now writes `Automatic-Reboot
+  "false"`, through the playbook's line as it was (the recipe's
+  fingerprint does not change), and a new hidden check
+  (`host_reboot_check`, every 30 minutes, `scripts/host_reboot.sh`) reads
+  whether the server waits for a restart, records it on the host
+  (`reboot_required_since`, `reboot_required_pkgs`) and turns the server's
+  own restart off on the hosts hardened before, with no new hardening run.
+  Inside the host's restart window (`reboot_window_start` 04:00,
+  `reboot_window_hours` 3, `reboot_tz` UTC, per host) and once nothing of
+  the panel runs on the server or on its instances, it queues Restart
+  Server (`host_reboot`). The restart holds the server: no job of it or of
+  its instances is dispatched or starts until it ends
+  (`cloud.host.reboot`, under an advisory lock the dispatcher shares), and
+  its end serves every queue it held. It asks the server for its veto (a
+  step run apart, a copy or a load, an image build, or an executable of
+  `/etc/incubacloud/reboot-guard.d`), gives `shutdown -r +1` as its point
+  of no return, and waits for a new `boot_id`. A veto or a busy server
+  ends the job done with the reason, and the next pass tries again. On
+  the panel's own server the hold is of every queue. A server that does
+  not come back within 15 minutes, or comes back with the same boot,
+  fails the job with `host_reboot_failed` (critical). The health probes
+  of the host's instances skip their pass while it runs. New table
+  `cloud_host_reboot` and seven columns on hosts; no data migration.
+  `docs/architecture.md` («Host maintenance window») and RB-43.
+
 - **A backup destination's, a project's and a host's pages after the form
   standard's review (#123).** On a backup destination, saving confirms the
   retention owner at once: «Unconfirmed…» goes and Advanced, no longer

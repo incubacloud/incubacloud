@@ -57,6 +57,7 @@ from . import cloud_instance_whitelist
 from . import cloud_instance_move
 from . import cloud_instance_frozen_copy
 from . import cloud_job
+from . import cloud_host_reboot
 from . import cloud_job_log_chunk
 from . import cloud_job_outcome
 from . import cloud_job_no_return
@@ -76,6 +77,7 @@ from . import abstract_executor
 from . import ansible_executor
 from . import host_probe_executor
 from . import host_metrics_executor
+from . import host_reboot_executor
 from . import deploy_instance_executor
 from . import setup_whitelist_executor
 from . import full_setup_executor

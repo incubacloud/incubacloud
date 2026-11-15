@@ -301,6 +301,23 @@
             <field name="description">Applies the in-host security recipe (non-root operator user, hardened sshd on a rotated port, nftables allowlist, fail2ban, sysctl, unattended-upgrades, docker daemon, journald, auditd) and disables root SSH only after proving the new login works.</field>
         </record>
 
+        <record id="host_reboot_check" model="cloud.job.type">
+            <field name="name">Check for a Pending Restart</field>
+            <field name="code">host_reboot_check</field>
+            <field name="apply_to">host</field>
+            <field name="description">Reads whether the server waits for a restart to install its updates, and queues the restart inside the server's window when nothing of the panel runs there.</field>
+            <field name="priority_tier">low</field>
+        </record>
+
+        <record id="host_reboot" model="cloud.job.type">
+            <field name="name">Restart Server</field>
+            <field name="code">host_reboot</field>
+            <field name="apply_to">host</field>
+            <field name="description">Restarts the server to install its updates, once nothing of the panel runs there, and waits until it is back. The jobs of the server and of its instances wait for it.</field>
+            <field name="priority_tier">low</field>
+            <field name="queue_exclusive">True</field>
+        </record>
+
         <record id="delete_host" model="cloud.job.type">
             <field name="name">Delete Host</field>
             <field name="code">delete_host</field>

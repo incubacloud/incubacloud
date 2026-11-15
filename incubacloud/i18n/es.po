@@ -5394,14 +5394,17 @@ msgstr "Activar la observabilidad"
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__auto_security_updates
 msgid ""
-"Enable unattended-upgrades for OS security patches with an automatic reboot "
-"at 04:00 when a kernel update lands. Disable for hosts whose downtime "
-"windows must be controlled manually."
+"Install the operating system's security patches by themselves. When an "
+"update needs a restart, the panel restarts the server inside its restart "
+"window, once nothing of the panel runs there, and checks that it comes back."
+" Disable for a server you restart yourself: the pending restart is still "
+"shown."
 msgstr ""
-"Habilita unattended-upgrades para los parches de seguridad del sistema "
-"operativo, con reinicio automático a las 04:00 cuando llega una "
-"actualización del kernel. Desactívelo en hosts cuyas ventanas de parada "
-"deban controlarse manualmente."
+"Instala por sí solos los parches de seguridad del sistema operativo. Cuando "
+"una actualización necesita un reinicio, el panel reinicia el servidor dentro"
+" de su ventana de reinicio, cuando no hay nada del panel en marcha en él, y "
+"comprueba que vuelve. Desactívelo en un servidor que reinicie usted mismo: "
+"el reinicio pendiente se sigue registrando."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__secret_key
@@ -8063,17 +8066,21 @@ msgid ""
 "Hardening installs an in-host security recipe: a\n"
 "                            non-root operator user, SSH on a rotated port with root\n"
 "                            login disabled at the end, nftables, fail2ban, sysctl,\n"
-"                            unattended-upgrades, a hardened Docker daemon, journald\n"
-"                            limits and auditd. It needs Ubuntu 22.04+ or Debian 12+\n"
+"                            unattended-upgrades (security patches; when one needs a\n"
+"                            restart, the panel restarts the server inside its restart\n"
+"                            window, once nothing of the panel runs there), a hardened\n"
+"                            Docker daemon, journald limits and auditd. It needs Ubuntu 22.04+ or Debian 12+\n"
 "                            with root or passwordless sudo. Re-runs are idempotent\n"
 "                            and skip steps that already match."
 msgstr ""
 "El hardening instala en el host una receta de seguridad: un usuario operador"
 " sin privilegios de root, SSH en un puerto rotado con el acceso de root "
-"desactivado al final, nftables, fail2ban, sysctl, unattended-upgrades, un "
-"daemon de Docker endurecido, límites de journald y auditd. Requiere Ubuntu "
-"22.04+ o Debian 12+ con root o sudo sin contraseña. Repetirlo es idempotente"
-" y omite los pasos que ya están al día."
+"desactivado al final, nftables, fail2ban, sysctl, unattended-upgrades "
+"(parches de seguridad; cuando uno necesita un reinicio, el panel reinicia el"
+" servidor dentro de su ventana de reinicio, cuando no hay nada del panel en "
+"marcha en él), un daemon de Docker endurecido, límites de journald y auditd."
+" Requiere Ubuntu 22.04+ o Debian 12+ con root o sudo sin contraseña. "
+"Repetirlo es idempotente y omite los pasos que ya están al día."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8227,6 +8234,7 @@ msgstr "Clave del webhook"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__host_id
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_metric_rule__scope__host
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_reboot__host_id
 msgid "Host"
 msgstr "Host"
 
@@ -9511,6 +9519,7 @@ msgstr "Su copia en"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_log_chunk__job_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_no_return__job_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_outcome__job_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_reboot__job_id
 msgid "Job"
 msgstr "Tarea"
 
@@ -24937,3 +24946,281 @@ msgstr ""
 "del proxy» activada, el firewall del host impide que una instancia llegue "
 "directamente a otra, saltándose el proxy y la CDN. La configuración completa"
 " la aplica o la quita."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__reboot_window_start
+msgid "Restart Window From"
+msgstr "Ventana de reinicio desde"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__reboot_window_start
+msgid ""
+"Hour of the day, in the window's time zone, from which the panel may restart"
+" this server for its updates."
+msgstr ""
+"Hora del día, en la zona horaria de la ventana, a partir de la cual el panel"
+" puede reiniciar este servidor para instalar sus actualizaciones."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__reboot_window_hours
+msgid "Restart Window Hours"
+msgstr "Horas de la ventana de reinicio"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__reboot_window_hours
+msgid ""
+"How long the window stays open. Inside it the panel tries every 30 minutes, "
+"and only while nothing of its runs here."
+msgstr ""
+"Cuánto tiempo permanece abierta la ventana. Dentro de ella, el panel lo "
+"intenta cada 30 minutos, y solo mientras no haya nada suyo en marcha aquí."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__reboot_tz
+msgid "Restart Window Time Zone"
+msgstr "Zona horaria de la ventana de reinicio"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__reboot_required_since
+msgid "Restart Pending Since"
+msgstr "Reinicio pendiente desde"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__reboot_required_since
+msgid "Since when the server says an update waits for a restart."
+msgstr ""
+"Desde cuándo indica el servidor que una actualización espera un reinicio."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__reboot_required_pkgs
+msgid "Restart Asked For By"
+msgstr "Reinicio pedido por"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__reboot_required_pkgs
+msgid "The packages whose update waits for the restart."
+msgstr "Los paquetes cuya actualización espera el reinicio."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__reboot_checked_at
+msgid "Reboot Checked At"
+msgstr "Reinicio comprobado el"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__reboot_boot_id
+msgid "Reboot Boot"
+msgstr "Arranque leído"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__reboot_boot_id
+msgid "The server's boot as the last check read it."
+msgstr "El arranque del servidor tal como lo leyó la última comprobación."
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_host_reboot
+msgid "Server Restart"
+msgstr "Reinicio de servidor"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_reboot__holds_panel
+msgid "Holds Panel"
+msgstr "Retiene el panel"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_reboot__holds_panel
+msgid "The host is the panel's own server: the hold is of every queue."
+msgstr ""
+"El host es el propio servidor del panel: la retención es de todas las colas."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_reboot__boot_id
+msgid "Boot"
+msgstr "Arranque"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_reboot__boot_id
+msgid "The server's boot before the restart."
+msgstr "El arranque del servidor antes del reinicio."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_reboot__containers
+msgid "Containers"
+msgstr "Contenedores"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_reboot__containers
+msgid "JSON: the containers running before the restart."
+msgstr "JSON: los contenedores en marcha antes del reinicio."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_reboot__shutdown_at
+msgid "Shutdown At"
+msgstr "Reinicio pedido el"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_reboot__shutdown_at
+msgid "When the restart was asked for; the job waits from then."
+msgstr "Cuándo se pidió el reinicio; el trabajo espera desde entonces."
+
+#. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_host_reboot_job_uniq
+msgid "A restart job has one row."
+msgstr "Un trabajo de reinicio tiene una sola fila."
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.host_reboot_check
+msgid "Check for a Pending Restart"
+msgstr "Comprobar si hay un reinicio pendiente"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.host_reboot_check
+msgid ""
+"Reads whether the server waits for a restart to install its updates, and "
+"queues the restart inside the server's window when nothing of the panel runs"
+" there."
+msgstr ""
+"Lee si el servidor espera un reinicio para instalar sus actualizaciones y "
+"pone el reinicio en cola dentro de la ventana del servidor cuando no hay "
+"nada del panel en marcha en él."
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.host_reboot
+msgid "Restart Server"
+msgstr "Reiniciar servidor"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.host_reboot
+msgid ""
+"Restarts the server to install its updates, once nothing of the panel runs "
+"there, and waits until it is back. The jobs of the server and of its "
+"instances wait for it."
+msgstr ""
+"Reinicia el servidor para instalar sus actualizaciones, cuando no hay nada "
+"del panel en marcha en él, y espera a que vuelva. Los trabajos del servidor "
+"y de sus instancias esperan al reinicio."
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_host_reboot_check_ir_actions_server
+msgid "Check Servers for a Pending Restart"
+msgstr "Comprobar si los servidores tienen un reinicio pendiente"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_reboot.py:0
+msgid "The restart window starts at an hour from 0 to 24."
+msgstr "La ventana de reinicio empieza a una hora de 0 a 24."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_reboot.py:0
+msgid "The restart window lasts from 1 to 24 hours."
+msgstr "La ventana de reinicio dura de 1 a 24 horas."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_reboot.py:0
+msgid "A job of the server %(host)s runs."
+msgstr "Hay un trabajo del servidor %(host)s en marcha."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_reboot.py:0
+msgid "A job of the instance %(instance)s runs."
+msgstr "Hay un trabajo de la instancia %(instance)s en marcha."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_reboot.py:0
+msgid "Job #%(job)s keeps a build on the server."
+msgstr "El trabajo #%(job)s mantiene una construcción en el servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_reboot.py:0
+msgid "Job #%(job)s runs on the server."
+msgstr "El trabajo #%(job)s está en marcha en el servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_reboot.py:0
+msgid "A backup upload to the server is open."
+msgstr "Hay una subida de copia de seguridad abierta hacia el servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_reboot.py:0
+msgid ""
+"The panel found no free moment in its restart window (from %(start)s for "
+"%(hours)s h, %(tz)s): a job ran each time, or the server said no."
+msgstr ""
+"El panel no encontró ningún momento libre en su ventana de reinicio (desde "
+"las %(start)s durante %(hours)s h, %(tz)s): cada vez había un trabajo en "
+"marcha o el servidor se negó."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_reboot.py:0
+msgid ""
+"The panel does not restart this server by itself: Auto Security Updates is "
+"off, or it is not hardened."
+msgstr ""
+"El panel no reinicia este servidor por sí solo: las actualizaciones de "
+"seguridad automáticas están desactivadas o no tiene hardening."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_reboot.py:0
+msgid ""
+"The server %(host)s has waited %(days)s days for a restart that installs its"
+" updates (%(pkgs)s). %(why)s Restart it when nothing runs there."
+msgstr ""
+"El servidor %(host)s lleva %(days)s días esperando un reinicio que instale "
+"sus actualizaciones (%(pkgs)s). %(why)s Reinícielo cuando no haya nada en "
+"marcha en él."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_reboot.py:0
+msgid "updates"
+msgstr "actualizaciones"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_reboot.py:0
+msgid "Waiting for the restart of the server (job #%(job)s)."
+msgstr "Esperando al reinicio del servidor (trabajo #%(job)s)."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/abstract_executor.py:0
+msgid ""
+"Waiting for the restart of the server (job #%(job)s): tried again every 30 "
+"s."
+msgstr ""
+"Esperando al reinicio del servidor (trabajo #%(job)s): se vuelve a intentar "
+"cada 30 s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/host_reboot_executor.py:0
+msgid "A job of the panel is starting or runs there."
+msgstr "Hay un trabajo del panel arrancando o en marcha en él."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/host_reboot_executor.py:0
+msgid "Waiting for the server to come back: tried every %(s)s s."
+msgstr "Esperando a que vuelva el servidor: se intenta cada %(s)s s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/host_reboot_executor.py:0
+msgid ""
+"The server %(host)s did not come back from its restart for its updates. "
+"%(why)s Look at the server through its provider's console; once it answers, "
+"the panel's jobs run there again."
+msgstr ""
+"El servidor %(host)s no volvió de su reinicio para instalar sus "
+"actualizaciones. %(why)s Revise el servidor desde la consola de su "
+"proveedor; cuando responda, los trabajos del panel volverán a ejecutarse en "
+"él."

@@ -280,13 +280,22 @@ class HostHardeningExecutor(AnsibleExecutor):
             f"Operator user: {self._hardened_user} "
             f"({'create' if self._needs_user_creation else 'reuse'}). "
             f"SSH port: {host.port} → {self._new_port}. "
-            f"Auto reboot: {host.auto_security_updates}."
+            f"Security updates: installed; the server never restarts by"
+            f" itself, the panel restarts it"
+            f"{' inside its window' if host.auto_security_updates else ' only when asked'}."
         )
         return {
             "ic_hardened_user": self._hardened_user,
             "ic_ssh_port": self._new_port,
             "ic_ssh_allowlist": self._ssh_allowlist,
-            "ic_auto_reboot": bool(host.auto_security_updates),
+            # The server never restarts by itself (15-nov-2026): its own
+            # restart at 04:00 cut whatever the panel ran there. The panel
+            # restarts it, inside its window and only once nothing of its
+            # runs there (``cloud.host.reboot``). The playbook's line stays
+            # as it was, so the recipe's fingerprint does not change and the
+            # fleet is not asked to harden again; the hosts hardened before
+            # get the policy fixed by their first ``host_reboot_check``.
+            "ic_auto_reboot": False,
             # The per-source cap counts new connections by the address
             # that opened them. Behind a CDN every visitor arrives from
             # the same handful of edge addresses, so the cap would throttle
