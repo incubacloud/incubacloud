@@ -120,6 +120,11 @@ export class RemoteFileBrowser extends Component {
             for (const skipped of result.skipped_repos || []) {
                 this.state.messages.push({ text: skipped, status: "warning" });
             }
+            // Values of the host's files the panel left out, such as a
+            // backup path it does not accept.
+            for (const warning of result.warnings || []) {
+                this.state.messages.push({ text: warning, status: "warning" });
+            }
 
             this.state.result = result;
             this.state.step = "done";

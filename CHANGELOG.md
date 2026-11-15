@@ -407,7 +407,8 @@ The update adds five columns on instances, `pitr_archived_prefix`,
 Its data migrations: 1.0.229's post-migrate deletes the Telegram bot
 tokens saved without a chat ID and the webhook secrets left without a
 URL and names in the log the backup paths outside their new grammar,
-keeping them, and `incubacloud_pitr` 1.0.16's end-migrate records where each
+and the backup destinations' values and instances' backup paths that
+their new checks refuse, keeping them, and `incubacloud_pitr` 1.0.16's end-migrate records where each
 instance archives and dates the purge of the archives switched off
 before it from the update, so each gets the whole backup window from
 then. The rest is the panel's assets and the Spanish catalogue.
@@ -810,13 +811,41 @@ then. The rest is the panel's assets and the Spanish catalogue.
   destinations.** `custom_backup_dst` (written by an Administrator, by
   an import and by archiving) is accepted only as `boto3+s3://` or
   `s3://`, with letters, digits, dots, hyphens and underscores in the
-  bucket and in each part of the path, and a destination's bucket and
-  path only where the path they compute is too. Where a backup path
-  reaches a server it is quoted in the command, and an environment or
-  compose file refuses one that would break its line, before the host is
-  reached. Paths saved before stay as they are: 1.0.229's post-migrate
-  names in the log those outside the grammar, for an Administrator to
-  correct. Spanish translation included.
+  bucket and in each part of the path, no `.` or `..` part and a port of
+  at most 65535, and a destination's bucket and path only where the path
+  they compute is too. Where a backup path reaches a server it is quoted
+  in the command, and an environment or compose file refuses one that
+  would break its line, before the host is reached. Paths saved before
+  stay as they are: 1.0.229's post-migrate names in the log those outside
+  the grammar, for an Administrator to correct. Spanish translation
+  included.
+- **The rest of a backup destination reaches the servers as data too.**
+  Its endpoint must be an `http://` or `https://` URL of a host, its
+  keys and passphrase one line each, its image version a docker tag, its
+  time zone one `pytz` knows and each notification address one address,
+  checked when they are written, an import's included. Every line of
+  the environment files the panel writes is checked as the backup path
+  is, the time zone and the addresses are escaped where the template
+  quotes them, and a deploy or a purge stops before the host is reached
+  on a value saved before that would not fit. 1.0.229's post-migrate
+  names in the log the destinations that hold one, without the value of
+  a secret, and keeps them. Spanish translation included.
+- **A purge empties only its own instance's copies.** The deletion of an
+  archived instance and the purge of a switched-off recovery archive
+  refuse a prefix that is a backup destination's path or above it, or
+  that is or holds another instance's path (archived instances
+  included; a successor of the same name is left to the purge's
+  cutoff): the job fails before anything is deleted, raises its purge
+  alert and keeps the record. A backup path an Administrator or an
+  import writes is held to the same check, naming the instance it would
+  overlap; 1.0.229's post-migrate names those saved before. A layer that
+  shares one bucket between panels must give each panel credentials
+  limited to its own prefix (`docs/architecture.md`, security model).
+- **An import with a backup value the panel refuses goes on without it.**
+  A backup path or destination from the host's files that the checks
+  above refuse is left out and the import says why, instead of «An
+  internal error occurred»; any other value refused is named the same
+  way.
 
 ### Tests
 
