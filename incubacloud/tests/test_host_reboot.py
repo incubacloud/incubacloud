@@ -113,6 +113,13 @@ class _RebootCase(_QueueCase):
             "shutdown_at": shutdown_at,
         })
 
+    def _said(self, job, text):
+        """Whether *job*'s log has a line with *text*."""
+        self.env.flush_all()
+        return bool(self.env["cloud.job.log.chunk"].search_count([
+            ("job_id", "=", job.id), ("content", "ilike", text),
+        ]))
+
     def _executor(self, cls, job):
         """*cls* bound to *job*."""
         return cls(job_record=job, host_record=job.host_id)
@@ -256,7 +263,7 @@ class TestRebootCheck(_RebootCase):
         self._job("rebuild_instance")
         job = self._check()
         self.assertFalse(self._queued_reboots())
-        self.assertIn("Not restarted in this pass", self._note(job))
+        self.assertTrue(self._said(job, "Not restarted in this pass"))
 
     def test_a_host_the_panel_does_not_restart_is_never_queued(self):
         self.host.auto_security_updates = False
@@ -346,7 +353,7 @@ class TestRebootHold(_RebootCase):
         self._hold(reboot)
         restart = self._enqueue("restart_instance")
         self.assertEqual(restart.state, "queued")
-        self.assertIn("restart of the server", self._note(restart))
+        self.assertTrue(self._said(restart, "restart of the server"))
         _run_after_commit(self.env)
         self.assertEqual(restart.state, "queued")
         self._end(reboot)
@@ -435,6 +442,9 @@ class _RebootJobCase(_RebootCase):
                 asyncio.run(executor._wait_for_return(values))
             except Exception as exc:  # noqa: BLE001 — the test reads it
                 return executor, exc
+            finally:
+                # The hooks wrote on a cursor of their own.
+                self.env.invalidate_all()
         return executor, None
 
     def _failed_alert(self):
@@ -542,6 +552,7 @@ class TestRebootJob(_RebootJobCase):
     def test_a_stop_before_the_order_ends_the_job_with_no_restart(self):
         job = self._reboot_job()
         job.with_context(ic_skip_state_hook=True).write({"state": "cancelled"})
+        self.env.flush_all()
         transport = _transport()
         _executor, raised = self._run_before(job, transport)
         self.assertEqual(type(raised).__name__, "JobCancelled")
