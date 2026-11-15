@@ -103,8 +103,4 @@ and pick which one wins.
 
 - [Instances](../instances/index.md) — what lives inside a project.
 - [Backups](../backups/index.md) — per-project or per-instance configuration.
-
-!!! note "Reference page is in progress"
-    A full per-screen reference for the Project detail UI is coming soon.
-    Meanwhile, the [marketing site quickstart](https://www.incubacloud.io/docs/first-project)
-    covers the most common flow.
+- [Create your first project](https://www.incubacloud.io/docs/first-project) — the most common flow, step by step.
