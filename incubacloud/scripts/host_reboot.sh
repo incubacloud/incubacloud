@@ -4,7 +4,9 @@
 # Usage:
 #   host_reboot.sh check
 #   host_reboot.sh guard
+#   host_reboot.sh prepare
 #   host_reboot.sh reboot
+#   host_reboot.sh verify [container...]
 #
 # The server no longer restarts by itself: unattended-upgrades installs
 # its patches with ``Automatic-Reboot "false"``, and the panel restarts
@@ -28,10 +30,23 @@
 #           (duplicity, pg_dump, pg_restore, pg_basebackup, an image
 #           build), or an executable of /etc/incubacloud/reboot-guard.d
 #           that exits non-zero (its owner's own veto). Exit 0 otherwise.
+#   prepare Prints ``IC_CONTAINER=<name>`` for each container running now,
+#           which the panel expects back after the boot, and runs a
+#           ``CHECKPOINT`` in each PostgreSQL of a stack (the compose
+#           service ``db``), so that its stop at the shutdown writes little:
+#           best effort, a database that does not answer is left as it is.
 #   reboot  ``shutdown -r +1``, then checks that systemd has the restart
 #           scheduled (/run/systemd/shutdown/scheduled). Prints
 #           ``IC_SCHEDULED=1``. From here no new SSH session opens until
 #           the server is back: logind writes /run/nologin at once.
+#   verify  After the boot: prints IC_BOOT_ID, IC_REBOOT_REQUIRED and
+#           ``IC_DOCKER=<active|inactive>``; waits up to IC_VERIFY_WAIT_S
+#           (300) for each container named to run again, and prints
+#           ``IC_MISSING=<name>`` for each one that does not; prints
+#           ``IC_UNCLEAN=<name>`` for each PostgreSQL whose last start says
+#           it was not shut down clean (its log's last ``database system
+#           was`` line: ``was shut down at`` is clean; the lines of the
+#           stop itself never reach the log, Docker is gone by then).
 #
 # Every path is the system's own; the tests point them elsewhere through
 # IC_RUN_DIR, IC_BOOT_ID_FILE, IC_UNATTENDED_FILE, IC_GUARD_DIR and
@@ -40,13 +55,17 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
 
-ic_require_args 1 "$#" "host_reboot.sh <check|guard|reboot>"
+ic_require_args 1 "$#" "host_reboot.sh <check|guard|prepare|reboot|verify>"
 
 RUN_DIR="${IC_RUN_DIR:-/run}"
 BOOT_ID_FILE="${IC_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
 UNATTENDED_FILE="${IC_UNATTENDED_FILE:-/etc/apt/apt.conf.d/52incubacloud-unattended}"
 GUARD_DIR="${IC_GUARD_DIR:-/etc/incubacloud/reboot-guard.d}"
 DETACHED_GLOB="${IC_DETACHED_GLOB:-/tmp/.incubacloud-detached-*}"
+VERIFY_WAIT_S="${IC_VERIFY_WAIT_S:-300}"
+VERIFY_POLL_S="${IC_VERIFY_POLL_S:-10}"
+#: Seconds a CHECKPOINT may take before the restart goes on without it.
+CHECKPOINT_TIMEOUT_S=120
 #: Seconds an executable of the guard directory may take.
 GUARD_TIMEOUT_S=60
 EXIT_VETO=75
@@ -146,6 +165,68 @@ do_guard() {
     echo "IC_VETO="
 }
 
+# The PostgreSQL containers of the stacks running now.
+db_containers() {
+    docker ps --filter label=com.docker.compose.service=db --format '{{.Names}}'
+}
+
+do_prepare() {
+    local name
+    docker ps --format '{{.Names}}' | sort | while read -r name; do
+        if [ -n "$name" ]; then printf 'IC_CONTAINER=%s\n' "$name"; fi
+    done
+    db_containers | while read -r name; do
+        [ -n "$name" ] || continue
+        # shellcheck disable=SC2016  # expanded inside the container
+        timeout "$CHECKPOINT_TIMEOUT_S" docker exec "$name" sh -c \
+            'psql -U "${POSTGRES_USER:-postgres}" -d postgres -tAc CHECKPOINT' \
+            >/dev/null 2>&1 || ic_log "CHECKPOINT did not answer in ${name}"
+    done
+}
+
+# Whether container $1 runs.
+container_running() {
+    [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = true ]
+}
+
+do_verify() {
+    local name waited=0 missing line
+    local -a pending=("$@")
+    printf 'IC_BOOT_ID=%s\n' "$(boot_id)"
+    if [ -e "${RUN_DIR}/reboot-required" ]; then
+        echo "IC_REBOOT_REQUIRED=1"
+    else
+        echo "IC_REBOOT_REQUIRED=0"
+    fi
+    if systemctl is-active --quiet docker; then
+        echo "IC_DOCKER=active"
+    else
+        echo "IC_DOCKER=inactive"
+    fi
+    while :; do
+        missing=()
+        for name in "${pending[@]}"; do
+            container_running "$name" || missing+=("$name")
+        done
+        pending=("${missing[@]}")
+        if [ "${#pending[@]}" -eq 0 ] || [ "$waited" -ge "$VERIFY_WAIT_S" ]; then
+            break
+        fi
+        sleep "$VERIFY_POLL_S"
+        waited=$((waited + VERIFY_POLL_S))
+    done
+    for name in "${pending[@]}"; do
+        printf 'IC_MISSING=%s\n' "$name"
+    done
+    db_containers | while read -r name; do
+        [ -n "$name" ] || continue
+        line="$(docker logs --tail 500 "$name" 2>&1 | grep 'database system was' | tail -n 1)" || true
+        if [ -n "$line" ] && [[ "$line" != *"was shut down at"* ]]; then
+            printf 'IC_UNCLEAN=%s\n' "$name"
+        fi
+    done
+}
+
 do_reboot() {
     as_root shutdown -r +1
     if [ ! -e "${RUN_DIR}/systemd/shutdown/scheduled" ]; then
@@ -157,6 +238,8 @@ do_reboot() {
 case "$1" in
     check) do_check ;;
     guard) do_guard ;;
+    prepare) do_prepare ;;
     reboot) do_reboot ;;
+    verify) shift; do_verify "$@" ;;
     *) ic_die "unknown order: $1" ;;
 esac
