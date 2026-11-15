@@ -252,7 +252,7 @@ class AssistantChat(http.Controller):
 
     @http.route("/cloud/assistant/stop", type="jsonrpc", auth="user")
     def assistant_stop(self, conversation_id):
-        """Stop the conversation's task (at the next step's check if one runs)."""
+        """Stop the conversation's task: at once, or once the action in course ends."""
         conversation = self._conversation(conversation_id)
         conversation._stop()
         return {"ok": True, "conversation": conversation._format()}
