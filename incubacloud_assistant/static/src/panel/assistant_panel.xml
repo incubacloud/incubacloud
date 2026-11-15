@@ -96,8 +96,8 @@
                     </t>
                 </ol>
 
-                <p t-if="state.progress or stateInfo.label" class="ic-asst-state">
-                    <t t-esc="state.progress or stateInfo.label"/>
+                <p t-if="statusText" class="ic-asst-state" role="status">
+                    <t t-esc="statusText"/>
                 </p>
 
                 <div t-if="readOnly" class="ic-asst-muted ic-asst-off-chat">

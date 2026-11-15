@@ -16,6 +16,8 @@ import {
     screenContext,
     settingsChanges,
     stateView,
+    statusLine,
+    stopStage,
     usageLabel,
 } from "@incubacloud_assistant/assistant_format";
 
@@ -84,11 +86,44 @@ describe("assistant_format", () => {
     describe("the conversation's state", () => {
         test("stop while it works or waits, retry after an error or a stop", () => {
             expect(stateView("working")).toEqual({
-                label: "Working…", canStop: true, canRetry: false, busy: true,
+                label: "Working…", canStop: true, canRetry: false, busy: true, stopping: false,
             });
             expect(stateView("waiting_confirmation").canStop).toBe(true);
             expect(stateView("error").canRetry).toBe(true);
-            expect(stateView("idle")).toEqual({ label: "", canStop: false, canRetry: false, busy: false });
+            expect(stateView("idle")).toEqual({
+                label: "", canStop: false, canRetry: false, busy: false, stopping: false,
+            });
+        });
+        test("Stop pressed: stopping at once, and while an action finishes", () => {
+            expect(stateView("working", "asked")).toEqual({
+                label: "Stopping…", canStop: false, canRetry: false, busy: true, stopping: true,
+            });
+            expect(stateView("working", "action")).toEqual({
+                label: "Stopping… finishing the current action",
+                canStop: false,
+                canRetry: false,
+                busy: true,
+                stopping: true,
+            });
+            // Once stopped, the stop is over: Retry, and no stopping line.
+            expect(stateView("stopped", "asked")).toEqual({
+                label: "Stopped", canStop: false, canRetry: true, busy: false, stopping: false,
+            });
+        });
+        test("the stage: the server's action first, then the click, only while it can stop", () => {
+            expect(stopStage({ state: "working", stopping: true }, false)).toBe("action");
+            expect(stopStage({ state: "working", stopping: false }, true)).toBe("asked");
+            expect(stopStage({ state: "waiting_job" }, true)).toBe("asked");
+            expect(stopStage({ state: "stopped" }, true)).toBe("");
+            expect(stopStage({ state: "working" }, false)).toBe("");
+            expect(stopStage(null, true)).toBe("");
+        });
+        test("the state line: stopping is said over the tool that runs", () => {
+            expect(statusLine(stateView("working"), "Deploying…")).toBe("Deploying…");
+            expect(statusLine(stateView("working", "action"), "Deploying…")).toBe(
+                "Stopping… finishing the current action"
+            );
+            expect(statusLine(stateView("idle"), "")).toBe("");
         });
     });
 
@@ -163,6 +198,12 @@ describe("assistant_format", () => {
             const busy = { ...view, progress: "Thinking…" };
             expect(mergeEvent(busy, { conversation_id: 4, kind: "state", state: "idle" }).progress).toBe("");
             expect(mergeEvent(busy, { conversation_id: 5, kind: "state", state: "idle" })).toBe(busy);
+        });
+        test("a state carries whether the task stops once its action ends", () => {
+            const stopping = mergeEvent(view, { conversation_id: 4, kind: "state", state: "working", stopping: true });
+            expect([stopping.state, stopping.stopping]).toEqual(["working", true]);
+            const stopped = mergeEvent(stopping, { conversation_id: 4, kind: "state", state: "stopped" });
+            expect([stopped.state, stopped.stopping]).toEqual(["stopped", false]);
         });
     });
 

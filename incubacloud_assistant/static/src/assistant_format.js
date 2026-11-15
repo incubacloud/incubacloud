@@ -81,8 +81,33 @@ export function modelOptions(models) {
     });
 }
 
-/** What the panel shows of a conversation's state, and which buttons. */
-export function stateView(state) {
+/**
+ * Where a stop of the conversation is: "action" when the server waits for
+ * the action in course to end, "asked" from the click until the server
+ * answers, "" otherwise. Only while the state is one Stop applies to: once
+ * stopped, the stop is over.
+ *
+ * @param {Object|null} conversation the open conversation (``state``, ``stopping``)
+ * @param {boolean} asked Stop was pressed and the server has not answered yet
+ * @returns {string}
+ */
+export function stopStage(conversation, asked) {
+    if (!STOPPABLE.includes(conversation?.state)) {
+        return "";
+    }
+    if (conversation.stopping) {
+        return "action";
+    }
+    return asked ? "asked" : "";
+}
+
+/**
+ * What the panel shows of a conversation's state, and which buttons.
+ *
+ * @param {string} state the conversation's state
+ * @param {string} [stage] where its stop is (see :func:`stopStage`)
+ */
+export function stateView(state, stage = "") {
     const labels = {
         working: _t("Working…"),
         waiting_job: _t("Waiting for a job…"),
@@ -90,12 +115,29 @@ export function stateView(state) {
         stopped: _t("Stopped"),
         error: _t("Something went wrong"),
     };
+    const stopping = STOPPABLE.includes(state) && Boolean(stage);
+    let label = labels[state] || "";
+    if (stopping) {
+        label = stage === "action" ? _t("Stopping… finishing the current action") : _t("Stopping…");
+    }
     return {
-        label: String(labels[state] || ""),
-        canStop: STOPPABLE.includes(state),
+        label: String(label),
+        canStop: STOPPABLE.includes(state) && !stopping,
         canRetry: RETRIABLE.includes(state),
         busy: BUSY_STATES.includes(state),
+        stopping,
     };
+}
+
+/**
+ * The line under the chat: a stop in course is said over the tool that runs.
+ *
+ * @param {Object} info what :func:`stateView` returned
+ * @param {string} progress the tool or the thinking in course
+ * @returns {string}
+ */
+export function statusLine(info, progress) {
+    return info.stopping ? info.label : progress || info.label;
 }
 
 /** How the chat shows one message, or null when it shows nothing. */
@@ -151,6 +193,7 @@ export function mergeEvent(view, event) {
         return {
             ...view,
             state: event.state,
+            stopping: Boolean(event.stopping),
             progress: BUSY_STATES.includes(event.state) ? view.progress : "",
         };
     }

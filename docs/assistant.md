@@ -58,6 +58,21 @@ channel `root.assistant`, run as the conversation's owner.
    (`waiting_confirmation`), a job (`waiting_job`), the person (`idle`, `stopped`)
    or a failure (`error`).
 
+**Stop** (`conversation._stop`) ends the task in the request that asks for it,
+unless an action runs (`working` with `running_call_id`). Ending it clears
+`job_uuid`, so the step still waiting for the provider is no longer the
+conversation's: when the answer comes, `_record_answer` counts its cost
+(`_record_cost` counts it in the month's usage whoever's step it is now) and
+sets it aside, and between two attempts the step tries no more. With an action
+running, `stop_requested` is set and the panels show *Stopping… finishing the
+current action* (`stopping` in the state's event and in `_format`): the action
+ends, `_record_call` records its answer and stops there, without waiting for a
+job it started and withdrawing a card it asked for. Either way `_stop_now`
+withdraws the pending cards, answers the open calls *not run* and moves what the
+person wrote meanwhile into the context. The step waiting for the provider keeps
+its worker until the answer comes, at most the call's read timeout: abandoning
+it would leave what the provider bills uncounted.
+
 The states are written by the conversation (`_enqueue_step` sets `working`; `_halt`
 sets the others) and by the card and job hooks. **`job_uuid`** is the queue job of
 the step in course; every write of a step first checks (`_conversation_in`) that its

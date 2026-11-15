@@ -202,18 +202,45 @@ class TestConversation(AssistantMixin, TransactionCase):
         self.assertEqual(card.card_state, "cancelled")
         self.assertFalse(message.pending)
 
-    def test_stop_waits_for_the_step_or_stops_at_once(self):
-        """Working: flagged for the step's next check. Waiting: stopped now."""
+    def test_stop_waits_for_the_action_or_stops_at_once(self):
+        """An action runs: flagged, and the panel says it is stopping. Working
+        without one, or waiting: stopped now, and the step is no longer its."""
         mine = self._conversation()
-        mine.sudo().state = "working"
+        mine.sudo().write(
+            {"state": "working", "job_uuid": "step-1", "running_call_id": "c1"}
+        )
         mine._stop()
         self.assertTrue(mine.stop_requested)
         self.assertEqual(mine.state, "working")
+        self.assertTrue(mine._format()["stopping"])
+        thinking = self._conversation()
+        thinking.sudo().write({"state": "working", "job_uuid": "step-2"})
+        thinking._stop()
+        self.assertEqual(thinking.state, "stopped")
+        self.assertFalse(thinking.job_uuid)
+        self.assertFalse(thinking._format()["stopping"])
+        self.assertIn("Stopped", thinking.message_ids[-1].content)
         waiting = self._conversation()
         waiting.sudo().state = "waiting_job"
         waiting._stop()
         self.assertEqual(waiting.state, "stopped")
         self.assertIn("Stopped", waiting.message_ids[-1].content)
+
+    def test_what_was_written_meanwhile_stays_when_the_task_stops(self):
+        """A message queued behind the step enters the conversation at the stop:
+        no longer queued, and Retry answers it."""
+        mine = self._conversation()
+        with trap_jobs():
+            mine._post("What is a staging?", {})
+            queued = mine._post("And a backup?", {})
+        self.assertTrue(queued.pending)
+        mine._stop()
+        self.assertEqual(mine.state, "stopped")
+        self.assertFalse(queued.pending)
+        self.assertGreater(queued.sequence, 0)
+        with trap_jobs() as trap:
+            self.assertTrue(mine._retry())
+        trap.assert_jobs_count(1)
 
     def test_a_lost_step_is_healed_into_an_error_with_retry(self):
         """Working for more than an hour: error, and Retry queues a step."""

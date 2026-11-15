@@ -6,7 +6,8 @@ through the ORM: the access rights grant reading and deleting only, and
 the server writes with sudo after checking whose they are. A task is a
 chain of queue jobs of one step each (``incubacloud.assistant.engine``),
 one task at a time: what the person writes meanwhile waits for the step in
-course to end.
+course to end. Stop ends the task at once, unless an action runs: then
+the task stops as soon as that action ends.
 """
 
 import json
@@ -39,6 +40,10 @@ TITLE_CHARS = 60
 MESSAGE_CHARS = 20_000
 #: States in which a step is queued or runs, or a job of the task runs.
 BUSY = ("working", "waiting_job")
+#: States in which Stop ends something.
+STOPPABLE = (*BUSY, "waiting_confirmation")
+#: What the model is told of a call the stop leaves unrun.
+STOPPED_CALL = "Not run: the person stopped the task."
 
 
 class AssistantConversation(models.Model):
@@ -69,7 +74,10 @@ class AssistantConversation(models.Model):
         readonly=True,
         index=True,
     )
-    stop_requested = fields.Boolean(readonly=True)
+    stop_requested = fields.Boolean(
+        readonly=True,
+        help="Stop was pressed while an action ran: the task stops once it ends.",
+    )
     tainted = fields.Boolean(
         readonly=True,
         help="Since the person's last message the task read content others can "
@@ -214,8 +222,20 @@ class AssistantConversation(models.Model):
         owner._bus_send(BUS, {"conversation_id": self.id, **payload})
 
     def _notify_state(self):
-        """Tell the owner's panels the conversation's state."""
-        self._notify({"kind": "state", "state": self.state, "unread": self.unread})
+        """Tell the owner's panels the conversation's state, and whether it stops."""
+        self._notify(
+            {
+                "kind": "state",
+                "state": self.state,
+                "unread": self.unread,
+                "stopping": self._stopping(),
+            }
+        )
+
+    def _stopping(self):
+        """Return whether Stop waits for the action in course to end."""
+        self.ensure_one()
+        return bool(self.state == "working" and self.stop_requested)
 
     def _format(self):
         """Return what the panel lists of the conversation."""
@@ -229,6 +249,7 @@ class AssistantConversation(models.Model):
             "cost_unknown": self.cost_unknown,
             "last_activity": fields.Datetime.to_string(self.last_activity),
             "unread": self.unread,
+            "stopping": self._stopping(),
         }
 
     # ── What the model's calls wait for ────────────────────────────────────
@@ -419,20 +440,40 @@ class AssistantConversation(models.Model):
         self._notify_state()
 
     def _stop(self):
-        """The person stops the task: at once when nothing runs, else at the next check.
+        """The person stops the task: at once, unless an action runs.
 
-        What was done stays done (a commit on the branch, a staging).
+        An action (a tool, which may run a command on a server or start a
+        job) is never cut midway: the task is marked, the panels say it is
+        stopping, and the step stops once the action ends. Anything else
+        stops now, a step waiting for the model too: the stop clears the
+        conversation's ``job_uuid``, so that step writes nothing of what the
+        model answers later (``engine._conversation_in``). What was done
+        stays done (a commit on the branch, a staging).
         """
         self.ensure_one()
         self._lock()
-        if self.state == "working":
-            self.sudo().stop_requested = True
+        if self.state not in STOPPABLE:
             return
-        if self.state not in ("waiting_job", "waiting_confirmation"):
+        if self.state == "working" and self.running_call_id:
+            if not self.stop_requested:
+                self.sudo().stop_requested = True
+                self._notify_state()
             return
+        self._stop_now()
+
+    def _stop_now(self):
+        """End the task as stopped, leaving nothing half done or lost.
+
+        The cards still pending are withdrawn, the calls still open are
+        answered as not run, and what the person wrote meanwhile enters the
+        conversation: no longer queued, Retry or the next message answers it.
+        The job the task waited for runs on: it is not the task's to cancel.
+        """
+        self.ensure_one()
         for card in self._pending_cards():
             card._withdraw_card("The person stopped the task.")
-        self._close_open_calls("Not run: the person stopped the task.")
+        self._close_open_calls(STOPPED_CALL)
+        self.env["incubacloud.assistant.engine"]._deliver_pending(self)
         self.sudo().waiting_job_id = False
         self._halt("stopped", self.env._("Stopped. What was done stays as it is."))
 
