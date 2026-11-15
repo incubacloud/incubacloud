@@ -169,6 +169,31 @@ one as `3M`) and names in the log any it leaves invalid.
   later (`NOTICE_QUEUE_RETRY`). The notice is still never sent while the
   request waits.
 
+## [1.0.233] — unreleased
+
+The assistant's Stop takes effect at once. The update adds no column and
+no data migration.
+
+### Changed
+
+- **Stop stops the assistant at once.** The chat says *Stopping…* the
+  moment Stop is pressed. A task waiting for the AI provider, between two
+  attempts, queued or between two tools stops in that same request: the
+  step still waiting for the provider is no longer the conversation's,
+  so the answer that comes later is set aside, and what it cost still
+  counts in the conversation and the month's usage. While an action runs
+  (a tool, a command on a server), the chat says *Stopping… finishing the
+  current action* and the task stops once the action ends: it waits for no
+  job the action started, which goes on, and shows no card the action
+  asked for, whose approval is withdrawn. What the person wrote meanwhile
+  enters the conversation instead of staying queued, and Retry answers it.
+  The state's bus event and the conversation's format carry `stopping`.
+- **A call the provider billed counts whoever's step it is now.** A
+  summary, a billed failure or an answer of another model that comes once
+  the conversation was stopped or deleted is counted in the month's usage
+  (and in the conversation, when it is still there); it went uncounted
+  before.
+
 ## [1.0.231] — unreleased
 
 The panel reads the servers' security logs back from the central and
