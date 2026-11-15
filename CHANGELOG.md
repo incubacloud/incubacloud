@@ -40,8 +40,13 @@ then. The rest is the panel's assets and the Spanish catalogue.
   duplicity set is older than 48 hours (one missed night plus the hours
   until the listing; an instance with no set yet counts from its
   creation), and closes it on the first listing that sees a fresh set, or
-  once the instance no longer has a backup service. Nothing told the
-  operator before that the copies had stopped.
+  once the instance no longer has a backup service. Two listings in a row
+  raise it (`alert_policy_backup_stale`: two sightings, 36 hours apart at
+  most): measured from the creation, an instance whose backups started
+  later (a destination added to an old one, or one started after days
+  stopped) reads as stale on its first listing, before its first night.
+  A real stop is told a day later. Nothing told the operator before that
+  the copies had stopped.
 
 ### Changed
 

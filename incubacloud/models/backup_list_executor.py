@@ -288,6 +288,11 @@ class BackupListExecutor(AbstractSSHExecutor):
         no set yet is measured from its creation, so a new one is not
         flagged before its first nights. The alert closes on the first
         listing that sees a set within :data:`BACKUP_STALE_HOURS`.
+
+        It is raised on the second listing in a row that finds none
+        (``alert_policy_backup_stale``): measured from the creation, an
+        instance whose backups started later reads as stale on its
+        first listing.
         """
         inst = self._inst()
         Alert = self.env['cloud.alert'].sudo()
