@@ -92,8 +92,8 @@ uses its own if it has one, else its project's, else the default.
 
 ## SFTP
 
-An SFTP destination is a folder on a server you reach over SSH: a Hetzner
-Storage Box, rsync.net, a NAS or a server of your own. The panel logs in with
+An SFTP destination is a folder on a server you reach over SSH: a storage
+service, a NAS or a server you run. The panel logs in with
 a key it generates for the destination (no password), and checks the
 server's own key against the one you confirmed: a server presenting another
 key is refused.
@@ -106,8 +106,8 @@ key is refused.
     | Field | What to put |
     |---|---|
     | **Server** | Its host name or IPv4 address. |
-    | **Port** | 22 unless your provider says otherwise (a Storage Box, below). |
-    | **User** | The SFTP user, for instance `u123456` or a sub-account `u123456-sub1`. |
+    | **Port** | 22 unless your provider says otherwise ([a storage service](#a-storage-service)). |
+    | **User** | The SFTP user, for instance `backups`. |
     | **Folder** | Under the user's home, `backups` by default; start with `/` for an absolute path. Each instance writes under `<folder>/<project folder>/<instance>/`. |
 
 2. **Create Destination**. The **Keys** block now shows the public key, as a
@@ -125,27 +125,13 @@ key is refused.
 The test runs from the panel; the backups run from each server that hosts an
 instance. A server that accepts only some addresses must accept both.
 
-#### A Hetzner Storage Box
+#### A storage service
 
-Turn on **SSH support** for the box (or the sub-account), use the user of the
-box or sub-account and port **23**, which reads keys in the OpenSSH format the
-panel shows, and add the public key as the box's documentation says
-([Hetzner Docs](https://docs.hetzner.com/storage/storage-box/)).
-
-#### A server of your own
-
-Give the backups a user of their own, limited to SFTP in its own directory,
-for instance with OpenSSH:
-
-```
-Match User backups
-    ChrootDirectory /srv/backups
-    ForceCommand internal-sftp
-    AllowTcpForwarding no
-```
-
-The chroot directory belongs to root; give the user a folder inside it to
-write in, and set **Folder** to that folder.
+Turn on SSH or SFTP access for the service, or for the sub-account you give the
+backups. Use the user and the port the provider shows: some use a port other
+than 22. Add the public key as the provider's documentation says. If the
+service does not accept options in `authorized_keys`, remove `restrict` from
+the line.
 
 ### Changing it later
 
