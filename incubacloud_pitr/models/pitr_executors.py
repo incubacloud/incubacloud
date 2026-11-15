@@ -760,7 +760,11 @@ class PitrPurgeExecutor(_PitrExecutor):
         """The environment of the deletion program (``lib/purge_prefix.sh``).
 
         The variables core's archived purge gives it: ``DST``, the cutoff
-        and the destination's credentials.
+        and the destination's credentials. The cutoff is the switch off,
+        or the creation of an instance of the same name that took this
+        one's prefix since, when earlier
+        (``cloud.instance._backup_purge_before``): what that one archived
+        there stays.
 
         :rtype: str
         :raises ValueError: when a value would not stay on its line
@@ -774,7 +778,9 @@ class PitrPurgeExecutor(_PitrExecutor):
         if refusal:
             raise JobRefused(refusal)
         backend = backend.sudo()
-        cutoff = fields.Datetime.to_datetime(self._before())
+        cutoff = inst._backup_purge_before(
+            prefix, fields.Datetime.to_datetime(self._before()),
+        )
         lines = [env_line("DST", prefix), env_line("PURGE_BEFORE", cutoff.isoformat())]
         if backend.s3_access_key_id:
             lines.append(env_line("AWS_ACCESS_KEY_ID", backend.s3_access_key_id))

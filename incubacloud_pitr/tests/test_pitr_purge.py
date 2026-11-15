@@ -448,14 +448,26 @@ class TestTheDeleteReachesOnlyItsOwnArchive(_PitrCase):
             "environment": "staging", "host_id": self.host.id,
             "state": "deployed",
         })
+        # Archived two days before this instance was created: the dates
+        # prove the succession (``_backup_succession``).
+        now = fields.Datetime.now()
         self.env.flush_all()
         self.env.cr.execute(
-            "UPDATE cloud_instance SET active = false, pitr_archived_prefix = %s"
-            " WHERE id = %s",
-            (prefix, namesake.id),
+            "UPDATE cloud_instance SET active = false, pitr_archived_prefix = %s,"
+            " create_date = %s, archived_at = %s WHERE id = %s",
+            (prefix, now - timedelta(days=9), now - timedelta(days=2), namesake.id),
         )
         self.env.invalidate_all()
         return namesake
+
+    def test_an_archived_one_without_its_date_refuses_the_delete(self):
+        """Its archive is not told apart from this one's by the dates."""
+        namesake = self._archived_namesake(PREFIX)
+        namesake.sudo().write({"archived_at": False})
+        executor = self._executor(DeleteInstanceExecutor, "delete_instance")
+        with self.assertRaises(JobRefused) as caught:
+            executor._refuse_shared_prefix(self.inst)
+        self.assertIn(f"id {namesake.id}", str(caught.exception))
 
     def test_a_successor_s_delete_keeps_the_archived_one_s_archive(self):
         self._archived_namesake(PREFIX)
@@ -538,11 +550,47 @@ class TestThePurgeReachesOnlyItsOwnArchive(_SwitchedOffCase):
             self._purge(before)._env_content()
         self.assertIn("pitr-other", str(caught.exception))
 
-    def test_a_successor_s_archive_under_the_same_name_is_left_to_the_cutoff(self):
+    def test_a_live_one_of_the_same_name_in_its_prefix_is_refused(self):
+        """Two live ones in a prefix prove no succession."""
         before = self._switched_off(15)
         self.inst._pitr_record_rendered()
-        self._elsewhere("pitr-inst", pitr_rendered_prefix=PREFIX)
-        self.assertIn(f"DST={PREFIX}\n", self._purge(before)._env_content())
+        other = self._elsewhere("pitr-inst", pitr_rendered_prefix=PREFIX)
+        with self.assertRaises(JobRefused) as caught:
+            self._purge(before)._env_content()
+        self.assertIn(f"id {other.id}", str(caught.exception))
+
+    def test_the_cutoff_ends_where_one_that_took_the_name_began(self):
+        """The instance archived since, its name taken: the bound is the
+        switch off or the successor's creation, the earlier."""
+        before = self._switched_off(15)
+        self.inst._pitr_record_rendered()
+        successor = self._elsewhere("pitr-inst", pitr_rendered_prefix=PREFIX)
+        now = fields.Datetime.now()
+        for archived, created, bound in (
+            (16, 15.5, 15.5),   # a successor before the switch off: its creation
+            (14, 13, None),     # one after it: the switch off
+        ):
+            with self.subTest(created=created):
+                self.env.flush_all()
+                self.env.cr.execute(
+                    "UPDATE cloud_instance SET active = false, archived_at = %s,"
+                    " create_date = %s WHERE id = %s",
+                    (now - timedelta(days=archived), now - timedelta(days=30),
+                     self.inst.id),
+                )
+                self.env.cr.execute(
+                    "UPDATE cloud_instance SET create_date = %s WHERE id = %s",
+                    (now - timedelta(days=created), successor.id),
+                )
+                self.env.invalidate_all()
+                expected = (
+                    now - timedelta(days=bound) if bound
+                    else fields.Datetime.to_datetime(before)
+                )
+                self.assertIn(
+                    f"PURGE_BEFORE={expected.isoformat()}\n",
+                    self._purge(before)._env_content(),
+                )
 
 
 class TestSwitchingOnBeforeTheDate(_SwitchedOffCase):

@@ -259,3 +259,72 @@ _run_program() {
     [ "$status" -eq 22 ]
     [[ "$output" == *"refusing to purge without a per-instance prefix"* ]]
 }
+
+# The names duplicity gives a chain's objects, behind the file prefix the
+# image adds (``archive-<hostname>-``, ``manifest-…``, ``signature-…``).
+_A="archive-backup.inst.example-duplicity"
+_M="manifest-backup.inst.example-duplicity"
+_S="signature-backup.inst.example-duplicity"
+
+@test "an incremental kept that builds on a set it would delete stops the purge whole" {
+    # The successor inherited the path and the chain: its first backup
+    # is an incremental on the archived full. Deleting that full would
+    # leave every set after it unrestorable.
+    _seed \
+        "backups/proj/inst/$_A-full.20260101T000000Z.vol1.difftar.gpg=2026-01-01T00:00:00+00:00" \
+        "backups/proj/inst/$_M-full.20260101T000000Z.manifest.gpg=2026-01-01T00:00:00+00:00" \
+        "backups/proj/inst/$_S-full-signatures.20260101T000000Z.sigtar.gpg=2026-01-01T00:00:00+00:00" \
+        "backups/proj/inst/$_A-inc.20260101T000000Z.to.20260301T020000Z.vol1.difftar.gpg=2026-03-01T02:00:00+00:00" \
+        "backups/proj/inst/$_M-inc.20260101T000000Z.to.20260301T020000Z.manifest.gpg=2026-03-01T02:00:00+00:00" \
+        "backups/proj/inst/$_S-new-signatures.20260101T000000Z.to.20260301T020000Z.sigtar.gpg=2026-03-01T02:00:00+00:00"
+    before="$(_remaining)"
+    export PURGE_BEFORE="2026-02-01T00:00:00+00:00"
+    run _run_program
+    [ "$status" -eq 23 ]
+    [[ "$output" == *"IC_PURGE_DEPENDS 3 object(s)"* ]]
+    [[ "$output" == *"nothing deleted"* ]]
+    [ "$(_remaining)" = "$before" ]
+}
+
+@test "a chain of its own after the cutoff is kept and the old one goes" {
+    # The successor's own full, and incrementals on it: nothing they
+    # need is before the cutoff.
+    _seed \
+        "backups/proj/inst/$_A-full.20260101T000000Z.vol1.difftar.gpg=2026-01-01T00:00:00+00:00" \
+        "backups/proj/inst/$_A-inc.20260101T000000Z.to.20260102T000000Z.vol1.difftar.gpg=2026-01-02T00:00:00+00:00" \
+        "backups/proj/inst/$_A-full.20260301T020000Z.vol1.difftar.gpg=2026-03-01T02:00:00+00:00" \
+        "backups/proj/inst/$_A-inc.20260301T020000Z.to.20260302T020000Z.vol1.difftar.gpg=2026-03-02T02:00:00+00:00" \
+        "backups/proj/inst/$_S-new-signatures.20260301T020000Z.to.20260302T020000Z.sigtar.gpg=2026-03-02T02:00:00+00:00"
+    export PURGE_BEFORE="2026-02-01T00:00:00+00:00"
+    run _run_program
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"removed 2 object(s)"* ]]
+    [ "$(_remaining)" = "$(printf '%s\n' \
+        "backups/proj/inst/$_A-full.20260301T020000Z.vol1.difftar.gpg" \
+        "backups/proj/inst/$_A-inc.20260301T020000Z.to.20260302T020000Z.vol1.difftar.gpg" \
+        "backups/proj/inst/$_S-new-signatures.20260301T020000Z.to.20260302T020000Z.sigtar.gpg")" ]
+}
+
+@test "without a cutoff an incremental's start stops nothing" {
+    # The delete of a live instance empties its prefix whole.
+    _seed \
+        "backups/proj/inst/$_A-inc.20260101T000000Z.to.20260301T020000Z.vol1.difftar.gpg=2026-03-01T02:00:00+00:00"
+    run _run_program
+    [ "$status" -eq 0 ]
+    [ -z "$(_remaining)" ]
+}
+
+@test "an incremental on a set a since keeps stops nothing" {
+    # Both bounds: what is older than the since stays, so a set kept
+    # after the cutoff may build on it.
+    _seed \
+        "backups/proj/inst/$_A-full.20260101T000000Z.vol1.difftar.gpg=2026-01-01T00:00:00+00:00" \
+        "backups/proj/inst/window=2026-01-15T00:00:00+00:00" \
+        "backups/proj/inst/$_A-inc.20260101T000000Z.to.20260301T020000Z.vol1.difftar.gpg=2026-03-01T02:00:00+00:00"
+    export PURGE_SINCE="2026-01-10T00:00:00+00:00"
+    export PURGE_BEFORE="2026-02-01T00:00:00+00:00"
+    run _run_program
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"removed 1 object(s)"* ]]
+    [[ "$(_remaining)" != *window* ]]
+}

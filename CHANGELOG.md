@@ -505,13 +505,26 @@ invalid. The rest is the panel's assets and the Spanish catalogue.
   refuse a prefix that is a backup destination's path or above it, or
   that is or holds another instance's path (archived instances
   included; a successor of the same name is left to the purge's
-  cutoff): the job fails before anything is deleted, raises its purge
+  bounds): the job fails before anything is deleted, raises its purge
   alert and keeps the record. Deleting a live instance refuses such a
   prefix the same way, for its backup path and its recovery archive,
   before its first step: the instance stays as it was. Deleting the
   successor of an archived instance of the same name, which shares its
   backup path and recovery archive, empties only what the successor
-  stored since it was created: the archived instance keeps its copies. A backup path an Administrator or an
+  stored since it was created: the archived instance keeps its copies.
+  Two instances of the same name in one path are taken for a successor
+  and its archived predecessor only when the dates prove it: one
+  archived, and the other created at least a minute after the archive.
+  Two live ones, two that lived at the same time, or an archive without
+  its date are refused as another's copies, by every purge. The purge of
+  the archived one, and of a recovery archive switched off, ends at the
+  successor's creation when that is earlier than the delete's cutoff, so
+  a delete decided after the successor's first copy, or retried weeks
+  later, no longer takes what the successor stored until then. Should
+  the successor have continued the archived chain (its first backup an
+  incremental on the archived full), the purge deletes nothing, exits 23
+  and raises `archived_purge_chain_continued`; the record stays (RB-05).
+  A backup path an Administrator or an
   import writes is held to the same check, naming the instance it would
   overlap; 1.0.229's post-migrate names those saved before. A layer that
   shares one bucket between panels must give each panel credentials

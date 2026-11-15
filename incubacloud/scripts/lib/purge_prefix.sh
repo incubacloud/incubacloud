@@ -42,11 +42,24 @@
 # what the archived instance of the same name keeps in the prefix,
 # stored before, stays for that instance's own purge.
 #
+# With ``PURGE_BEFORE``, an object it keeps may still need one it would
+# delete: duplicity names an incremental set, and its signatures, after
+# the instant the set it builds on ends (``duplicity-inc.<T1>.to.<T2>``,
+# ``duplicity-new-signatures.<T1>.to.<T2>``). An instance that took the
+# name of an archived one and inherited its path continues that one's
+# chain with its first backup, and deleting the archived full leaves
+# every set after it unrestorable. So when an object kept for being
+# stored at or after the cutoff names a start before it (and, with
+# ``PURGE_SINCE``, not before that either: those stay), nothing is
+# deleted and the program exits 23. Listed whole before the first delete.
+#
 # Exit codes are the contract with the executors (see backup_purge.sh):
 #   0   purged and verified empty (of objects in scope)
 #   10  nothing in scope was stored under the prefix
 #   21  the provider rejected the credentials
 #   22  anything else
+#   23  an object kept continues a chain the purge would delete: nothing
+#       deleted (only with ``PURGE_BEFORE``)
 
 # Print the deletion program on stdout, ready to pipe into a container's
 # python3. Written as a quoted heredoc so nothing here is expanded by
@@ -62,10 +75,13 @@ exit code is what the executor reads.
 
 With ``PURGE_BEFORE`` set, only objects stored before that instant are
 in scope; anything newer belongs to whoever holds the prefix now and is
-left alone. With ``PURGE_SINCE`` set, only objects stored at or after it
-are; anything older belongs to the archived instance of the same name.
+left alone, and should one of those continue a duplicity chain this
+purge would delete, nothing is deleted (exit 23). With ``PURGE_SINCE``
+set, only objects stored at or after it are; anything older belongs to
+the archived instance of the same name.
 """
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -118,6 +134,10 @@ def read_instant(name):
 cutoff = read_instant("PURGE_BEFORE")
 since = read_instant("PURGE_SINCE")
 
+#: The start of the set a duplicity incremental, or its signatures, builds
+#: on, in the object's name (after the file prefix the image adds).
+SET_START = re.compile(r"duplicity-(?:inc|new-signatures)\.(\d{8}T\d{6}Z)\.to\.")
+
 
 def in_scope(obj):
     """Whether this object lies within the bounds (always true without any).
@@ -129,6 +149,25 @@ def in_scope(obj):
     return (cutoff is None or when < cutoff) and (since is None or when >= since)
 
 
+def builds_on_scope(obj):
+    """Whether this object, kept for being newer, needs a set the purge deletes.
+
+    :param obj: one ``Contents`` entry from ``list_objects_v2``, out of scope.
+    :return: True for a duplicity incremental or its signatures stored at
+        or after the cutoff whose set starts before it (and not before
+        ``PURGE_SINCE``, whose objects stay).
+    """
+    if cutoff is None or obj["LastModified"] < cutoff:
+        return False
+    found = SET_START.search(obj["Key"].rsplit("/", 1)[-1])
+    if not found:
+        return False
+    start = datetime.strptime(found.group(1), "%Y%m%dT%H%M%SZ").replace(
+        tzinfo=timezone.utc,
+    )
+    return start < cutoff and (since is None or start >= since)
+
+
 kwargs = {}
 endpoint = os.environ.get("AWS_ENDPOINT_URL")
 if endpoint:
@@ -138,14 +177,26 @@ client = boto3.client("s3", **kwargs)
 deleted = 0
 try:
     paginator = client.get_paginator("list_objects_v2")
+    # Listed whole first: the dependency check has to see every object
+    # kept before anything is deleted.
+    doomed = []
+    depends = []
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        batch = [
-            {"Key": o["Key"]}
-            for o in page.get("Contents") or ()
-            if in_scope(o)
-        ]
-        if not batch:
-            continue
+        for o in page.get("Contents") or ():
+            if in_scope(o):
+                doomed.append({"Key": o["Key"]})
+            elif builds_on_scope(o):
+                depends.append(o["Key"])
+    if depends:
+        print(
+            f"IC_PURGE_DEPENDS {len(depends)} object(s) stored since "
+            f"{cutoff.isoformat()} continue a chain this purge would delete, "
+            f"first {depends[0]}: nothing deleted under {prefix}"
+        )
+        sys.exit(23)
+    # delete_objects takes up to 1000 keys a call.
+    for start in range(0, len(doomed), 1000):
+        batch = doomed[start:start + 1000]
         client.delete_objects(Bucket=bucket, Delete={"Objects": batch})
         deleted += len(batch)
 
