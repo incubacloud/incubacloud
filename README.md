@@ -66,7 +66,7 @@ Built on Odoo Community: the panel itself uses no Enterprise modules, so you don
 
 ### Backups and data
 
-- S3-compatible backup backends with encrypted credentials
+- S3-compatible or SFTP backup backends with encrypted credentials
 - Full backup lifecycle via duplicity: list, create, download, restore
 - Export for development: sanitized tarballs stripped of tokens and passwords
 - Scheduled backup refresh and retention policies
@@ -147,7 +147,7 @@ IncubaCloud acts as the **control plane**, not the runtime. All heavy lifting ha
 | `cloud.job` | Async remote execution record; waits in its instance's (or host's) queue until it is handed to a `queue.job` |
 | `cloud.job.type` | Job type definition with pluggable action support |
 | `cloud.job.log.chunk` | Individual log line (stdout / stderr / system) |
-| `cloud.backup.backend` | S3-compatible backup target — encrypted credentials |
+| `cloud.backup.backend` | S3-compatible or SFTP backup target — encrypted credentials |
 | `cloud.github.app` | GitHub App configuration (singleton) |
 | `cloud.github.event` | Immutable webhook audit log |
 | `cloud.alert` | Infrastructure alerts and notifications |
