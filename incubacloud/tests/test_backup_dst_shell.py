@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 import jinja2
 import yaml
 
+from odoo import http as odoo_http
 from odoo.exceptions import ValidationError
 from odoo.http import Request
 from odoo.tests.common import TransactionCase, new_test_user, tagged
@@ -792,7 +793,10 @@ class TestAnImportWithABackupValueRefused(_BackupDstCase):
         ] + [("", "")] * 4
         fake_request = MagicMock(spec=Request)
         fake_request.env = self.env
+        # odoo.http's too: the controller's ``env``, which ``_()`` reads.
         with patch.object(_routes_ops, "request", fake_request), patch.object(
+            odoo_http, "request", fake_request,
+        ), patch.object(
             CloudDataLoadController, "_sec", autospec=True,
             return_value=self.env["cloud.security.mixin"],
         ), patch.object(
