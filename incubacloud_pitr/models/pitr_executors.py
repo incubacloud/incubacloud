@@ -22,6 +22,7 @@ import psycopg2
 
 from odoo import fields
 
+from odoo.addons.incubacloud.models._backup_dst import env_line
 from odoo.addons.incubacloud.models._job_server_limits import (
     attached_step_limit_seconds,
 )
@@ -761,11 +762,13 @@ class PitrPurgeExecutor(_PitrExecutor):
         and the destination's credentials.
 
         :rtype: str
+        :raises ValueError: when the prefix would not stay on its line
+            (``env_line``)
         """
         backend, prefix = self._inst()._pitr_purge_target()
         backend = backend.sudo()
         cutoff = fields.Datetime.to_datetime(self._before())
-        lines = [f"DST={prefix}", f"PURGE_BEFORE={cutoff.isoformat()}"]
+        lines = [env_line("DST", prefix), f"PURGE_BEFORE={cutoff.isoformat()}"]
         if backend.s3_access_key_id:
             lines.append(f"AWS_ACCESS_KEY_ID={backend.s3_access_key_id}")
         if backend.s3_secret_access_key:

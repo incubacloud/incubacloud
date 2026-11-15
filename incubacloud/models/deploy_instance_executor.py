@@ -24,6 +24,7 @@ from ..github.client import GitHubAppClient
 from ..net import real_ip
 from ..net.git_reader import GitReader, GitReaderError
 from ..github.http_utils import read_json_limited, safe_urlopen
+from ._backup_dst import compose_safe
 from ._backup_retention import TEMPLATE_BACKUP_RETENTION, valid_backup_retention
 from ._git_urls import clone_url_with_credential, parse_provider_repo_url
 from ._odoo_versions import (
@@ -2659,6 +2660,29 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         a layer that sells limits extends this to tell its operator.
         """
 
+    def _check_backup_dst_renders(self, dst):
+        """Refuse a backup destination the compose file cannot carry.
+
+        The template renders the answer between double quotes of the
+        backup service's environment: a quote or a line break there would
+        write the rest of the value into the compose file as YAML of its
+        own. A destination saved since the field has its grammar cannot
+        hold one (``cloud.instance._check_custom_backup_dst_shape``); this
+        holds for one saved before, and for one computed from a
+        destination's bucket and path.
+
+        :param str dst: the ``backup_dst`` answer
+        :raises ValueError: when it holds what ``compose_safe`` refuses,
+            before anything reaches the host
+        """
+        if not compose_safe(dst):
+            raise ValueError(
+                "The backup destination of this instance holds a quote, a "
+                "backslash, a $ or a line break, which the compose file "
+                "cannot carry. Correct the instance's backup path or its "
+                "backup destination's bucket and path."
+            )
+
     async def _upload_copier_files(self, transport):
         """Upload all files needed by copier copy/update to the remote host.
 
@@ -2668,8 +2692,10 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         await self._read_host_cpus(transport)
         await self._resync_repo_requirements()
         inst = self._inst()
+        answers = self._build_answers()
+        self._check_backup_dst_renders(answers.get("backup_dst") or "")
         answers_yml = yaml.dump(
-            self._build_answers(),
+            answers,
             default_flow_style=False,
             allow_unicode=True,
         )

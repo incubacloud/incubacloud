@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.tools import SQL
 
 from odoo.addons.queue_job.exception import RetryableJobError
 
@@ -25,6 +26,7 @@ from ..net.restore_source import (
 from ..restore_staging import purge_stale
 from . import _odoo_versions, _relay_oauth, sftp_dst
 from ._odoo_versions import ODOO_VERSION_SELECTION
+from ._backup_dst import dst_is_valid
 from . import _config_snapshot_diff as _snapshot_diff
 from ._backup_retention import TEMPLATE_BACKUP_RETENTION, valid_backup_retention
 from ._repo_requirements import (
@@ -4326,14 +4328,37 @@ class CloudInstance(models.Model):
         if backend and not self.backup_backend_id:
             vals["backup_backend_id"] = backend.id
         computed = self.instance_backup_dst
+        outside = False
         if computed and not self.custom_backup_dst:
-            vals["custom_backup_dst"] = computed
-        if not vals:
+            if dst_is_valid(computed):
+                vals["custom_backup_dst"] = computed
+            else:
+                outside = True
+        if not vals and not outside:
             return
         # As the platform: the copy's place is an administrator's field
         # (``_MANAGER_FIELDS``), frozen here at the end of a teardown that
         # was authorised when it was asked for.
-        self.sudo().write(vals)
+        if vals:
+            self.sudo().write(vals)
+        if outside:
+            # Computed from a destination saved before its grammar
+            # (``cloud.backup.backend._check_backup_dst_shape``): frozen as
+            # it is, as the stack is gone by now and the path is the one
+            # thing left that finds the copy. In SQL, past the field's
+            # check (``_check_custom_backup_dst_shape``), which nothing
+            # sent to a write may lift.
+            self.env.cr.execute(SQL(
+                "UPDATE cloud_instance SET custom_backup_dst = %s WHERE id = %s",
+                computed, self.id,
+            ))
+            self.invalidate_recordset(["custom_backup_dst", "instance_backup_dst"])
+            _logger.warning(
+                "instance %s archived: its destination %s computes a backup "
+                "path outside the field's grammar, frozen as it is: correct "
+                "the destination's bucket and path",
+                self.name, backend.name,
+            )
         _logger.info(
             "instance %s archived: backup path frozen at %s on %s",
             self.name, self.custom_backup_dst, backend.name,
@@ -5534,6 +5559,35 @@ class CloudInstance(models.Model):
                         "Custom remote directory '%(path)s' is invalid. Use only "
                         "letters, digits, dots, hyphens and underscores in each "
                         "path segment. No '..', spaces or shell metacharacters.",
+                        path=v,
+                    )
+                )
+
+    @api.constrains("custom_backup_dst")
+    def _check_custom_backup_dst_shape(self):
+        """Keep the backup path to the grammar of the panel's destinations.
+
+        The path reaches the host as an argument of a command, as a line
+        of an environment file and inside the compose file: an S3 URL
+        (``boto3+s3://`` or ``s3://``) whose bucket and path hold letters,
+        digits, dots, hyphens and underscores only
+        (``_backup_dst.dst_is_valid``). Checked when the path is written,
+        an import's included; a path saved before goes on as it is, as
+        does the one an archive freezes as it was computed
+        (``_freeze_backup_dst``).
+
+        :raises ValidationError: for a path outside it
+        """
+        for inst in self:
+            v = inst.custom_backup_dst
+            if v and not dst_is_valid(v):
+                raise ValidationError(
+                    _(
+                        "Custom backup path '%(path)s' is invalid. Use "
+                        "boto3+s3://bucket/path or s3://bucket/path, with only "
+                        "letters, digits, dots, hyphens and underscores in the "
+                        "bucket and in each part of the path. No '..', spaces "
+                        "or shell metacharacters.",
                         path=v,
                     )
                 )

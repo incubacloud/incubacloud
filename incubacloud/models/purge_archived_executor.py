@@ -22,6 +22,7 @@ from odoo import _
 from odoo.exceptions import UserError
 
 from . import sftp_dst
+from ._backup_dst import env_line
 from .abstract_executor import AbstractSSHExecutor
 
 _logger = logging.getLogger(__name__)
@@ -155,10 +156,12 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         :param str dst: a further prefix (``_extra_prefixes``), or None
             for the chain's frozen one
         :rtype: str
+        :raises ValueError: when the destination would not stay on its
+            line (``env_line``): the job fails before the host is reached
         """
         inst = self._inst()
         backend = inst.effective_backup_backend.sudo()
-        lines = [f"DST={dst or inst.custom_backup_dst}"]
+        lines = [env_line("DST", dst or inst.custom_backup_dst)]
         if inst.purge_cutoff_at:
             lines.append(f"PURGE_BEFORE={inst.purge_cutoff_at.isoformat()}")
         if backend.backend_type == "sftp":

@@ -27469,3 +27469,29 @@ msgstr "solo los de este panel"
 #: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
 msgid "No server of this panel has anything to look at."
 msgstr "Ningún servidor de este panel tiene nada que revisar."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Custom backup path '%(path)s' is invalid. Use boto3+s3://bucket/path or "
+"s3://bucket/path, with only letters, digits, dots, hyphens and underscores "
+"in the bucket and in each part of the path. No '..', spaces or shell "
+"metacharacters."
+msgstr ""
+"La ruta de copia personalizada '%(path)s' no es válida. Use "
+"boto3+s3://bucket/ruta o s3://bucket/ruta, con solo letras, dígitos, puntos,"
+" guiones y guiones bajos en el bucket y en cada parte de la ruta. Sin '..', "
+"espacios ni metacaracteres de shell."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The bucket and the path of %(name)s may hold only letters, digits, dots, "
+"hyphens and underscores, with a / between the parts of the path. No '..', "
+"spaces or shell metacharacters."
+msgstr ""
+"El bucket y la ruta de %(name)s solo pueden contener letras, dígitos, "
+"puntos, guiones y guiones bajos, con una / entre las partes de la ruta. Sin "
+"'..', espacios ni metacaracteres de shell."

@@ -406,7 +406,8 @@ The update adds five columns on instances, `pitr_archived_prefix`,
 `pitr_rendered_backend_id` (`incubacloud_pitr` 1.0.16 comes with them).
 Its data migrations: 1.0.229's post-migrate deletes the Telegram bot
 tokens saved without a chat ID and the webhook secrets left without a
-URL, and `incubacloud_pitr` 1.0.16's end-migrate records where each
+URL and names in the log the backup paths outside their new grammar,
+keeping them, and `incubacloud_pitr` 1.0.16's end-migrate records where each
 instance archives and dates the purge of the archives switched off
 before it from the update, so each gets the whole backup window from
 then. The rest is the panel's assets and the Spanish catalogue.
@@ -802,6 +803,20 @@ then. The rest is the panel's assets and the Spanish catalogue.
   when an instance is created or renamed (existing ones keep working),
   and `incubacloud_pitr` refuses to switch continuous recovery on for `x`
   while an `x-pitr`, active or archived, is in the same folder.
+
+### Security
+
+- **An instance's backup path is held to the grammar of the panel's
+  destinations.** `custom_backup_dst` (written by an Administrator, by
+  an import and by archiving) is accepted only as `boto3+s3://` or
+  `s3://`, with letters, digits, dots, hyphens and underscores in the
+  bucket and in each part of the path, and a destination's bucket and
+  path only where the path they compute is too. Where a backup path
+  reaches a server it is quoted in the command, and an environment or
+  compose file refuses one that would break its line, before the host is
+  reached. Paths saved before stay as they are: 1.0.229's post-migrate
+  names in the log those outside the grammar, for an Administrator to
+  correct. Spanish translation included.
 
 ### Tests
 

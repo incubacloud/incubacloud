@@ -18,6 +18,7 @@ from odoo.exceptions import UserError, ValidationError
 from ..net.hostname import is_host_address
 from ..net.outbound import OutboundError, _resolve_public
 from . import sftp_dst, ssh_host_keys
+from ._backup_dst import dst_is_valid
 from ._backup_retention import valid_backup_retention
 from .cloud_instance import _GLOBAL_BACKUP_PARAM
 from .encrypted_char import EncryptedChar, EncryptedText
@@ -751,6 +752,32 @@ class CloudBackupBackend(models.Model):
                     "An SFTP server has no bucket lifecycle: let the backup "
                     "cron delete old backups, or nobody."
                 ))
+
+    @api.constrains("backend_type", "s3_bucket", "s3_path")
+    def _check_backup_dst_shape(self):
+        """Keep the bucket and the path to the grammar of a backup path.
+
+        Every instance's path is computed from them
+        (``cloud.instance._compute_instance_backup_dst``) and frozen into
+        ``custom_backup_dst`` when the instance is archived, which holds
+        that field's grammar (``_backup_dst.dst_is_valid``): a bucket or a
+        path outside it would reach the hosts' files and commands. Checked
+        when they are written; a destination saved before goes on as it
+        is.
+
+        :raises ValidationError: for a bucket or a path outside it
+        """
+        for rec in self:
+            if rec.backup_dst and not dst_is_valid(rec.backup_dst):
+                raise ValidationError(
+                    _(
+                        "The bucket and the path of %(name)s may hold only "
+                        "letters, digits, dots, hyphens and underscores, with "
+                        "a / between the parts of the path. No '..', spaces "
+                        "or shell metacharacters.",
+                        name=rec.name,
+                    )
+                )
 
     # ── Deletion guard ──────────────────────────────────────────────────────
 
