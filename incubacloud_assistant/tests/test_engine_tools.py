@@ -605,10 +605,10 @@ class TestEngineTools(EngineMixin, TransactionCase):
         card = conversation.message_ids.filtered(lambda m: m.role == "card")
         with trap_jobs():
             self.assertTrue(card.with_user(self.manager)._confirm_card()["ok"])
-        self.assertEqual(card.approval_id.state, "approved")
+        self.assertEqual(card.approval_id.sudo().state, "approved")
         conversation.with_user(self.manager)._stop()
         self.assertEqual(conversation.state, "stopped")
-        self.assertEqual(card.approval_id.state, "cancelled")
+        self.assertEqual(card.approval_id.sudo().state, "cancelled")
         answered = conversation.message_ids.filtered(lambda m: m.role == "tool")
         self.assertIn("stopped", answered.content)
         with trap_jobs():
