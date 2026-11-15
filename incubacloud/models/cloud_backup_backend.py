@@ -725,14 +725,12 @@ class CloudBackupBackend(models.Model):
                 raise ValidationError(_(
                     "Enter the SFTP server as a host name or an IPv4 address."
                 ))
-            try:
+            with contextlib.suppress(ValueError):
                 if ipaddress.ip_address(host).version == 6:
                     raise ValidationError(_(
                         "IPv6 addresses are not supported for SFTP yet: "
                         "enter a host name instead."
                     ))
-            except ValueError:
-                pass
             if not 1 <= (rec.sftp_port or 0) <= 65535:
                 raise ValidationError(_("The SFTP port goes from 1 to 65535."))
             if not sftp_dst.USER_RE.match(rec.sftp_user or ""):

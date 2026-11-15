@@ -139,9 +139,7 @@ def parse(dst):
     if port == 0:
         raise DstError("the port is not a number from 1 to 65535")
     port = port or 22
-    raw = parsed.path
-    if raw.startswith("/"):
-        raw = raw[1:]
+    raw = parsed.path.removeprefix("/")
     return user, host, port, check_path(raw)
 
 
