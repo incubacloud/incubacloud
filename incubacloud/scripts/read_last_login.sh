@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Read the most recent login recorded inside an instance's own database.
 #
-# Usage: read_last_login.sh <instance_dir> <dbname> <dbuser> <dbpassword>
+# Usage: read_last_login.sh <instance_dir> <dbname> <dbuser> <dbpassword_file>
+#
+# The password is read from a file the job staged owner-only, never taken
+# as an argument: an argument is in the host's process list and in
+# whatever logs the SSH session.
 #
 # Prints exactly one line:
 #
@@ -37,21 +41,24 @@ set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
 ic_require_args 4 "$#" \
-    "read_last_login.sh <instance_dir> <dbname> <dbuser> <dbpassword>"
+    "read_last_login.sh <instance_dir> <dbname> <dbuser> <dbpassword_file>"
 
 dir="$(ic_expand_home "$1")"
 db="$2"
 db_user="$3"
-db_password="$4"
+[ -f "$4" ] || ic_die "password file not found: $4"
+IC_PASSWORD="$(cat -- "$4")"
+export IC_PASSWORD
 
 [ -d "$dir" ] || ic_die "instance directory not found: $dir"
 
 cd "$dir"
 
-# The credentials travel in the environment of the container process,
-# not on its command line, so they stay out of the host's process list.
+# The password travels in the environment, not on a command line: ``-e``
+# with a name alone hands the container the value of compose's own, so
+# it is in neither compose's process nor the container's arguments.
 docker compose exec -T \
-    -e IC_DB="$db" -e IC_USER="$db_user" -e IC_PASSWORD="$db_password" \
+    -e IC_DB="$db" -e IC_USER="$db_user" -e IC_PASSWORD \
     odoo sh -c '
 if command -v python3 >/dev/null 2>&1; then
     exec python3 -

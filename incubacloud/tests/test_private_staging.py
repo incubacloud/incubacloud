@@ -67,6 +67,9 @@ from odoo.addons.incubacloud.models.purge_archived_executor import (
 from odoo.addons.incubacloud.models.push_trusted_proxies_executor import (
     PushTrustedProxiesExecutor,
 )
+from odoo.addons.incubacloud.models.read_last_login_executor import (
+    ReadLastLoginExecutor,
+)
 from odoo.addons.incubacloud.models.rebuild_instance_executor import (
     RebuildInstanceExecutor,
 )
@@ -313,6 +316,45 @@ class TestEachJobStagesInItsOwnDirectory(_StagingCase):
         transport = self._transport()
         asyncio.run(executor._discard_staging(transport))
         transport.run.assert_not_awaited()
+
+
+class TestASecretAStepReadsIsAFileNotAnArgument(_StagingCase):
+    """A command is in the host's process list and in what logs the SSH
+    session: the secret it needs goes in a file of the job's directory."""
+
+    _PASSWORD = "pg-password-not-for-the-command"
+
+    def test_a_queued_file_is_staged_owner_only_before_the_first_step(self):
+        """Queued while the commands are built, uploaded 0600 with the
+        scripts, before any step runs, and removed with the job."""
+        self.inst.sudo().postgres_password = self._PASSWORD
+        executor = self._executor(ReadLastLoginExecutor, "read_last_login")
+        transport = self._transport()
+        transport.execute.return_value = CommandResult("LAST_LOGIN none", 0)
+        self.assertIsNone(self._run(executor, transport))
+        private, _public = self._uploads(transport)
+        staged = executor._job_path("db_password")
+        self.assertEqual(private, {staged: self._PASSWORD})
+        names = [c[0] for c in transport.mock_calls]
+        self.assertLess(
+            names.index("upload_text_files"), names.index("execute"),
+        )
+        (command,) = [c.args[0] for c in transport.execute.await_args_list]
+        self.assertNotIn(self._PASSWORD, command)
+        self.assertEqual(shlex.split(command)[-1], staged)
+        self.assertTrue(self._gone(transport, staged))
+
+    def test_a_file_is_queued_once(self):
+        """The scripts' second upload, from another hook, stages nothing
+        again."""
+        executor = self._executor(ReadLastLoginExecutor, "read_last_login")
+        executor._queue_private_file("a.env", "A=1\n")
+        transport = self._transport()
+        asyncio.run(executor._upload_scripts(transport))
+        asyncio.run(executor._upload_scripts(transport))
+        private, _public = self._uploads(transport)
+        self.assertEqual(private, {executor._job_path("a.env"): "A=1\n"})
+        self.assertEqual(transport.upload_text_files.await_count, 1)
 
 
 class TestTheCopierSecretsAreStagedPrivately(_StagingCase):
