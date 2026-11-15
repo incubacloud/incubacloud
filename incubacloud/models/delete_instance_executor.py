@@ -189,12 +189,20 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         :meth:`_backups_are_ours_to_touch`; on top of that, keeping
         the record is not a deletion, so those backups still have an
         instance they belong to and are left alone.
+
+        Bounded to what was stored since the instance was created when an
+        archived instance of the same name keeps its copies in the same
+        prefix (``cloud.instance._backup_purge_since``): those stay.
         """
         if not self._purges_backups(inst):
             return ()
+        args = [inst_dir]
+        since = inst._backup_purge_since(inst.instance_backup_dst)
+        if since:
+            args.append(since)
         return ((
             PURGE_LABEL,
-            self.run_script("backup_purge.sh", [inst_dir]),
+            self.run_script("backup_purge.sh", args),
             {
                 "stop_on_failure": True,
                 "continue_on": (PURGE_EXIT_ALREADY_EMPTY,),
@@ -232,7 +240,9 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
     def _refuse_shared_prefix(self, inst):
         """Refuse a delete whose purge would reach another's copies.
 
-        The delete empties each prefix whole, with no cutoff: one that is
+        The delete empties each prefix whole, or only what was stored
+        since the instance was created when an archived instance of the
+        same name holds the same one (``_backup_purge_since``): one that is
         a destination's path or holds another instance's copies
         (``cloud.instance._backup_prefix_conflict``), written before the
         other instance existed or before the check, would take them with

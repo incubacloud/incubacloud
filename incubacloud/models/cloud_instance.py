@@ -991,6 +991,35 @@ class CloudInstance(models.Model):
             "deleted. Correct the instance's backup path."
         )
 
+    def _backup_purge_since(self, prefix):
+        """Where a delete's purge of *prefix* starts, or ``""`` to empty it whole.
+
+        Another instance of the same name that holds the same path, the
+        archived one whose name this one took (``_backup_prefix_conflict``
+        lets it through), keeps there what was stored before this one was
+        created: the delete's purge is bounded to what came after
+        (``PURGE_SINCE``, ``lib/purge_prefix.sh``), the archived one's own
+        purge to what came before (``PURGE_BEFORE``).
+
+        :param str prefix: the duplicity or wal-g prefix the delete empties
+        :return: this instance's creation as ISO-8601 UTC, to the second
+            and rounded down, or ``""`` when no other instance holds it
+        :rtype: str
+        """
+        self.ensure_one()
+        key = dst_key(prefix)
+        if not (key and key[1] and self.name and self.create_date):
+            return ""
+        namesakes = self.env["cloud.instance"].sudo().with_context(
+            active_test=False,
+        ).search([("id", "!=", self.id), ("name", "=", self.name)])
+        if not any(
+            dst_key(path) == key
+            for other in namesakes for path in other._backup_paths_held()
+        ):
+            return ""
+        return self.create_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
     @api.depends(
         "odoo_version",
         "odoo_commit_sha",

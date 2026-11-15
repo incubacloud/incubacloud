@@ -393,7 +393,9 @@ class TestThePurgeEnvironmentKeepsItsLines(_SwitchedOffCase):
 
 
 class TestTheDeleteReachesOnlyItsOwnArchive(_PitrCase):
-    """Deleting an instance empties its recovery prefix whole, with no cutoff."""
+    """Deleting an instance empties its recovery prefix whole, or only what
+    it stored since it was created when an archived instance of the same
+    name keeps its archive there."""
 
     def setUp(self):
         super().setUp()
@@ -430,6 +432,50 @@ class TestTheDeleteReachesOnlyItsOwnArchive(_PitrCase):
             DeleteInstanceExecutor, "delete_instance", payload={"keep_in_panel": True},
         )
         self.assertEqual(executor._purge_prefixes(self.inst), [])
+
+    def _archived_namesake(self, prefix):
+        """An archived instance of this name whose recovery archive is *prefix*.
+
+        :param str prefix: its frozen recovery prefix
+        :return: the archived ``cloud.instance``
+        """
+        project = self.env["cloud.project"].create({
+            "name": "pitr-proj-2", "remote_folder": "pp2",
+            "backup_backend_id": self.backend.id,
+        })
+        namesake = self.env["cloud.instance"].create({
+            "name": "pitr-inst", "project_id": project.id,
+            "environment": "staging", "host_id": self.host.id,
+            "state": "deployed",
+        })
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET active = false, pitr_archived_prefix = %s"
+            " WHERE id = %s",
+            (prefix, namesake.id),
+        )
+        self.env.invalidate_all()
+        return namesake
+
+    def test_a_successor_s_delete_keeps_the_archived_one_s_archive(self):
+        self._archived_namesake(PREFIX)
+        executor = self._executor(DeleteInstanceExecutor, "delete_instance")
+        executor._refuse_shared_prefix(self.inst)
+        since = self.inst.create_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        for step in self.inst._teardown_pre_steps("~/pp/pitr-inst", False):
+            with self.subTest(step=step[0]):
+                self.assertIn(
+                    f" delete --use-server-modtime --max-age {since} pitr: ",
+                    step[1],
+                )
+                self.assertNotIn("purge pitr:", step[1])
+
+    def test_without_one_in_its_prefix_the_delete_empties_it_whole(self):
+        self._archived_namesake("s3://bucket/backups/pp2/pitr-inst-pitr")
+        for step in self.inst._teardown_pre_steps("~/pp/pitr-inst", False):
+            with self.subTest(step=step[0]):
+                self.assertIn(" purge pitr: ", step[1])
+                self.assertNotIn("--max-age", step[1])
 
 
 class TestThePurgeReachesOnlyItsOwnArchive(_SwitchedOffCase):

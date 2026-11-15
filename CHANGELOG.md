@@ -508,7 +508,10 @@ invalid. The rest is the panel's assets and the Spanish catalogue.
   cutoff): the job fails before anything is deleted, raises its purge
   alert and keeps the record. Deleting a live instance refuses such a
   prefix the same way, for its backup path and its recovery archive,
-  before its first step: the instance stays as it was. A backup path an Administrator or an
+  before its first step: the instance stays as it was. Deleting the
+  successor of an archived instance of the same name, which shares its
+  backup path and recovery archive, empties only what the successor
+  stored since it was created: the archived instance keeps its copies. A backup path an Administrator or an
   import writes is held to the same check, naming the instance it would
   overlap; 1.0.229's post-migrate names those saved before. A layer that
   shares one bucket between panels must give each panel credentials

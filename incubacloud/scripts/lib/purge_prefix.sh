@@ -36,6 +36,12 @@
 # live instance, which tears the instance down first) leave it unset and
 # get the unconditional purge.
 #
+# ``PURGE_SINCE`` (optional, ISO-8601 UTC) is the other side: only
+# objects stored at or after that instant are in scope. The deletion of
+# that successor sets it to the instant the successor was created, so
+# what the archived instance of the same name keeps in the prefix,
+# stored before, stays for that instance's own purge.
+#
 # Exit codes are the contract with the executors (see backup_purge.sh):
 #   0   purged and verified empty (of objects in scope)
 #   10  nothing in scope was stored under the prefix
@@ -56,7 +62,8 @@ exit code is what the executor reads.
 
 With ``PURGE_BEFORE`` set, only objects stored before that instant are
 in scope; anything newer belongs to whoever holds the prefix now and is
-left alone.
+left alone. With ``PURGE_SINCE`` set, only objects stored at or after it
+are; anything older belongs to the archived instance of the same name.
 """
 import os
 import sys
@@ -86,28 +93,40 @@ if not bucket or not prefix:
     sys.exit(22)
 prefix += "/"
 
-cutoff = None
-raw_cutoff = os.environ.get("PURGE_BEFORE", "").strip()
-if raw_cutoff:
+def read_instant(name):
+    """Read the ISO-8601 instant in the environment variable *name*.
+
+    :param str name: ``PURGE_BEFORE`` or ``PURGE_SINCE``
+    :return: the instant, aware (a naive one is UTC), or None when unset
+    """
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
     try:
-        cutoff = datetime.fromisoformat(raw_cutoff)
+        instant = datetime.fromisoformat(raw)
     except ValueError:
         # Refused rather than ignored: falling back to an unconditional
         # purge is precisely the outcome the cutoff exists to prevent.
-        print(f"ERROR PURGE_BEFORE is not an ISO-8601 instant: {raw_cutoff}")
+        print(f"ERROR {name} is not an ISO-8601 instant: {raw}")
         sys.exit(22)
-    if cutoff.tzinfo is None:
+    if instant.tzinfo is None:
         # Odoo stores datetimes naive in UTC; S3 hands back aware ones.
-        cutoff = cutoff.replace(tzinfo=timezone.utc)
+        instant = instant.replace(tzinfo=timezone.utc)
+    return instant
+
+
+cutoff = read_instant("PURGE_BEFORE")
+since = read_instant("PURGE_SINCE")
 
 
 def in_scope(obj):
-    """Whether this object predates the cutoff (always true without one).
+    """Whether this object lies within the bounds (always true without any).
 
     :param obj: one ``Contents`` entry from ``list_objects_v2``.
     :return: True when the object may be deleted by this purge.
     """
-    return cutoff is None or obj["LastModified"] < cutoff
+    when = obj["LastModified"]
+    return (cutoff is None or when < cutoff) and (since is None or when >= since)
 
 
 kwargs = {}
@@ -156,6 +175,8 @@ except EndpointConnectionError as exc:
     sys.exit(22)
 
 scope = f" stored before {cutoff.isoformat()}" if cutoff else ""
+if since:
+    scope += f" stored since {since.isoformat()}"
 if remaining:
     print(f"ERROR prefix still has objects{scope} after purge: {prefix}")
     sys.exit(22)

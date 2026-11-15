@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Empty an instance's backup prefix before its stack is torn down.
 #
-# Usage: backup_purge.sh <instance_dir>
+# Usage: backup_purge.sh <instance_dir> [purge_since]
+#
+# ``purge_since`` (ISO-8601 UTC) bounds the purge to the objects stored
+# at or after it (``PURGE_SINCE`` in ``lib/purge_prefix.sh``): the
+# executor passes it when an archived instance of the same name keeps
+# its copies in the same prefix, so only this instance's go.
 #
 # The invariant this serves: never leave objects belonging to an
 # instance that no longer exists. The only thing that can talk to the
@@ -46,9 +51,13 @@ source "$(dirname "$0")/lib/common.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/purge_prefix.sh
 source "$(dirname "$0")/lib/purge_prefix.sh"
 
-ic_require_args 1 "$#" "backup_purge.sh <instance_dir>"
+ic_require_args 1 "$#" "backup_purge.sh <instance_dir> [purge_since]"
 
 dir="$(ic_expand_home "$1")"
+since_args=()
+if [ -n "${2:-}" ]; then
+    since_args=(-e "PURGE_SINCE=$2")
+fi
 
 if [ ! -d "$dir" ]; then
     # No directory means no compose and no credentials. The caller only
@@ -80,7 +89,7 @@ ic_log "purging backup prefix via the instance's own backup container"
 
 set +e
 ic_purge_prefix_program \
-    | ic_compose_run --rm -T --no-deps --entrypoint python3 backup -
+    | ic_compose_run --rm -T --no-deps "${since_args[@]}" --entrypoint python3 backup -
 rc=$?
 set -e
 
