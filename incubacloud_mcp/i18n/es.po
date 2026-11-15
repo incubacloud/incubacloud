@@ -2412,11 +2412,11 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
 msgid ""
-"Writing to GitLab repositories comes in a next version: for now the panel "
-"only reads this repository."
+"Writing to GitLab repositories is not available: the panel only reads this "
+"repository."
 msgstr ""
-"La escritura en repositorios de GitLab llega en una próxima versión: por "
-"ahora el panel solo lee este repositorio."
+"La escritura en repositorios de GitLab no está disponible: el panel solo lee "
+"este repositorio."
 
 #. module: incubacloud_mcp
 #. odoo-python

@@ -140,5 +140,5 @@ repository's webhook, with **Merge request events**.
 ## What the panel does not do with GitLab
 
 - Importing a project from Odoo.sh reads GitHub only: Odoo.sh works with GitHub.
-- The assistant reads GitLab repositories but does not write to them yet:
-  branches, commits and merge requests come in a next version.
+- The assistant reads GitLab repositories but does not write to them: creating
+  branches, committing files and opening merge requests are not available.

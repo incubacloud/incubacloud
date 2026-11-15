@@ -1,8 +1,8 @@
-"""The code tools on a GitLab repository: read with git, write later.
+"""The code tools on a GitLab repository: read with git, not written to.
 
 A line of a Git provider is read with the panel's git and the provider's
 credential; it is the user's when a line of theirs has the same provider
-and path. Writing to one answers that it comes in a next version.
+and path. Writing to one answers that it is not available.
 """
 
 from unittest.mock import patch
@@ -123,7 +123,7 @@ class TestCodeToolsOnGitLab(
         self.assertIn("project_connect_repo", result["content"][-1]["text"])
         tree.assert_not_called()
 
-    def test_writing_to_a_gitlab_repository_comes_in_a_next_version(self):
+    def test_writing_to_a_gitlab_repository_is_not_available(self):
         tree, read = self._patch_git([])
         for name, arguments in (
             ("repo_create_branch", {"branch": "assistant/x"}),
@@ -142,7 +142,7 @@ class TestCodeToolsOnGitLab(
                     self.key, name, {"url": GITLAB_REPO, **arguments}
                 )
                 self.assertTrue(result["isError"], result)
-                self.assertIn("next version", result["content"][-1]["text"])
+                self.assertIn("is not available", result["content"][-1]["text"])
         tree.assert_not_called()
 
     def test_connecting_a_gitlab_repository_keeps_it_canonical_and_once(self):
