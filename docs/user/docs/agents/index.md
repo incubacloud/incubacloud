@@ -1,9 +1,9 @@
 # Agents
 
 An AI agent — Claude Code, Claude, Claude Desktop, Cursor, VS Code, Codex —
-can work on your panel for you: look at projects and instances, read logs,
-deploy, back up, clone a staging, change settings. It connects to the
-panel's **MCP address** and acts **as you**: with your role and your
+can work on your panel for you: look at projects and instances, read logs
+and metrics, deploy, back up, clone a staging, change settings. It connects
+to the panel's **MCP address** and acts **as you**: with your role and your
 projects' access, never more.
 
 With a developer's role, an agent also works on your project's GitHub
