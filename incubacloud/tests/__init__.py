@@ -154,6 +154,8 @@ from . import test_error_log_context
 from . import test_error_alert_quiet_window
 from . import test_config_snapshot_frozen
 from . import test_deploy_override_logging
+from . import test_deploy_override_backup_retention
+from . import test_backup_stale_alert
 from . import test_deploy_override_mailcatcher
 from . import test_copier_answers_whitelist
 from . import test_deploy_override_smtp_update_check

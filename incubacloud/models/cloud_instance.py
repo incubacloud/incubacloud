@@ -26,12 +26,14 @@ from ..restore_staging import purge_stale
 from . import _odoo_versions, _relay_oauth
 from ._odoo_versions import ODOO_VERSION_SELECTION
 from . import _config_snapshot_diff as _snapshot_diff
+from ._backup_retention import TEMPLATE_BACKUP_RETENTION, valid_backup_retention
 from ._repo_requirements import (
     GitReadBudget,
     _normalize_url,
     detect_addon_conflicts,
     detect_pip_conflicts,
 )
+from .backup_list_executor import BACKUP_STALE_ALERT_CODE
 from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
@@ -1148,6 +1150,15 @@ class CloudInstance(models.Model):
                 {"smtp_relay_oauth": inst._relay_oauth_snapshot()}
                 if inst._relay_oauth_renders() else {}
             ),
+            # The retention the backup container's cleanup runs, once it
+            # is not the template's: until 1.0.229 none other applied,
+            # and a retention changed since left nothing to apply. Only
+            # then, so the rest of the fleet hashes as before.
+            **(
+                {"backup_retention": retention}
+                if (retention := inst._cron_backup_retention())
+                and retention != TEMPLATE_BACKUP_RETENTION else {}
+            ),
         }
 
     #: Fields a group writes and only the system reads: ``{field: group}``.
@@ -1492,6 +1503,39 @@ class CloudInstance(models.Model):
         self.ensure_one()
         bb = self.effective_backup_backend
         return bool(bb and bb.backup_dst)
+
+    def _backup_retention(self):
+        """Return the retention this instance's backups keep (``7D``, ``3M``).
+
+        Default: the backup destination's, ``3M`` without one or when it
+        is empty. Modules layered on top (e.g. one that keeps a retention
+        of its own per instance) may override; every executor reads it
+        from here, as it reads :meth:`_backup_enabled`.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        bb = self.effective_backup_backend
+        retention = (bb.backup_retention or "").strip() if bb else ""
+        return retention or TEMPLATE_BACKUP_RETENTION
+
+    def _cron_backup_retention(self):
+        """Return the retention the backup container's cleanup applies, or None.
+
+        None while the instance runs no backups, while the bucket's
+        lifecycle or nobody deletes the old ones, and for a retention the
+        container must not run (``valid_backup_retention``), which leaves
+        the template's own ``3M``.
+
+        :rtype: str | None
+        """
+        self.ensure_one()
+        if not self._backup_enabled():
+            return None
+        if self.effective_backup_backend.retention_owner != "cron":
+            return None
+        retention = self._backup_retention()
+        return retention if valid_backup_retention(retention) else None
 
     def _egress_whitelist(self, template_ref=None):
         """Hostnames this instance's own egress gateway may reach.
@@ -4595,13 +4639,21 @@ class CloudInstance(models.Model):
             ]
             + self._periodic_maintenance_domain()
         )
+        Alert = self.env["cloud.alert"].sudo()
         for inst in instances:
-            if not inst.host_id or not inst.instance_backup_dst:
-                continue
             services = {
                 s.strip() for s in (inst.compose_services or "").split(",") if s.strip()
             }
-            if "backup" not in services:
+            if (
+                not inst.host_id
+                or not inst.instance_backup_dst
+                or "backup" not in services
+            ):
+                # No backups scheduled any more: nothing can be stale.
+                Alert.resolve_alert(
+                    BACKUP_STALE_ALERT_CODE,
+                    host=inst.host_id or None, instance=inst,
+                )
                 continue
             try:
                 inst.list_backups()

@@ -16566,6 +16566,16 @@ msgstr ""
 "de este trabajo."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The retention period must be a number followed by D, W, M or Y in capitals "
+"(e.g. 30D, 3M, 1Y)."
+msgstr ""
+"El periodo de retención debe ser un número seguido de D, W, M o Y en "
+"mayúsculas (p. ej. 30D, 3M, 1Y)."
+
+#. module: incubacloud
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_gitlab_hook_key_uniq
 msgid "The routing key is unique."
 msgstr "La clave de enrutado es única."
