@@ -3051,6 +3051,8 @@ msgid "Bucket is required"
 msgstr "El bucket es obligatorio"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__retention_owner__lifecycle
 msgid "Bucket lifecycle"
 msgstr "Ciclo de vida del bucket"
@@ -5968,6 +5970,8 @@ msgid "Dumping the current database on the fly."
 msgstr "Volcando la base de datos actual sobre la marcha."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__retention_owner__cron
 msgid "Duplicity cron"
 msgstr "Cron de Duplicity"
@@ -12116,6 +12120,8 @@ msgid "No webhooks yet."
 msgstr "Aún no hay webhooks."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__retention_owner__none
 msgid "Nobody — infinite archive"
 msgstr "Nadie — archivo infinito"
@@ -15059,6 +15065,8 @@ msgid "Runs"
 msgstr "Ejecuciones"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__backend_type__s3
 msgid "S3 Compatible"
 msgstr "Compatible con S3"
