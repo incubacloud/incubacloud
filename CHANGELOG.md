@@ -47,7 +47,8 @@ one as `3M`) and names in the log any it leaves invalid.
   presenting another key raises the critical alert
   `backup_sftp_host_key_changed`, from the daily usage measure and the
   daily backup listing. A module installed on top can limit the panel's
-  connections to public addresses. Continuous recovery stays on S3.
+  connections to public addresses. Continuous recovery stays on S3. A
+  neutralized copy of the panel loses the private keys.
 
 - **`backup_stale` alert: scheduled backups that stopped.** The daily
   backup listing of a production instance raises it when the newest
