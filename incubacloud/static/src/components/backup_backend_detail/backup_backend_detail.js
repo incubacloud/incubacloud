@@ -93,7 +93,10 @@ export class BackupBackendDetail extends Component {
       sftp_user: [when(isSftp, required(_t("User is required")))],
       email_from: [email(_t("Sender email is invalid"))],
       email_to: [email(_t("Recipient email is invalid"))],
-      backup_retention: [retention(_t("Use N + D/M/Y (e.g. 30D, 3M, 1Y)"))],
+      backup_retention: [
+        required(_t("Retention period is required")),
+        retention(_t("Use N + D/W/M/Y (e.g. 30D, 2W, 3M, 1Y)")),
+      ],
     }));
 
     if (!this.isNew) {

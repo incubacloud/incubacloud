@@ -87,7 +87,9 @@ one as `3M`) and names in the log any it leaves invalid.
   active one, and anything after a `;` runs as a command. A backup
   destination refuses any other value (`^[1-9][0-9]*[DWMY]$`, capitals),
   and a deploy that finds one stored writes no cleanup for it, leaves the
-  template's `3M` and says so in its log, without failing.
+  template's `3M` and says so in its log, without failing. The page's own
+  check takes the same values: it now accepts weeks (`2W`) and refuses
+  `0D`, `03M` and an empty retention before the save does.
 
 - **duplicity never waits on its input.** The jobs keep a command's input
   open, and duplicity's SFTP backend asks on it about a server it does

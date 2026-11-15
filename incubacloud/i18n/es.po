@@ -14834,6 +14834,12 @@ msgstr "Período de retención"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Retention period is required"
+msgstr "El período de retención es obligatorio"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "Retention owner"
 msgstr "Propietario de retención"
@@ -18743,8 +18749,8 @@ msgstr "Usar \""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
-msgid "Use N + D/M/Y (e.g. 30D, 3M, 1Y)"
-msgstr "Use N + D/M/Y (p. ej. 30D, 3M, 1Y)"
+msgid "Use N + D/W/M/Y (e.g. 30D, 2W, 3M, 1Y)"
+msgstr "Use N + D/W/M/Y (p. ej. 30D, 2W, 3M, 1Y)"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance_domain__redirect_permanent
