@@ -924,7 +924,10 @@ class TestRebootSilenceIsTheRestart(_RebootCase):
         )
         self.assertTrue(rule)
         self._ordered(60)
-        rule._sync_alerts([({rule.host_label or "host_id": str(self.host.id)}, 1)])
+        # A breach, as the rule reads one: the age of the host's last sample.
+        breach = rule.threshold + 1000 if rule.comparator == "gt" else rule.threshold - 1000
+        self.assertTrue(rule._breached(breach))
+        rule._sync_alerts([({rule.host_label or "host_id": str(self.host.id)}, breach)])
         domain = [("code", "=", "metrics_host_absent"), ("host_id", "=", self.host.id)]
         self.assertFalse(self.env["cloud.alert"].search_count(domain))
         # Not its first sighting either, kept apart until it confirms.
