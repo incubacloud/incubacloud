@@ -61,7 +61,7 @@ then. The rest is the panel's assets and the Spanish catalogue.
   backup backend to **Backups** under «Destination», and «Never purge
   automatically» to **General** under «Automatic purge». **Config** is
   now **Odoo Config**. The bar shows Overview, General, Networking,
-  Email (production) or Mails (staging), Repos, Odoo Config, Backups and
+  Email (production), Repos, Odoo Config, Backups, Mails (staging) and
   Metrics; Dependencies, Build, Resources, Database, Whitelist and Audit
   Logs sit under «More ▾», which takes the open tab's name while it is one
   of its own and shows a dot when one of them has a change not saved or
