@@ -976,6 +976,12 @@ msgid "Reading the logs"
 msgstr "Leyendo los logs"
 
 #. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Reading the metrics"
+msgstr "Leyendo las métricas"
+
+#. module: incubacloud_assistant
 #. odoo-javascript
 #: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
 msgid "Reading the models…"
