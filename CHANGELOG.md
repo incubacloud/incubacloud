@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Changed
+### Fixed
 
 - **«In use» on Sessions and access means the session still works (#48).**
   The page called a session in use while Odoo's trace had it unrevoked and
