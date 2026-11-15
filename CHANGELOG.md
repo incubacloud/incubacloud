@@ -296,10 +296,16 @@ with Settings' save bar. Switching a notification channel off deletes its
 bot token or signing secret. Deleting an archived instance for good
 empties its continuous recovery archive too, and a delete that cannot
 empty it says so with an alert. Switching continuous recovery off keeps
-the archive for the backup window, then empties it.
+the archive for the backup window, then empties it. A backup destination
+can be an SFTP server (#93): the panel generates its key, you trust the
+server's key once, and backups, listings, restores and purges go there.
 A new instance is created on one page.
 
-The update adds five columns on instances, `pitr_archived_prefix`,
+The update adds the SFTP columns of backup destinations (`sftp_host`,
+`sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
+`sftp_public_key`, `sftp_known_hosts`, `sftp_host_key_fingerprint`,
+`sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
+destinations there are, and five columns on instances, `pitr_archived_prefix`,
 `pitr_off_at`, `pitr_purge_at`, `pitr_rendered_prefix` and
 `pitr_rendered_backend_id` (`incubacloud_pitr` 1.0.16 comes with them).
 Its data migrations: 1.0.229's post-migrate deletes the Telegram bot
@@ -326,6 +332,27 @@ invalid. The rest is the panel's assets and the Spanish catalogue.
   stopped) reads as stale on its first listing, before its first night.
   A real stop is told a day later. Nothing told the operator before that
   the copies had stopped.
+
+### Added
+
+- **SFTP backup destinations (#93).** A destination's type is S3
+  compatible or SFTP, chosen when it is created. An SFTP one names a
+  server, port, user and folder; the panel generates its Ed25519 key pair
+  (the private half readable by the platform only, never sent by a route,
+  the MCP or the assistant) and shows the `authorized_keys` line. Read the
+  server key shows the fingerprint the server presents with the key
+  exchange alone, and Trust this key stores it only if the server still
+  presents it; another server or port drops it. Deploy and rebuild ship
+  the key, the trusted server key and `~/.ssh/config` to the backup
+  service as files of their own (0600, 0700 directory, mounted read-only
+  over its cache), refuse to build without a trusted key or with a backup
+  path off the destination's server, and remove them when the instance
+  stops backing up to SFTP. Test, the usage measure, the archived copy's
+  check, the listing's sizes and both purges work over SFTP; the purge
+  checks the server's clock before it trusts file times. A server
+  presenting another key raises the critical alert
+  `backup_sftp_host_key_changed`. A tenant's panel reaches public servers
+  outside the platform only. Continuous recovery stays on S3.
 
 ### Changed
 
@@ -563,6 +590,13 @@ invalid. The rest is the panel's assets and the Spanish catalogue.
   destination refuses any other value (`^[1-9][0-9]*[DWMY]$`, capitals),
   and a deploy that finds one stored writes no cleanup for it, leaves the
   template's `3M` and says so in its log, without failing.
+
+- **duplicity never waits on its input.** The jobs keep a command's input
+  open, and duplicity's SFTP backend asks on it about a server it does
+  not know: every `dup` call of a backup, listing, restore, download or
+  archive copy reads from `/dev/null` and fails at once instead.
+- **The quota mail names the destination** (`backup_dst`) instead of the
+  bucket, which an SFTP destination does not have.
 
 - **A backup destination's, a project's and a host's pages after the form
   standard's review (#123).** On a backup destination, saving confirms the
