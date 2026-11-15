@@ -5,6 +5,7 @@ is replaced at ``requests.get``: every query of the summary answered as the
 central would, from the window and step it asks.
 """
 
+import json
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -224,26 +225,41 @@ class TestReadMetrics(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertTrue(too_long["isError"])
 
     def test_only_who_sees_the_metrics_tab_reads_them(self):
-        """A consultant of the project has no such tool; a developer outside
-        the project is told the instance is not there; the central is not
-        asked for either."""
+        """A consultant of the project has no such tool, and the route
+        refuses them as the tab's board does; an instance out of reach is
+        one that does not exist; the central is asked for neither. From
+        developer up a role reads every instance, as on the tab."""
         consultant = self._cloud_user("mcp-metrics-cons", group="group_cloud_consultant")
         self.project.member_ids = [(4, consultant.id)]
         consultant_key = self._api_key(consultant)
         self.assertNotIn("read_metrics", self._tool_names(consultant_key))
         self.assertIn("read_metrics", self._tool_names(self.key))
-        outsider_key = self._api_key(self._cloud_user("mcp-metrics-out"))
-        for key in (consultant_key, outsider_key):
+        with patch(_CENTRAL, side_effect=self.central):
             response = self._modern(
                 "tools/call",
                 {"name": "read_metrics", "arguments": {"instance_id": self.production.id}},
-                key,
+                consultant_key,
             )
             body = response.json()
-            refused = "error" in body or body["result"]["isError"]
-            self.assertTrue(refused, body)
-        result = self._read(key=outsider_key)
+            self.assertTrue("error" in body or body["result"]["isError"], body)
+        result = self._read(instance_id=self.production.id + 10**6)
+        self.assertTrue(result["isError"])
         self.assertIn("no instance you can reach", result["content"][-1]["text"])
+        with patch(_CENTRAL, side_effect=self.central):
+            self.authenticate(consultant.login, consultant.login)
+            route = self.url_open(
+                "/cloud/instance/metrics_summary",
+                data=json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "call",
+                        "id": 1,
+                        "params": {"instance_id": self.production.id},
+                    }
+                ),
+                headers={"Content-Type": "application/json"},
+            ).json()
+            self.assertIn("error", route)
         self.assertEqual(self.central.queries, [])
 
     def test_without_observability_or_a_central_it_says_why(self):
