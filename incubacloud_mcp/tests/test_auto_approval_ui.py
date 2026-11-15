@@ -144,10 +144,16 @@ class TestTheApprovalMarkOnAnInstance(
                     }
                     throw new Error(`gave up waiting for ${what}`);
                 };
+                // Audit Logs is under «More» while the bar is full, as
+                // the tab bar of the instance's page places it.
+                const auditTab = () => [
+                    ...document.querySelectorAll('.rl-tab'),
+                ].find((b) => b.textContent.trim() === 'Audit Logs');
                 try {
-                    const tab = await until('the Audit Logs tab', () => [
-                        ...document.querySelectorAll('.rl-tab'),
-                    ].find((b) => b.textContent.trim() === 'Audit Logs'));
+                    const first = await until('the Audit Logs tab or More', () =>
+                        auditTab() || document.querySelector('.ic-tabbar__more'));
+                    if (first.classList.contains('ic-tabbar__more')) first.click();
+                    const tab = await until('the Audit Logs tab', auditTab);
                     tab.click();
                     const auto = await until('the auto-approved mark', () =>
                         document.querySelector('.ic-mcp-approval--auto'));
