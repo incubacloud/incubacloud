@@ -12,6 +12,7 @@ from unittest.mock import patch
 import requests
 
 import odoo.http
+from odoo import fields
 from odoo.addons.base.models.res_users import ResUsers as BaseUsers
 from odoo.tests import new_test_user, tagged
 from odoo.tests.common import HttpCase
@@ -523,6 +524,27 @@ class TestNewWaysInAreTold(_GuardedRequests, HttpCase):
         self.assertTrue(mails.subject.endswith(": ci"))
         Keys._generate(None, "deploy", datetime.now() + timedelta(days=1))
         self.assertEqual(len(self._mails()), 1)
+
+    def test_the_mail_queue_is_woken_again_two_minutes_later(self):
+        """A pass of the queue that dies on a concurrent write leaves the
+        notice to the next one; that one is two minutes away, not an hour."""
+        self.ICP.set_param(PARAM + "notices", "on")
+        cron = self.env.ref("mail.ir_cron_mail_scheduler_action").sudo()
+        # Odoo creates no trigger for an inactive cron "now".
+        cron.active = True
+        Trigger = self.env["ir.cron.trigger"].sudo()
+        before = Trigger.search([("cron_id", "=", cron.id)])
+        start = fields.Datetime.now()
+        self.env["res.users.apikeys"].with_user(self.user).sudo()._generate(
+            None, "ci", datetime.now() + timedelta(days=1),
+        )
+        self.assertEqual(len(self._mails()), 1)
+        added = Trigger.search([("cron_id", "=", cron.id)]) - before
+        self.assertEqual(len(added), 2)
+        self.assertTrue(any(
+            call_at >= start + access_module.NOTICE_QUEUE_RETRY
+            for call_at in added.mapped("call_at")
+        ))
 
     def test_a_trusted_device_tells_nothing(self):
         self.ICP.set_param(PARAM + "notices", "on")
