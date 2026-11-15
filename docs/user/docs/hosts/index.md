@@ -109,6 +109,3 @@ Everything you run there affects the whole server and every instance on it.
   (Host detail → Metrics → Security, [Security logs](security.md))
 - Import an instance that was already running on the host
   (Host detail → Import Instance)
-
-!!! note "Reference page is in progress"
-    A full per-screen reference for the Host detail UI is coming soon.

@@ -1,11 +1,7 @@
 # Reference
 
-Per-screen documentation for the IncubaCloud SPA at `/cloud`.
-
-!!! note "This section is being built out"
-    Reference pages are added as we ship features and as customers ask for them.
-    The most-used screens are prioritised first.
-    What you don't find here, the [section overviews](#sections) cover at a high level.
+Reference for the IncubaCloud SPA at `/cloud`. The [section overviews](#sections)
+cover each area; the pages below go into one subject in depth.
 
 ## Sections
 
@@ -22,17 +18,3 @@ Per-screen documentation for the IncubaCloud SPA at `/cloud`.
 - [Service limits](limits.md) — request size and duration on the hosted service.
 - [Third-party software](third-party.md) — the software IncubaCloud is built on, and
   what deploying Odoo Enterprise needs.
-
-## Coming soon
-
-We're working on screen-by-screen reference pages for:
-
-- Project detail (sidebar, environments, settings)
-- Instance detail (hero, infrastructure card, configuration card, actions)
-- Host detail (probe, full setup, audit logs)
-- Backup backend detail (encryption, notifications, providers)
-- Settings → Users (the 5 roles: Stakeholder, Consultant, PM, Developer, Administrator)
-- Settings → General → Default backup destination (defaults and inheritance)
-
-If you need one of these urgently, [drop us a line](https://www.incubacloud.io/contactus)
-and we'll move it up the queue.
