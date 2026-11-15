@@ -74,14 +74,19 @@ class _File:
         return self
 
     def __exit__(self, *exc):
+        self.close()
+
+    def close(self):
         data = _load()
         data["files"][self.path] = {
             "mtime": time.time() + data.get("skew", 0), "link": False,
         }
         _save(data)
 
-    def write(self, _text):
-        pass
+    def write(self, text):
+        data = _load()
+        data.setdefault("written", []).append(text)
+        _save(data)
 
 
 class _Sftp:
@@ -94,7 +99,10 @@ class _Sftp:
         return _Attrs(path, 0o040755, 0)
 
     def stat(self, path):
-        info = _load()["files"][path]
+        data = _load()
+        if data.get("stat_fails"):
+            raise OSError(errno.EIO, "I/O error", path)
+        info = data["files"][path]
         return _Attrs(path, 0o100644, info["mtime"])
 
     def open(self, path, _mode):
@@ -163,7 +171,8 @@ teardown() {
     rm -rf "$TMP"
 }
 
-# _seed VERDICT SKEW FILE=MTIME[:link]... — folders are taken from the files.
+# _seed VERDICT SKEW FILE=MTIME[:link]... — folders are taken from the files;
+# an MTIME of ``none`` is a file the server gives no time for.
 _seed() {
     python3 - "$@" <<'PY'
 import json
@@ -175,7 +184,9 @@ data = {"verdict": verdict, "skew": int(skew), "files": {}, "dirs": []}
 for arg in files:
     name, _, rest = arg.partition("=")
     mtime, _, link = rest.partition(":")
-    data["files"][name] = {"mtime": int(mtime), "link": link == "link"}
+    data["files"][name] = {
+        "mtime": None if mtime == "none" else int(mtime), "link": link == "link",
+    }
     parts = name.split("/")
     for i in range(1, len(parts)):
         folder = "/".join(parts[:i])
@@ -183,6 +194,20 @@ for arg in files:
             data["dirs"].append(folder)
 with open(os.environ["FAKE_SFTP_STATE"], "w") as fh:
     json.dump(data, fh)
+PY
+}
+
+# _set KEY JSON — one more key of the fake server's state.
+_set() {
+    python3 - "$1" "$2" <<'PY'
+import json
+import os
+import sys
+
+path = os.environ["FAKE_SFTP_STATE"]
+data = json.load(open(path))
+data[sys.argv[1]] = json.loads(sys.argv[2])
+json.dump(data, open(path, "w"))
 PY
 }
 
@@ -225,6 +250,29 @@ _run_program() {
     [ "$status" -eq 22 ]
     [[ "$output" == *"clock"* ]]
     [[ "$(_state files)" == *"backups/proj/inst/old"* ]]
+}
+
+@test "sftp: the clock probe is an empty file, removed when its time cannot be read" {
+    now=$(date +%s)
+    _seed ok 0 "backups/proj/inst/old=1000"
+    _set stat_fails true
+    export PURGE_BEFORE="$(date -u -d "@$((now - 3600))" +%Y-%m-%dT%H:%M:%S)"
+    run _run_program
+    [ "$status" -eq 22 ]
+    [ "$(_state written)" = "null" ]
+    [[ "$(_state files)" != *".incubacloud-clock-"* ]]
+    [[ "$(_state files)" == *"backups/proj/inst/old"* ]]
+}
+
+@test "sftp: with a cutoff a file the server gives no time for is left alone" {
+    now=$(date +%s)
+    _seed ok 0 "backups/proj/inst/old=1000" "backups/proj/inst/timeless=none"
+    export PURGE_BEFORE="$(date -u -d "@$((now - 3600))" +%Y-%m-%dT%H:%M:%S)"
+    run _run_program
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"removed 1 file(s) stored before"* ]]
+    [[ "$(_state files)" == *"backups/proj/inst/timeless"* ]]
+    [[ "$(_state files)" != *"backups/proj/inst/old"* ]]
 }
 
 @test "sftp: a link is removed, never followed" {

@@ -107,10 +107,15 @@ def sftp_parse(url):
     parsed = urlparse(url)
     if parsed.scheme != "sftp" or parsed.password is not None:
         raise ValueError("not an sftp:// destination")
+    if "?" in url or "#" in url:
+        raise ValueError("a query or a fragment")
     user, host = parsed.username or "", parsed.hostname or ""
     if not user or not host or not _USER_RE.match(user):
         raise ValueError("no user or no server")
-    port = parsed.port or 22
+    port = parsed.port
+    if port == 0:
+        raise ValueError("port 0")
+    port = port or 22
     raw = parsed.path[1:] if parsed.path.startswith("/") else parsed.path
     raw = raw.strip()
     absolute = raw.startswith("/")
@@ -185,11 +190,15 @@ def sftp_purge():
                 if is_dir(attrs):
                     pending.append(full)
                 else:
-                    files.append((full, attrs.st_mtime or 0))
+                    files.append((full, attrs.st_mtime))
         return files, dirs
 
     def in_scope(mtime):
-        return cutoff is None or mtime < cutoff.timestamp()
+        # A file the server gives no time for cannot be told older than
+        # the cutoff: with one, it is left alone.
+        if cutoff is None:
+            return True
+        return mtime is not None and mtime < cutoff.timestamp()
 
     try:
         try:
@@ -200,13 +209,17 @@ def sftp_purge():
                 sys.exit(10)
             raise
         if cutoff is not None:
+            # An empty file, removed whatever happens: on a full server
+            # the probe needs no space, and a failed one leaves nothing.
             probe = f"{path}/.incubacloud-clock-{secrets.token_hex(6)}"
-            with sftp.open(probe, "w") as fh:
-                fh.write("clock\n")
             try:
-                skew = sftp.stat(probe).st_mtime - time.time()
+                sftp.open(probe, "w").close()
+                skew = (sftp.stat(probe).st_mtime or 0) - time.time()
             finally:
-                sftp.remove(probe)
+                try:
+                    sftp.remove(probe)
+                except OSError:
+                    pass
             if abs(skew) > 120:
                 print(
                     f"ERROR the clock of {host} is {skew:+.0f}s off this one: "
