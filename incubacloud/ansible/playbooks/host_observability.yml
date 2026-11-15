@@ -820,6 +820,10 @@
             update_cache: true
             cache_valid_time: 86400
             lock_timeout: 60
+          # needrestart only lists what needs restarting (see
+          # full_setup_install.sh: cloud-init's hotplug hook, 15-nov-2026).
+          environment:
+            NEEDRESTART_MODE: l
       rescue:
         - name: Note cron not installed, and why
           ansible.builtin.set_fact:
@@ -859,6 +863,10 @@
             cache_valid_time: 86400
             # An unattended upgrade holding the lock fails this, not the job.
             lock_timeout: 60
+          # needrestart only lists what needs restarting (see
+          # full_setup_install.sh: cloud-init's hotplug hook, 15-nov-2026).
+          environment:
+            NEEDRESTART_MODE: l
 
         - name: Create the collector's directory
           become: "{{ not (ic_as_root | bool) }}"

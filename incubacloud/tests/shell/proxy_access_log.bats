@@ -149,6 +149,23 @@ STUB
     [ -f "$CONF" ]
 }
 
+# needrestart only lists what needs restarting: restarted by hand,
+# cloud-init's hotplug hook waits on its FIFO for good, and the apt run with
+# it (full_setup_install.sh, 15-nov-2026).
+@test "installing logrotate leaves needrestart only listing what needs restarting" {
+    cat > "$TMP/bin/apt-get" <<'STUB'
+#!/usr/bin/env bash
+echo "apt-get NEEDRESTART_MODE=${NEEDRESTART_MODE:-unset} $*" >> "$CALLS"
+STUB
+    rm "$TMP/bin/logrotate"
+    for tool in bash cat cp chmod dirname env id mkdir mktemp rm; do
+        ln -s "$(command -v "$tool")" "$TMP/bin/$tool"
+    done
+    run env PATH="$TMP/bin" "$SCRIPT" install
+    [ "$status" -eq 0 ]
+    grep -q "apt-get NEEDRESTART_MODE=l install -y -qq logrotate" "$CALLS"
+}
+
 @test "an unknown operation fails" {
     run "$SCRIPT" remove
     [ "$status" -ne 0 ]
