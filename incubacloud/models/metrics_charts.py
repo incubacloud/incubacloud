@@ -827,6 +827,25 @@ PANELS["instance_summary"] = tuple(
 #: The widest window of a summary, in hours: the tab's widest range, 7 days.
 SUMMARY_MAX_HOURS = CHART_RANGES["7d"] // 3600
 
+
+def summary_step(board_step):
+    """Return the step a summary by the hour reads its points at.
+
+    The largest step that divides an hour (so every hour has the same
+    number of points, none of them straddling two hours) and is a multiple
+    of the scrape interval, without going over the board's own step:
+    300 s for 24 hours, 1800 s for 168 (16-nov-2026: with the board's
+    2040 s, an hour had one or two points and each was the mean of 34
+    minutes, so an hour's ``max`` was no maximum).
+
+    :param int board_step: the step ``chart_window`` gives the range.
+    :rtype: int
+    """
+    return max(
+        divisor for divisor in range(_SCRAPE_SECONDS, 3601, _SCRAPE_SECONDS)
+        if 3600 % divisor == 0 and divisor <= max(board_step, _SCRAPE_SECONDS)
+    )
+
 #: A metric's highest point marks its hour as a peak when it is at least
 #: this many times the window's average: below it, the line looks flat on
 #: the tab's chart (15-nov-2026).
@@ -846,19 +865,21 @@ _SUMMARY_METRICS = (
 )
 
 
-def chart_window(range_key=None, start=None, end=None, now=None):
+def chart_window(range_key=None, start=None, end=None, now=None, step=None):
     """Return ``(start, end, step)`` in unix seconds for a chart request.
 
     Either a named range ending now, or an explicit window (a zoom) that
     is clamped to the last ``_MAX_LOOKBACK_SECONDS`` and widened to at
     least ``_MIN_WINDOW_SECONDS``. The step is the smallest multiple of
-    the scrape interval that keeps a series within ``CHART_MAX_POINTS``.
+    the scrape interval that keeps a series within ``CHART_MAX_POINTS``,
+    unless the caller asks for its own.
 
     :param str range_key: one of ``CHART_RANGES``; ignored when both
         ``start`` and ``end`` are given.
     :param start: window start, unix seconds.
     :param end: window end, unix seconds.
     :param now: current time, for tests.
+    :param int step: the step to use, in seconds, instead of the computed one.
     :rtype: tuple[int, int, int]
     :raises UserError: on an unknown range or a window that is not numbers.
     """
@@ -877,11 +898,12 @@ def chart_window(range_key=None, start=None, end=None, now=None):
         if not span:
             raise UserError(_("Unknown chart range: %s", range_key))
         start, end = now - span, now
-    raw_step = (end - start) / CHART_MAX_POINTS
-    step = max(
-        _SCRAPE_SECONDS,
-        math.ceil(raw_step / _SCRAPE_SECONDS) * _SCRAPE_SECONDS,
-    )
+    if not step:
+        raw_step = (end - start) / CHART_MAX_POINTS
+        step = max(
+            _SCRAPE_SECONDS,
+            math.ceil(raw_step / _SCRAPE_SECONDS) * _SCRAPE_SECONDS,
+        )
     # Align to the step so two refreshes a few seconds apart draw the
     # same points instead of shifting every one of them slightly.
     end = end - end % step
@@ -1151,7 +1173,7 @@ _EMPTY_ANSWERS = {
 
 
 def run_board(scope, values, available, base, user, token,
-              range_key=None, start=None, end=None, verify=True):
+              range_key=None, start=None, end=None, verify=True, step=None):
     """Run every panel of *scope* against the central, in parallel.
 
     A panel that fails does not take the board down: its entry carries
@@ -1170,11 +1192,12 @@ def run_board(scope, values, available, base, user, token,
     :param str token: its password.
     :param verify: the central's certificate check
         (``cloud.settings._central_tls_verify``).
+    :param int step: the step in seconds, instead of the window's own.
     :returns: ``{"start", "end", "step", "panels": {key: {...}},
         "asked": [keys queried], "timing": {"central_ms"}}``.
     :rtype: dict
     """
-    win_start, win_end, step = chart_window(range_key, start, end)
+    win_start, win_end, step = chart_window(range_key, start, end, step=step)
     values = values | {
         "one_off": _ONE_OFF_NAMES,
         "window": max(4 * _SCRAPE_SECONDS, step + _SCRAPE_SECONDS),
@@ -1379,6 +1402,17 @@ def _iso_ts(ts):
     return datetime.fromtimestamp(ts, timezone.utc).isoformat()
 
 
+def _unix_ts(stamp):
+    """Return an ISO 8601 time as unix seconds; one without a zone is UTC.
+
+    :raises ValueError: when it is not a time.
+    """
+    moment = datetime.fromisoformat(str(stamp))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return int(moment.timestamp())
+
+
 def _rounded(value, digits):
     """Round *value* to the panel's *digits*; an integer when it has none."""
     return int(round(value)) if digits == 0 else round(value, digits)
@@ -1392,15 +1426,19 @@ def summarize_hours(board):
     (UTC) gives each metric's mean and highest point of the board's points
     in it; an hour with no point is left out, and the first and last may
     be partial. ``peaks`` gives each metric's highest point in the window
-    above zero, how many times the window's average it is and, with a
-    limit that covers every line of it, its share of that limit; its hour
-    lists it in ``peak`` when it is ``PEAK_FACTOR`` times the average.
+    above zero, how many times the window's average it is and its share of
+    its limit; its hour lists it in ``peak`` when it is ``PEAK_FACTOR``
+    times the average. With a limit per service (CPU, memory) the share is
+    the largest of the services, each against its own limit
+    (``limit_service`` names it): the sum of the services against the sum
+    of their limits would hide one that is at its limit behind another at
+    rest (16-nov-2026). A service without a limit is left out of it.
 
     :param dict board: ``run_board``'s answer, after ``board_failure``:
         a panel that failed carries its ``error`` in words.
     :returns: ``{"hours": [{"hour", <metric>: {"avg", "max"}, "peak"?}],
         "peaks": {metric: {"at", "hour", "value", "times_average",
-        "share_of_limit"?}}, "limits": {metric: {service: value} |
+        "share_of_limit"?, "limit_service"?}}, "limits": {metric: {service: value} |
         value}, "unanswered": {metric: error}}``.
     :rtype: dict
     """
@@ -1413,12 +1451,13 @@ def summarize_hours(board):
             unanswered[metric] = panel["error"]
             continue
         digits = digits_of[key]
-        totals, names, caps = {}, set(), {}
+        totals, own, caps = {}, {}, {}
         for series in panel.get("series") or []:
             if series["role"] == role:
-                names.add(series["name"])
+                use = own.setdefault(series["name"], {})
                 for ts, value in series["points"]:
                     totals[ts] = totals.get(ts, 0) + value
+                    use[ts] = use.get(ts, 0) + value
             elif limit_role and series["role"] == limit_role and series["points"]:
                 caps[series["name"]] = series["points"][-1][1]
         if caps:
@@ -1440,10 +1479,17 @@ def summarize_hours(board):
             "value": _rounded(top, digits),
             "times_average": round(top / mean, 1),
         }
-        covered = caps and (not by_service or names <= set(caps))
-        cap = sum(caps.values()) if covered else 0
-        if cap > 0:
-            peak["share_of_limit"] = round(100 * top / cap, 1)
+        if by_service:
+            shares = [
+                (max(use.values()) / caps[name], name)
+                for name, use in own.items() if caps.get(name, 0) > 0
+            ]
+            if shares:
+                share, service = max(shares, key=lambda item: (item[0], item[1]))
+                peak["share_of_limit"] = round(100 * share, 1)
+                peak["limit_service"] = service
+        elif caps and sum(caps.values()) > 0:
+            peak["share_of_limit"] = round(100 * top / sum(caps.values()), 1)
         peaks[metric] = peak
     rows = []
     for hour in sorted(hours):
@@ -1535,54 +1581,75 @@ class CloudInstance(models.Model):
         board["silence"] = self._metrics_silence()
         return {"ok": True, **board}
 
-    def _metrics_summary(self, hours=24):
+    def _metrics_summary(self, hours=24, end=None):
         """Read this instance's metrics by the hour over the last *hours*.
 
         The panels of ``PANELS["instance_summary"]``, read from the
-        central as the Metrics tab's board is (``run_board``), and summed
-        up by ``summarize_hours``.
+        central as the Metrics tab's board is (``run_board``), at a step
+        that divides an hour (``summary_step``), and summed up by
+        ``summarize_hours``.
 
         :param int hours: the window up to now, 1 to ``SUMMARY_MAX_HOURS``;
             outside it, the nearest of the two.
+        :param str end: where the window ends, ISO 8601, as a previous
+            answer gave it in ``end``, so that the pages of one reading
+            share their window; now when omitted.
         :returns: ``{"ok": True, "window_hours", "start", "end", "step",
-            "hours", "peaks", "limits", "unanswered", "silence",
+            "hours", "peaks", "limits", "unanswered", "silence"?,
             "timing"}``, or the board's ``{"ok": False, "reason",
             "error"}`` (``disabled``, ``unconfigured``, ``credential``,
-            ``central``, ``busy``).
+            ``central``, ``busy``). ``silence`` is given only when no hour
+            has a reading or the server or instance is not reporting.
         :rtype: dict
-        :raises UserError: when *hours* is not a number.
+        :raises UserError: when *hours* or *end* is not valid.
         """
         self.ensure_one()
         try:
             hours = min(max(int(hours), 1), SUMMARY_MAX_HOURS)
-        except (TypeError, ValueError, OverflowError) as exc:
+            now = int(time.time())
+            end = now if end in (None, "") else _unix_ts(end)
+        except (TypeError, ValueError, OverflowError, OSError) as exc:
             raise UserError(_("The chart window is not valid.")) from exc
+        end = min(end, now)
         source = metrics_source(self.env)
         if not source["ok"]:
             return source
         host = self.sudo().host_id
         values = {"instance_id": self.id, "host_id": host.id or 0}
         available = {"instance"} | ({"host"} if host else set())
-        end = int(time.time())
+        window = (end - hours * 3600, end)
+        step = summary_step(chart_window(start=window[0], end=window[1])[2])
         board = run_board(
             "instance_summary", values, available,
             source["base"], source["user"], source["token"],
-            start=end - hours * 3600, end=end,
+            start=window[0], end=window[1], step=step,
             verify=source.get("verify", True),
         )
         failure = board_failure(self.env, board, source["user"], source["token"])
         if failure:
             return failure
-        return {
+        summary = summarize_hours(board)
+        if (
+            "db_connections" not in summary["unanswered"]
+            and not any("db_connections" in row for row in summary["hours"])
+        ):
+            summary["unanswered"]["db_connections"] = (
+                _("The database collector has no reading in this window.")
+                if host else _("The instance is on no server, so its database is not read.")
+            )
+        answer = {
             "ok": True,
             "window_hours": hours,
             "start": _iso_ts(board["start"]),
             "end": _iso_ts(board["end"]),
             "step": board["step"],
-            **summarize_hours(board),
-            "silence": self._metrics_silence(),
+            **summary,
             "timing": board["timing"],
         }
+        silence = self._metrics_silence()
+        if not summary["hours"] or silence["code"] != "window":
+            answer["silence"] = silence
+        return answer
 
     def _metrics_failing_since(self):
         """Return since when the central has failed (see ``failing_since``).

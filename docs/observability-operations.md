@@ -558,9 +558,12 @@ An agent reads the same board by the hour (the MCP's `read_metrics`):
 tab's latency, requests, CPU and memory panels as they are plus the
 database's connections (`ic_pg_connections` and `ic_pg_max_connections`
 of the instance while the collector's file is fresh), over the last 1 to
-168 hours, and `summarize_hours` gives each hour's mean and highest point
-and each metric's peak. Same gate as the tab, and its reads count in the
-tab's twenty boards a minute per user.
+168 hours, at a step that divides an hour (`summary_step`: 300 s for 24
+hours, 1800 s for 168, so every hour has the same number of points), and
+`summarize_hours` gives each hour's mean and highest point and each metric's
+peak (its share of the limit is the largest of the services, each against
+its own limit). Same gate as the tab, and its reads count in the tab's
+twenty boards a minute per user, one for each page of the hours.
 
 Two readings are taken from the host only when somebody presses their
 button, with the same gate as *Recent requests* (the `developer` role and

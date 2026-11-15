@@ -14,10 +14,12 @@ import requests
 from odoo.tests import tagged
 from odoo.tests.common import BaseCase, HttpCase
 
+from odoo.addons.incubacloud.models.cloud_rate_limit import CloudRateLimit
 from odoo.addons.incubacloud.models.metrics_charts import (
     PANELS,
     PEAK_FACTOR,
     summarize_hours,
+    summary_step,
 )
 from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES
 
@@ -56,6 +58,7 @@ class FakeCentral:
         """Start with no query seen."""
         self.queries = []
         self.window = None
+        self.collector_silent = False
 
     def __call__(self, url, params=None, **_kwargs):
         """Answer ``requests.get`` for one range query of the central."""
@@ -100,7 +103,7 @@ class FakeCentral:
                 _series(role("limit", **{_SERVICE: "odoo"}), flat(GIB)),
             ]
         elif "ic_pg_connections" in query:
-            result = [
+            result = [] if self.collector_silent else [
                 _series(role("connections"), flat(12)),
                 _series(role("max_connections"), flat(100)),
             ]
@@ -184,7 +187,8 @@ class TestReadMetrics(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             },
         )
         self.assertEqual(answer["unanswered"], {})
-        self.assertIn("silence", answer)
+        self.assertNotIn("silence", answer)
+        self.assertNotIn("timing", answer)
 
     def test_the_peak_is_marked_on_its_hour(self):
         """odoo's spike marks its hour; a flat line is no peak; no 5xx, none."""
@@ -203,6 +207,77 @@ class TestReadMetrics(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual(flat["share_of_limit"], 12.0)
         self.assertEqual(answer["peaks"]["memory_bytes"]["value"], GIB * 3 // 4)
         self.assertNotIn("errors_5xx_per_s", answer["peaks"])
+
+    def test_the_points_are_read_at_a_step_that_divides_the_hour(self):
+        """A week is read every 30 minutes, a day every 5: each hour has the
+        same number of points, so an hour's max is a maximum of them."""
+        answer = self._ok(hours=168)
+        self.assertEqual(self.central.window[2], 1800)
+        self.assertEqual(answer["step"], 1800)
+        self.assertEqual(3600 % self.central.window[2], 0)
+        answer = self._ok()
+        self.assertEqual(self.central.window[2], 300)
+        self.assertEqual(answer["step"], 300)
+
+    def test_the_pages_of_a_reading_share_its_window(self):
+        """The first answer's end, given back, fixes the next pages' window."""
+        first = self._ok(hours=168)
+        window = self.central.window
+        later = self._ok(hours=168, end=first["end"], offset=first["next_offset"])
+        self.assertEqual(self.central.window, window)
+        self.assertEqual((later["start"], later["end"]), (first["start"], first["end"]))
+        bad = self._read(end="yesterday")
+        self.assertTrue(bad["isError"])
+
+    def test_silence_comes_only_when_it_explains_something(self):
+        """With readings, none; with an empty central, why."""
+        self.assertNotIn("silence", self._ok())
+
+        def empty(url, params=None, **_kwargs):
+            """A central that has nothing on the instance."""
+            return _response(
+                {"status": "success", "data": {"resultType": "matrix", "result": []}}
+            )
+
+        with patch(_CENTRAL, side_effect=empty):
+            answer = self._payload(
+                self._call_tool(
+                    self.key, "read_metrics", {"instance_id": self.production.id}
+                )
+            )
+        self.assertEqual(answer["items"], [])
+        self.assertIn("code", answer["silence"])
+
+    def test_a_metric_without_readings_says_why(self):
+        """The collector silent, or the instance on no server: named, with
+        the reason, and the other metrics answered."""
+        self.central.collector_silent = True
+        answer = self._ok()
+        self.assertEqual(list(answer["unanswered"]), ["db_connections"])
+        self.assertIn("collector", answer["unanswered"]["db_connections"])
+        self.assertIn("cpu_percent", answer["items"][0])
+        self.production.sudo().host_id = False
+        answer = self._ok()
+        self.assertIn("no server", answer["unanswered"]["db_connections"])
+
+    def test_the_connections_are_read_only_while_the_collector_is_fresh(self):
+        """Both connection queries keep the collector file's freshness."""
+        self._ok()
+        queries = [q for q in self.central.queries if "ic_pg_connections" in q]
+        self.assertEqual(len(queries), 1)
+        self.assertIn("node_textfile_mtime_seconds", queries[0])
+        self.assertIn("ic_pg_max_connections", queries[0])
+        self.assertEqual(queries[0].count("node_textfile_mtime_seconds"), 2)
+
+    def test_too_many_reads_a_minute_are_refused_in_words(self):
+        """The tab's budget: the 21st read is an error and asks nothing."""
+        with patch.object(
+            CloudRateLimit, "hit", autospec=True, return_value=False
+        ):
+            result = self._read()
+        self.assertTrue(result["isError"])
+        self.assertIn("Too many chart reads", result["content"][-1]["text"])
+        self.assertEqual(self.central.queries, [])
 
     def test_the_window_is_capped_at_a_week_and_comes_in_pages(self):
         """168 hours come in pages under 20 KB that follow each other."""
@@ -326,8 +401,23 @@ class TestSummarizeHours(BaseCase):
             {"hours": [], "peaks": {}, "limits": {}, "unanswered": {}},
         )
 
-    def test_a_limit_short_of_a_service_gives_no_share(self):
-        """A share of the limit only when every service has one."""
+    def test_the_share_of_the_limit_is_the_largest_of_the_services(self):
+        """odoo at its limit with the database at rest is 100 %, not the
+        sum of both against the sum of their limits."""
+        series = [
+            {"name": "odoo", "role": "use", "points": [[3600, 100.0], [3900, 200.0]]},
+            {"name": "odoo", "role": "limit", "points": [[3900, 200.0]]},
+            {"name": "db", "role": "use", "points": [[3600, 10.0], [3900, 10.0]]},
+            {"name": "db", "role": "limit", "points": [[3900, 200.0]]},
+        ]
+        board = {"panels": {"cpu": {"kind": "series", "series": series}}}
+        peak = summarize_hours(board)["peaks"]["cpu_percent"]
+        self.assertEqual(peak["value"], 210.0)
+        self.assertEqual(peak["share_of_limit"], 100.0)
+        self.assertEqual(peak["limit_service"], "odoo")
+
+    def test_a_service_without_a_limit_is_left_out_of_the_share(self):
+        """Only a service with a limit has a share."""
         series = [
             {"name": "odoo", "role": "use", "points": [[3600, 50.0], [3900, 150.0]]},
             {"name": "odoo", "role": "limit", "points": [[3600, 200.0]]},
@@ -338,5 +428,19 @@ class TestSummarizeHours(BaseCase):
         self.assertEqual(peak["times_average"], 1.5)
         series.append({"name": "db", "role": "use", "points": [[3600, 1.0]]})
         peak = summarize_hours(board)["peaks"]["cpu_percent"]
-        self.assertNotIn("share_of_limit", peak)
+        self.assertEqual(peak["share_of_limit"], 75.0)
+        self.assertEqual(peak["limit_service"], "odoo")
         self.assertEqual(peak["value"], 150.0)
+        series.pop(1)
+        peak = summarize_hours(board)["peaks"]["cpu_percent"]
+        self.assertNotIn("share_of_limit", peak)
+
+    def test_the_step_divides_the_hour(self):
+        """The board's step, brought down to a divisor of 3600."""
+        self.assertEqual(summary_step(30), 30)
+        self.assertEqual(summary_step(300), 300)
+        self.assertEqual(summary_step(2040), 1800)
+        for board_step in range(30, 3600, 30):
+            step = summary_step(board_step)
+            self.assertEqual(3600 % step, 0)
+            self.assertLessEqual(step, board_step)
