@@ -12,7 +12,6 @@ import json
 import shutil
 import tempfile
 import time
-from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import create_autospec, patch
 
@@ -162,9 +161,16 @@ class TestSecurityBoard(HttpCase):
             "name": "HSecBoard", "ip_address": "203.0.113.81", "user": "root",
             "wildcard_domain": "hsecboard.example.com",
         })
-        # A layer that withholds security logs keeps the switch off.
-        if self.env["cloud.host"]._security_logs_available():
-            self.host.security_logs_enabled = True
+        # The board where this panel may receive security logs: a layer
+        # that withholds them until it is allowed (its own tests) is
+        # allowed here; the withheld state has a test of its own.
+        available = patch.object(
+            type(self.env["cloud.host"]), "_security_logs_available",
+            autospec=True, return_value=True,
+        )
+        self.available = available.start()
+        self.addCleanup(available.stop)
+        self.host.security_logs_enabled = True
         other = self.env["cloud.host"].create({
             "name": "HSecOther", "ip_address": "203.0.113.82", "user": "root",
             "wildcard_domain": "hsecother.example.com",
@@ -368,19 +374,11 @@ class TestSecurityBoard(HttpCase):
         get.assert_not_called()
 
     def test_unavailable_on_this_panel_asks_nothing(self):
-        """A managed panel without its manager's permission: the state alone.
-
-        Where a layer withholds security logs its own answer is used;
-        elsewhere the withholding is patched in.
-        """
-        withheld = not self.env["cloud.host"]._security_logs_available()
-        with nullcontext() if withheld else patch.object(
-            type(self.env["cloud.host"]), "_security_logs_available",
-            autospec=True, return_value=False,
-        ):
-            self.authenticate("secb-mgr", "secb-mgr")
-            with patch(f"{_MODULE}.requests.get") as get:
-                res = self._call("/cloud/host/security_board", host_id=self.host.id)["result"]
+        """A managed panel without its manager's permission: the state alone."""
+        self.available.return_value = False
+        self.authenticate("secb-mgr", "secb-mgr")
+        with patch(f"{_MODULE}.requests.get") as get:
+            res = self._call("/cloud/host/security_board", host_id=self.host.id)["result"]
         self.assertEqual(res["state"], "unavailable")
         get.assert_not_called()
 
