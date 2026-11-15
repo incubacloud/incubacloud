@@ -47,7 +47,8 @@ export class BackupBackendsList extends Component {
                 ? this.state.backends.filter(b =>
                     (b.name || "").toLowerCase().includes(q)
                     || (b.backup_dst || "").toLowerCase().includes(q)
-                    || (b.s3_bucket || "").toLowerCase().includes(q))
+                    || (b.s3_bucket || "").toLowerCase().includes(q)
+                    || (b.sftp_host || "").toLowerCase().includes(q))
                 : this.state.backends;
         }, 300);
     }
