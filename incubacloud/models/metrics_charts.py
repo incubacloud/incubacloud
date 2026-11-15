@@ -1650,8 +1650,7 @@ class CloudHost(models.Model):
         central = panels.pop("security_hosts", None) or {}
         if not available:
             return {"state": "unavailable"}
-        hosts = self.search([])
-        flags = hosts.sudo()
+        flags = self.search([]).sudo()
         rows = {
             host.id: {
                 "host_id": host.id, "name": host.name, "own": True,
