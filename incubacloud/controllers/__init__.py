@@ -9,3 +9,4 @@ from . import host_terminal
 from . import central_egress
 from . import sessions_access
 from . import odoo_sh
+from . import first_steps

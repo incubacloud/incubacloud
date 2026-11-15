@@ -224,6 +224,52 @@ and no data migration.
   reads a minute per user. Observability off, no central, or a central
   that does not answer are said as the tab says them.
 
+## [1.0.232] — unreleased
+
+The panel keeps when each of its first steps was first tried and first
+done: a server, backups, a project, the first deploy, a push that rebuilds,
+a domain of its own and outgoing mail. A date once written stays, also when
+the record behind it is deleted.
+
+The update adds a table and a column. Its one data migration, 1.0.232's
+`end-first-steps`, fills the marks of what a running panel already holds,
+marked as backfilled.
+
+### Added
+
+- **The first steps' marks.** `cloud.first.step` keeps, per mark, the first
+  try, the first success, the type of the last job that failed while it was
+  not achieved and whether the dates were backfilled; a written date is never
+  changed (`INSERT … ON CONFLICT` with `COALESCE`). `cloud.first.steps` is
+  the one definition of each mark: tried by the oldest server, backup
+  destination, deploy asked for, own domain (a name outside its server's
+  wildcard domain) or instance with a mail relay; achieved by the oldest Full
+  Setup done, backup made, project, deploy done, rebuild done that a push
+  asked for on an instance that tests its image, deploy or rebuild done after
+  an own domain was added (no DNS or certificate check), or relay delivering.
+  Archived records count. The creation of a server, a destination, a project
+  or a domain, a change to an instance's relay, the end of the jobs of those
+  types and every read of the steps write the marks; each in a savepoint,
+  logged, so a mark never makes the operation fail. A layer turns them off
+  (`_enabled`), narrows the servers that count (`_first_step_host_domain`),
+  adds marks (`_marks`, `_mark`, `_job_types`) and hears every change
+  (`_on_marks_changed`).
+- **`/cloud/first_steps`,** for whoever manages servers: each step's state
+  (done, started, to do, last attempt failed), the next one, its actions
+  and guide, whether the card shows and the counts; and
+  `/cloud/first_steps/set_hidden`, which closes the card for the user who
+  asks or opens it again (`res.users.cloud_first_steps_display`). It shows
+  by itself while a required step is left, or optional ones are and the
+  first deploy was not backfilled.
+
+### Migration
+
+- 1.0.232's `end-first-steps` writes the marks the database shows, as
+  backfilled; for what has no job left: a server with its proxy deployed, at
+  the server's creation, a deployed instance, at the instance's, and the
+  oldest backup listed. Nothing is written where a layer turns the steps
+  off.
+
 ## [1.0.231] — unreleased
 
 The panel reads the servers' security logs back from the central and
