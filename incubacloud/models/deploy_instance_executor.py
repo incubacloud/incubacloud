@@ -24,7 +24,13 @@ from ..github.client import GitHubAppClient
 from ..net import real_ip
 from ..net.git_reader import GitReader, GitReaderError
 from ..github.http_utils import read_json_limited, safe_urlopen
-from ._backup_dst import breaks_line, compose_safe, env_line, image_tag_is_valid
+from ._backup_dst import (
+    breaks_line,
+    compose_env_breaks,
+    compose_env_line,
+    compose_safe,
+    image_tag_is_valid,
+)
 from ._backup_retention import TEMPLATE_BACKUP_RETENTION, valid_backup_retention
 from ._git_urls import clone_url_with_credential, parse_provider_repo_url
 from ._odoo_versions import (
@@ -890,31 +896,38 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     def _backup_env_content(self):
         """Generate .docker/backup.env content, or None if no backup backend.
 
-        :raises ValueError: when a value would not stay on its line
-            (``env_line``), before anything reaches the host
+        :raises ValueError: when compose would not read a value as it is
+            written (``compose_env_line``), before anything reaches the
+            host
         """
         if not self._backup_enabled():
             return None
         inst = self._inst()
         # sudo: executor is trusted; secret fields are restricted to managers.
         bb = inst.effective_backup_backend.sudo()
-        # Each line through ``env_line``: a line break in a value would
-        # start a variable of its own, and the last of two wins.
+        # Each line through ``compose_env_line``: the backup service reads
+        # this file as its ``env_file``, where a line break, or a value
+        # that opens with a quote, would start a variable of its own.
         lines = []
         if bb.s3_access_key_id:
-            lines.append(env_line("AWS_ACCESS_KEY_ID", bb.s3_access_key_id))
+            lines.append(compose_env_line("AWS_ACCESS_KEY_ID", bb.s3_access_key_id))
         if bb.s3_secret_access_key:
-            lines.append(env_line("AWS_SECRET_ACCESS_KEY", bb.s3_secret_access_key))
+            lines.append(
+                compose_env_line("AWS_SECRET_ACCESS_KEY", bb.s3_secret_access_key)
+            )
         if bb.s3_endpoint_url:
-            lines.append(env_line("AWS_ENDPOINT_URL", bb.s3_endpoint_url))
-        lines.append(env_line("PASSPHRASE", bb.passphrase or ""))
+            lines.append(compose_env_line("AWS_ENDPOINT_URL", bb.s3_endpoint_url))
+        lines.append(compose_env_line("PASSPHRASE", bb.passphrase or ""))
         # What applies is the override's (``_backup_deletion_job``): the
         # template's own ``JOB_800_WHAT`` sits in the service's
         # ``environment:``, which wins over this file. The line stays so
-        # the file states the retention the instance runs with.
+        # the file states the retention the instance runs with. Built from
+        # a retention ``valid_backup_retention`` holds, so its one ``$`` is
+        # ``$DST``'s, written ``$$`` as in the override: compose would
+        # expand it here.
         job = self._backup_deletion_job()
         if job and self._backup_retention() != TEMPLATE_BACKUP_RETENTION:
-            lines.append(env_line("JOB_800_WHAT", job))
+            lines.append("JOB_800_WHAT=" + job.replace("$", "$$"))
         return "\n".join(lines) + "\n"
 
     def _backup_deletion_job(self):
@@ -2649,7 +2662,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         """
 
     #: The answers the template writes into ``.docker/backup.env``, a
-    #: line each (``backup.env.jinja``).
+    #: line each (``backup.env.jinja``), which compose reads.
     _BACKUP_ENV_ANSWERS = (
         "backup_aws_access_key_id", "backup_aws_secret_access_key",
         "backup_passphrase",
@@ -2673,8 +2686,10 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         after ``image: …:`` without quotes, which must be a docker tag;
         the addresses and the time zone, between quotes too, may break no
         line; and the keys and the passphrase, each a line of
-        ``backup.env``, neither. A destination saves none of these since
-        it checks them (``cloud.backup.backend._check_s3_access_shape``,
+        ``backup.env``, which compose reads, may hold nothing compose
+        reads as more than the value (``_backup_dst.compose_env_breaks``).
+        A destination saves none of these since it checks them
+        (``cloud.backup.backend._check_s3_access_shape``,
         ``_check_backup_answers_shape``).
 
         :param dict answers: the copier answers
@@ -2698,12 +2713,21 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 "underscores), which the compose file cannot carry. Correct "
                 "it on the backup destination."
             )
-        for name in self._BACKUP_QUOTED_ANSWERS + self._BACKUP_ENV_ANSWERS:
+        for name in self._BACKUP_QUOTED_ANSWERS:
             if breaks_line(answers.get(name) or ""):
                 raise ValueError(
                     f"The answer {name} of this instance's backup destination "
                     "holds a line break or a control character, which the "
-                    "compose file and backup.env cannot carry. Correct it on "
+                    "compose file cannot carry. Correct it on the backup "
+                    "destination."
+                )
+        for name in self._BACKUP_ENV_ANSWERS:
+            if compose_env_breaks(answers.get(name) or ""):
+                raise ValueError(
+                    f"The answer {name} of this instance's backup destination "
+                    "holds a quote, a $, a backslash, a #, a space at either "
+                    "end, a line break or a control character, which compose "
+                    "does not read as written in backup.env. Correct it on "
                     "the backup destination."
                 )
 

@@ -485,23 +485,30 @@ invalid. The rest is the panel's assets and the Spanish catalogue.
   the grammar, for an Administrator to correct. Spanish translation
   included.
 - **The rest of a backup destination reaches the servers as data too.**
-  Its endpoint must be an `http://` or `https://` URL of a host, its
-  keys and passphrase one line each, its image version a docker tag, its
-  time zone one `pytz` knows and each notification address one address,
-  checked when they are written, an import's included. Every line of
-  the environment files the panel writes is checked as the backup path
-  is, the time zone and the addresses are escaped where the template
-  quotes them, and a deploy or a purge stops before the host is reached
-  on a value saved before that would not fit. 1.0.229's post-migrate
-  names in the log the destinations that hold one, without the value of
-  a secret, and keeps them. Spanish translation included.
+  Its endpoint must be an `http://` or `https://` URL of a host (the
+  scheme is stored in lower case, and a host name may hold `_` or end in
+  a `.`), its keys letters, digits and `/ + = . _ -` only, its
+  passphrase no quote, backquote, `$`, `\`, `#`, line break or space at
+  either end (the one the panel generates holds none), its image version
+  a docker tag, its time zone one `pytz` knows and each notification
+  address one address, checked when they are written, an import's
+  included. Every line of the environment files the panel writes is
+  checked as the backup path is, and in the files compose reads, for
+  what compose would read as more than the value; the time zone and the
+  addresses are escaped where the template quotes them, and a deploy or
+  a purge stops before the host is reached on a value saved before that
+  would not fit. 1.0.229's post-migrate names in the log the
+  destinations that hold one, without the value of a secret, and keeps
+  them. Spanish translation included.
 - **A purge empties only its own instance's copies.** The deletion of an
   archived instance and the purge of a switched-off recovery archive
   refuse a prefix that is a backup destination's path or above it, or
   that is or holds another instance's path (archived instances
   included; a successor of the same name is left to the purge's
   cutoff): the job fails before anything is deleted, raises its purge
-  alert and keeps the record. A backup path an Administrator or an
+  alert and keeps the record. Deleting a live instance refuses such a
+  prefix the same way, for its backup path and its recovery archive,
+  before its first step: the instance stays as it was. A backup path an Administrator or an
   import writes is held to the same check, naming the instance it would
   overlap; 1.0.229's post-migrate names those saved before. A layer that
   shares one bucket between panels must give each panel credentials

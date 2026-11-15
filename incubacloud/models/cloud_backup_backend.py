@@ -11,10 +11,13 @@ from odoo.exceptions import ValidationError
 from odoo.tools import email_normalize
 
 from ._backup_dst import (
+    access_key_is_valid,
     breaks_line,
+    compose_env_breaks,
     dst_is_valid,
     endpoint_url_is_valid,
     image_tag_is_valid,
+    normalize_endpoint_url,
 )
 from ._backup_retention import valid_backup_retention
 from .cloud_instance import _GLOBAL_BACKUP_PARAM
@@ -197,11 +200,18 @@ class CloudBackupBackend(models.Model):
         Each is written as a line of the backup container's and the purges'
         environment files (``_backup_dst.env_line``), where a line break
         starts a variable of its own and the last of two wins: an endpoint
-        could name another ``DST``. The endpoint is an ``http``/``https``
-        URL of a host (``endpoint_url_is_valid``), the keys hold no space
-        or control character, and the passphrase no control character.
-        Checked when they are written; one saved before is refused by the
-        file it would break, before the host is reached.
+        could name another ``DST``. ``backup.env`` and ``pitr.env`` are
+        read by compose, which also closes a value that opens with a quote
+        and reads the rest of the line as another variable, interpolates
+        ``$`` and cuts at `` #`` (``_backup_dst.compose_env_line``): a
+        passphrase would be another one, and lost to a restore. The
+        endpoint is an ``http``/``https`` URL of a host
+        (``endpoint_url_is_valid``), the keys hold letters, digits and
+        ``/ + = . _ -`` only (``access_key_is_valid``), and the passphrase
+        none of what compose reads as more (``compose_env_breaks``); the
+        one the panel generates holds none. Checked when they are written;
+        one saved before is refused by the file it would break, before the
+        host is reached.
 
         :raises ValidationError: for a value outside that shape
         """
@@ -217,16 +227,17 @@ class CloudBackupBackend(models.Model):
                     name=rec.name,
                 ))
             for key in (secrets.s3_access_key_id, secrets.s3_secret_access_key):
-                if key and (breaks_line(key) or " " in key):
+                if key and not access_key_is_valid(key):
                     raise ValidationError(_(
-                        "The access keys of %(name)s may not hold spaces, "
-                        "line breaks or control characters.",
+                        "The access keys of %(name)s may hold only letters, "
+                        "digits and the characters / + = . _ -.",
                         name=rec.name,
                     ))
-            if secrets.passphrase and breaks_line(secrets.passphrase):
+            if secrets.passphrase and compose_env_breaks(secrets.passphrase):
                 raise ValidationError(_(
-                    "The encryption passphrase of %(name)s may not hold line "
-                    "breaks or control characters.",
+                    "The encryption passphrase of %(name)s may not hold "
+                    "quotes, backquotes, $, \\, #, line breaks or control "
+                    "characters, nor start or end with a space.",
                     name=rec.name,
                 ))
 
@@ -382,6 +393,8 @@ class CloudBackupBackend(models.Model):
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
                 del vals[field]
+        if vals.get("s3_endpoint_url"):
+            vals["s3_endpoint_url"] = normalize_endpoint_url(vals["s3_endpoint_url"])
         res = super().write(vals)
         # An explicit user choice of retention_owner resolves the
         # ambiguous state and its warning alert. Migrations bypass the
@@ -417,6 +430,10 @@ class CloudBackupBackend(models.Model):
         for vals in vals_list:
             if not vals.get("passphrase"):
                 vals["passphrase"] = generate_password()
+            if vals.get("s3_endpoint_url"):
+                vals["s3_endpoint_url"] = normalize_endpoint_url(
+                    vals["s3_endpoint_url"],
+                )
         return super().create(vals_list)
 
     # ── Effective alert threshold ──────────────────────────────────────────

@@ -25,6 +25,14 @@ an instance's backup path that overlaps a destination's or another
 instance's (``cloud.instance._check_custom_backup_dst_shape``). Until
 they are corrected, a file they would break is refused before the host
 is reached, and a purge that would reach another's copies is refused.
+A passphrase or a key that compose reads as more than its value in
+``backup.env`` or ``pitr.env`` (a quote, ``$``, ``#``…) is named too:
+until it is corrected the rebuild refuses the file.
+
+The overlaps are read before ``incubacloud_pitr`` is loaded in this
+update, so they are core's backup paths alone: one with a continuous
+recovery prefix is not named here, and the purge's own check refuses it
+all the same. Only the log misses it.
 """
 import logging
 
@@ -34,7 +42,9 @@ from odoo import SUPERUSER_ID, api
 from odoo.tools import email_normalize
 
 from odoo.addons.incubacloud.models._backup_dst import (
+    access_key_is_valid,
     breaks_line,
+    compose_env_breaks,
     dst_is_valid,
     endpoint_url_is_valid,
     image_tag_is_valid,
@@ -98,18 +108,24 @@ def _backend_values_outside_their_checks(backend):
     url = backend.s3_endpoint_url
     if url and not endpoint_url_is_valid(url):
         found.append(f"endpoint URL {url!r}")
-    for label, fname in (
-        ("access key ID", "s3_access_key_id"),
-        ("secret access key", "s3_secret_access_key"),
-        ("passphrase", "passphrase"),
+    for label, fname, refused, what in (
+        ("access key ID", "s3_access_key_id",
+         lambda v: not access_key_is_valid(v),
+         "a character other than letters, digits and / + = . _ -"),
+        ("secret access key", "s3_secret_access_key",
+         lambda v: not access_key_is_valid(v),
+         "a character other than letters, digits and / + = . _ -"),
+        ("passphrase", "passphrase", compose_env_breaks,
+         "a quote, a $, a backslash, a #, a space at either end, a line "
+         "break or a control character, which compose does not read as "
+         "written"),
     ):
         try:
             value = backend[fname]
         except Exception:  # noqa: BLE001 - unreadable: its own alert says so
             continue
-        spaces = fname != "passphrase" and " " in (value or "")
-        if value and (breaks_line(value) or spaces):
-            found.append(f"{label} (with a space, a line break or a control character)")
+        if value and refused(value):
+            found.append(f"{label} (with {what})")
     tag = backend.backup_image_version
     if tag and not image_tag_is_valid(tag):
         found.append(f"image version {tag!r}")

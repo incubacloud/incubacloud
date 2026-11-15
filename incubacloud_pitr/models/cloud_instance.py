@@ -25,7 +25,7 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 from odoo.addons.incubacloud.models import _odoo_versions
-from odoo.addons.incubacloud.models._backup_dst import env_line
+from odoo.addons.incubacloud.models._backup_dst import compose_env_line
 from odoo.addons.incubacloud.models.encrypted_char import EncryptedChar
 
 from ._constants import (
@@ -656,8 +656,9 @@ class CloudInstance(models.Model):
         cluster under ``IC_PITR_PREFIX/<system id>``.
 
         :rtype: str
-        :raises ValueError: when a value would not stay on its line
-            (``env_line``), before the file reaches the host
+        :raises ValueError: when compose would not read a value as it is
+            written (``compose_env_line``), before the file reaches the
+            host
         """
         backend = self.effective_backup_backend.sudo()
         bucket, path = self._pitr_bucket_path()
@@ -698,10 +699,12 @@ class CloudInstance(models.Model):
                 f"AWS_ENDPOINT={backend.s3_endpoint_url}",
                 f"RCLONE_CONFIG_PITRS3_ENDPOINT={backend.s3_endpoint_url}",
             ]
-        # Each line through ``env_line``: a line break in a value would
-        # start a variable of its own. The names hold no ``=``.
+        # Each line through ``compose_env_line``: the agent reads this file
+        # as its ``env_file``, where a line break, or a value that opens
+        # with a quote, would start a variable of its own, such as another
+        # ``IC_PITR_PREFIX``. The names hold no ``=``.
         return "\n".join(
-            env_line(*line.split("=", 1)) for line in lines
+            compose_env_line(*line.split("=", 1)) for line in lines
         ) + "\n"
 
     def _teardown_pre_steps(self, inst_dir, keep_in_panel):
@@ -760,6 +763,24 @@ class CloudInstance(models.Model):
                 {"stop_on_failure": True},
             ),
         ]
+
+    def _teardown_purge_prefixes(self, keep_in_panel):
+        """The recovery prefix the delete's purge empties, when it runs one.
+
+        The prefix its server was last given, or the one computed now
+        (``_pitr_purge_target``): what the host's ``pitr.env`` names.
+
+        :param bool keep_in_panel: the record stays as an archived draft
+        :return: core's prefixes and the recovery one
+        :rtype: list
+        """
+        prefixes = list(super()._teardown_purge_prefixes(keep_in_panel))
+        if keep_in_panel or not self._pitr_had_archive():
+            return prefixes
+        _backend, prefix = self._pitr_purge_target()
+        if prefix:
+            prefixes.append(prefix)
+        return prefixes
 
     def _teardown_pre_steps_left(self, results, job):
         """Alert when the delete left the recovery prefix in the bucket.

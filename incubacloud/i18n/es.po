@@ -5411,7 +5411,7 @@ msgstr "Clave de cifrado"
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__passphrase
 msgid "Encryption Passphrase"
-msgstr "Frase de paso de encriptación"
+msgstr "Frase de paso de cifrado"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_cert_expires
@@ -24988,21 +24988,22 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_backup_backend.py:0
 msgid ""
-"The access keys of %(name)s may not hold spaces, line breaks or control "
-"characters."
+"The access keys of %(name)s may hold only letters, digits and the "
+"characters / + = . _ -."
 msgstr ""
-"Las claves de acceso de %(name)s no pueden contener espacios, saltos de "
-"línea ni caracteres de control."
+"Las claves de acceso de %(name)s solo pueden contener letras, dígitos y los "
+"caracteres / + = . _ -."
 
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_backup_backend.py:0
 msgid ""
-"The encryption passphrase of %(name)s may not hold line breaks or control "
-"characters."
+"The encryption passphrase of %(name)s may not hold quotes, backquotes, $, "
+"\\, #, line breaks or control characters, nor start or end with a space."
 msgstr ""
-"La frase de paso de encriptación de %(name)s no puede contener saltos de "
-"línea ni caracteres de control."
+"La frase de paso de cifrado de %(name)s no puede contener comillas, comillas "
+"invertidas, $, \\, #, saltos de línea ni caracteres de control, ni empezar "
+"o terminar con un espacio."
 
 #. module: incubacloud
 #. odoo-python

@@ -6,6 +6,11 @@ command (``backup_list``), as the ``DST`` line of an environment file
 file (deploy, rebuild, revive). The panel accepts it in one grammar,
 the one its own destinations are computed in: an S3 URL whose bucket
 and path hold letters, digits, dots, hyphens and underscores only.
+
+Two readers of environment files: ``docker run --env-file`` (the
+purges' files) takes the rest of a line as the value, as it is;
+compose (``backup.env``, ``pitr.env``, each a service's ``env_file``)
+reads more into it (:func:`compose_env_line`).
 """
 import re
 import unicodedata
@@ -40,13 +45,16 @@ def _breaks_line(ch):
 #: A port, where one is spelled: what a TCP port can be.
 _MAX_PORT = 65535
 
-#: An S3 endpoint: ``http`` or ``https``, a host name, an IPv4 address
-#: or a bracketed IPv6 one, an optional port and an optional path of
-#: unreserved characters. No user, query or fragment.
+#: An S3 endpoint: ``http`` or ``https`` in either case, a host name
+#: (its labels may hold ``_``, as a container's name does, and it may
+#: end in the ``.`` of a fully qualified name), an IPv4 address or a
+#: bracketed IPv6 one, an optional port and an optional path of
+#: unreserved characters. No user, query or fragment. None of these
+#: characters means anything to an environment file, a shell or YAML.
 _ENDPOINT_RE = re.compile(
-    r"https?://"
-    r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
-    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*"
+    r"(?i:https?)://"
+    r"(?:[A-Za-z0-9_](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?"
+    r"(?:\.[A-Za-z0-9_](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*\.?"
     r"|\[[0-9A-Fa-f:.]+\])"
     r"(?::(?P<port>[0-9]{1,5}))?"
     r"(?:/[A-Za-z0-9._~%/-]*)?"
@@ -54,6 +62,17 @@ _ENDPOINT_RE = re.compile(
 
 #: A docker image tag, as the registry accepts one.
 _IMAGE_TAG_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}")
+
+#: An S3 access key ID or secret: base64's letters and the separators
+#: providers use. Nothing an environment file or compose reads as more.
+_ACCESS_KEY_RE = re.compile(r"[A-Za-z0-9/+=._-]+")
+
+#: What compose reads in an environment file as more than the value: a
+#: quote that opens a value ends it, and what follows on the line is
+#: read as another variable; ``$`` starts a variable it interpolates;
+#: `` #`` starts a comment; ``\`` escapes in a quoted value; the
+#: backquote is refused with them, as a shell would read it.
+_COMPOSE_ENV_REFUSED = "\"'`$\\#"
 
 
 def _port_in_range(port):
@@ -131,6 +150,31 @@ def endpoint_url_is_valid(value):
     return bool(match) and _port_in_range(match.group("port"))
 
 
+def normalize_endpoint_url(value):
+    """Return *value* with its scheme in lower case (``HTTPS://`` → ``https://``).
+
+    What a destination stores: the scheme is case-insensitive, and the
+    tools that read the endpoint compare it as written.
+
+    :param value: the endpoint, or a falsy value
+    :return: *value*, its scheme lowered when it has one
+    """
+    if not value or "://" not in value:
+        return value
+    scheme, sep, rest = value.partition("://")
+    return scheme.lower() + sep + rest
+
+
+def access_key_is_valid(value):
+    """Whether *value* is an S3 access key ID or secret the panel accepts.
+
+    :param str value: the key
+    :return: True for letters, digits and ``/ + = . _ -`` only
+    :rtype: bool
+    """
+    return bool(_ACCESS_KEY_RE.fullmatch(value or ""))
+
+
 def image_tag_is_valid(value):
     """Whether *value* is a docker image tag (``latest``, ``4.0.0``).
 
@@ -153,12 +197,13 @@ def breaks_line(value):
 
 
 def env_line(name, value):
-    """Return the line ``NAME=value`` of an environment file.
+    """Return the line ``NAME=value`` of a file ``docker run --env-file`` reads.
 
-    An environment file is read a line at a time and takes the rest of
-    the line as the value, quotes included: a line break in *value*
-    would start a variable of its own. Refused rather than escaped, as
-    there is no escape.
+    That reader takes a line at a time and the rest of the line as the
+    value, quotes included: only a line break in *value* would start a
+    variable of its own. Refused rather than escaped, as there is no
+    escape. A file compose reads (``backup.env``, ``pitr.env``) takes
+    :func:`compose_env_line`.
 
     :param str name: the variable
     :param str value: its value
@@ -184,3 +229,46 @@ def compose_safe(value):
     :rtype: bool
     """
     return not any(ch in _COMPOSE_REFUSED or _breaks_line(ch) for ch in value)
+
+
+def compose_env_breaks(value):
+    """Whether compose would read *value*, as a line's value, as something else.
+
+    A line break or a control character, a character of
+    ``_COMPOSE_ENV_REFUSED`` anywhere, or white space at the start or
+    the end, which compose drops. A value of none of them reaches the
+    container as it is written.
+
+    :param str value: the value
+    :rtype: bool
+    """
+    value = value or ""
+    return (
+        breaks_line(value)
+        or any(ch in _COMPOSE_ENV_REFUSED for ch in value)
+        or value != value.strip()
+    )
+
+
+def compose_env_line(name, value):
+    """Return the line ``NAME=value`` of an environment file compose reads.
+
+    Compose closes a value that opens with a quote and reads what
+    follows on the line as another variable, interpolates ``$`` and cuts
+    the value at `` #`` (:func:`compose_env_breaks`): the value would
+    reach the container as something else, or name a variable of its
+    own. Refused rather than escaped, as :func:`env_line` is.
+
+    :param str name: the variable
+    :param str value: its value
+    :return: the line, without its line break
+    :rtype: str
+    :raises ValueError: when compose would not read *value* as it is
+    """
+    if compose_env_breaks(value):
+        raise ValueError(
+            f"{name} holds a quote, a $, a backslash, a #, a space at either "
+            "end, a line break or a control character, which compose does "
+            "not read as written in an environment file."
+        )
+    return f"{name}={value}"
