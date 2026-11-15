@@ -44,6 +44,11 @@ BUSY = ("working", "waiting_job")
 STOPPABLE = (*BUSY, "waiting_confirmation")
 #: What the model is told of a call the stop leaves unrun.
 STOPPED_CALL = "Not run: the person stopped the task."
+#: What it is told of a call that was running when the step died.
+UNKNOWN_CALL = (
+    "Outcome unknown: the panel stopped while this ran. Read the state again "
+    "before trying once more."
+)
 
 
 class AssistantConversation(models.Model):
@@ -288,6 +293,22 @@ class AssistantConversation(models.Model):
         for call in self._open_calls():
             self._answer_call(call["id"], call["name"], text, is_error=True)
 
+    def _confirmed_cards(self):
+        """Return the cards the person confirmed, whose approval may still be live."""
+        self.ensure_one()
+        return (
+            self.env["incubacloud.assistant.message"]
+            .sudo()
+            .search(
+                [
+                    ("conversation_id", "=", self.id),
+                    ("role", "=", "card"),
+                    ("card_state", "=", "confirmed"),
+                ]
+            )
+            .with_env(self.env)
+        )
+
     def _pending_cards(self):
         """Return the cards that wait for the person."""
         self.ensure_one()
@@ -464,15 +485,33 @@ class AssistantConversation(models.Model):
     def _stop_now(self):
         """End the task as stopped, leaving nothing half done or lost.
 
-        The cards still pending are withdrawn, the calls still open are
-        answered as not run, and what the person wrote meanwhile enters the
-        conversation: no longer queued, Retry or the next message answers it.
-        The job the task waited for runs on: it is not the task's to cancel.
+        The cards still pending are withdrawn, and so are the approvals of
+        the cards confirmed whose call has not run: a repeated call asks
+        again. The calls still open are answered as not run, except one the
+        mark says was running (a step that died with Stop pressed): it may
+        have run, so it is answered as unknown, and the mark is cleared.
+        What the person wrote meanwhile enters the conversation: no longer
+        queued, Retry or the next message answers it. The job the task
+        waited for runs on: it is not the task's to cancel.
         """
         self.ensure_one()
         for card in self._pending_cards():
             card._withdraw_card("The person stopped the task.")
-        self._close_open_calls(STOPPED_CALL)
+        open_calls = self._open_calls()
+        open_ids = {call["id"] for call in open_calls}
+        for card in self._confirmed_cards():
+            if card.tool_call_id in open_ids:
+                card.approval_id.sudo()._withdraw()
+        running = self.running_call_id
+        for call in open_calls:
+            self._answer_call(
+                call["id"],
+                call["name"],
+                UNKNOWN_CALL if call["id"] == running else STOPPED_CALL,
+                is_error=True,
+            )
+        if running:
+            self.sudo().running_call_id = False
         self.env["incubacloud.assistant.engine"]._deliver_pending(self)
         self.sudo().waiting_job_id = False
         self._halt("stopped", self.env._("Stopped. What was done stays as it is."))

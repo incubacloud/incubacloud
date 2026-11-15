@@ -592,6 +592,65 @@ class TestEngineTools(EngineMixin, TransactionCase):
         self.assertIn("Outcome unknown", result.content)
         self.assertFalse(conversation.running_call_id)
 
+    def test_stop_after_confirming_withdraws_the_approval(self):
+        """Confirmed, then Stop before the step used the approval: it is
+        cancelled, and the same call after Retry asks again."""
+        empty = self.env["cloud.project"].create(
+            {"name": "Asis Confirmed Empty", "remote_folder": "asisconfirmedempty"}
+        )
+        call = ("c1", "delete_project", {"project_id": empty.id})
+        self._provider(answer("", [call]), answer("", [call]))
+        conversation = self._working(self.manager)
+        self._step(conversation)
+        card = conversation.message_ids.filtered(lambda m: m.role == "card")
+        with trap_jobs():
+            self.assertTrue(card.with_user(self.manager)._confirm_card()["ok"])
+        self.assertEqual(card.approval_id.state, "approved")
+        conversation.with_user(self.manager)._stop()
+        self.assertEqual(conversation.state, "stopped")
+        self.assertEqual(card.approval_id.state, "cancelled")
+        answered = conversation.message_ids.filtered(lambda m: m.role == "tool")
+        self.assertIn("stopped", answered.content)
+        with trap_jobs():
+            self.assertTrue(conversation.with_user(self.manager)._retry())
+        self._step(conversation)
+        cards = conversation.message_ids.filtered(lambda m: m.role == "card")
+        self.assertEqual(
+            (conversation.state, cards[-1].card_state),
+            ("waiting_confirmation", "pending"),
+        )
+        self.assertNotEqual(cards[-1], card)
+        self.assertTrue(empty.exists())
+
+    def test_a_dead_step_with_stop_pressed_does_not_say_its_call_was_not_run(self):
+        """The mark of a call that may have run: unknown, not "not run"; the
+        mark is cleared, and the other open calls were not run."""
+        self._provider()
+        conversation = self._working(self.dev)
+        conversation._add_message(
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": json.dumps(
+                    [
+                        {"id": "c1", "name": "get_project", "arguments": {}},
+                        {"id": "c2", "name": "get_project", "arguments": {}},
+                    ]
+                ),
+            }
+        )
+        conversation.sudo().write({"running_call_id": "c1", "stop_requested": True})
+        with trap_jobs():
+            self._step(conversation, job_uuid=conversation.job_uuid)
+        self.assertEqual(conversation.state, "stopped")
+        self.assertFalse(conversation.running_call_id)
+        answers = {
+            m.tool_call_id: m.content
+            for m in conversation.message_ids.filtered(lambda m: m.role == "tool")
+        }
+        self.assertIn("Outcome unknown", answers["c1"])
+        self.assertIn("Not run", answers["c2"])
+
     def test_a_database_write_of_the_step_is_tried_again(self):
         """After a concurrent change, the mark or the answer is written again."""
         self._provider()

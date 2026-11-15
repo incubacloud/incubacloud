@@ -317,6 +317,28 @@ class TestEngineStep(EngineMixin, TransactionCase):
         )
         self.assertIn("claude-opus-4-8", audit.details)
 
+    def test_a_cost_met_by_a_concurrent_change_is_written_again(self):
+        """The counted cost of an answer set aside is not lost to a concurrency
+        error: it is tried again."""
+        self._provider(answer("I am another model.", model="claude-opus-4-8"))
+        conversation = self._working(self.dev)
+        original = AssistantEngine._record_cost
+        attempts = []
+
+        def met_once(engine, *args, **kwargs):
+            """Fail the first time, as a write met by another one does."""
+            attempts.append(len(attempts))
+            if len(attempts) == 1:
+                raise SerializationFailure("could not serialize")
+            return original(engine, *args, **kwargs)
+
+        with patch.object(
+            AssistantEngine, "_record_cost", autospec=True, side_effect=met_once
+        ):
+            self._step(conversation)
+        self.assertEqual(len(attempts), 2)
+        self.assertGreater(conversation.cost, 0)
+
     def test_a_stale_step_does_nothing(self):
         """A step queued for a conversation now stopped does not call the provider."""
         connector = self._provider()
