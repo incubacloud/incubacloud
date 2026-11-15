@@ -23,14 +23,16 @@ empty it says so with an alert. Switching continuous recovery off keeps
 the archive for the backup window, then empties it.
 A new instance is created on one page.
 
-The update adds five columns on instances, `pitr_archived_prefix`,
-`pitr_off_at`, `pitr_purge_at`, `pitr_rendered_prefix` and
-`pitr_rendered_backend_id` (`incubacloud_pitr` 1.0.16 comes with them).
+The update adds six columns on instances, `backup_path_suffix`,
+`pitr_archived_prefix`, `pitr_off_at`, `pitr_purge_at`,
+`pitr_rendered_prefix` and `pitr_rendered_backend_id` (`incubacloud_pitr`
+1.0.16 comes with the last five).
 Its data migrations: 1.0.229's post-migrate deletes the Telegram bot
 tokens saved without a chat ID and the webhook secrets left without a
 URL and names in the log the backup paths outside their new grammar,
-and the backup destinations' values and instances' backup paths that
-their new checks refuse, keeping them, and `incubacloud_pitr` 1.0.16's end-migrate records where each
+the backup destinations' values and instances' backup paths that
+their new checks refuse, and the backup paths two records share
+(raising `backup_path_shared` for each), keeping them, and `incubacloud_pitr` 1.0.16's end-migrate records where each
 instance archives and dates the purge of the archives switched off
 before it from the update, so each gets the whole backup window from
 then. 1.0.229's `post-backup-retention` writes each backup destination's
@@ -529,6 +531,20 @@ invalid. The rest is the panel's assets and the Spanish catalogue.
   overlap; 1.0.229's post-migrate names those saved before. A layer that
   shares one bucket between panels must give each panel credentials
   limited to its own prefix (`docs/architecture.md`, security model).
+- **An instance that takes the name of another gets a backup path of its
+  own.** When another record already holds the path an instance would
+  compute (an archived instance of the same name whose project's folder
+  the new one took, or two instances of a name without a project), the
+  new one's path ends in `-<id>` (`backup_path_suffix`, set by the panel
+  on creation and when the name or the project changes), and so does its
+  continuous recovery prefix: its first copy is a full of its own and no
+  purge of the other reaches it. Without such a record the path is the
+  one the destination computes, as before. A backup path written by hand
+  may no longer be the path of an instance of the same name, archived
+  included. 1.0.229's post-migrate names in the log the records that
+  already share a path and raises one `backup_path_shared` alert per
+  path; their paths are kept, and their purges go by the dates above.
+  Spanish translation included.
 - **An import with a backup value the panel refuses goes on without it.**
   A backup path or destination from the host's files that the checks
   above refuse is left out and the import says why, instead of «An

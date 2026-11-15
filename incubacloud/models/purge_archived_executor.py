@@ -291,10 +291,11 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         Empty in core, where deleting an archived instance is the end of
         the story. A module that owns a lifecycle *above* the instance —
         a customer account, say — may need to act exactly here and nowhere
-        earlier: a customer who asks to start over must not have a fresh
-        instance provisioned until this has run, because it would take
-        the same name and therefore the same backup prefix, and this
-        purge would empty the new instance's own copy.
+        earlier. Not to keep a fresh instance of the same name from this
+        purge: that one gets a backup path of its own
+        (``cloud.instance._claim_own_backup_path``), and one that shared
+        the path is protected by the cutoff
+        (``cloud.instance._backup_purge_before``).
 
         Called after the unlink, so an override that needs anything off
         the instance has to read it before, in its own ``on_success``.

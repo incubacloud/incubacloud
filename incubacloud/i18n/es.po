@@ -1299,6 +1299,19 @@ msgstr ""
 "Añada usuarios para dar acceso a Stakeholders y Consultants a este proyecto."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__backup_path_suffix
+msgid ""
+"Added to the backup path the destination computes when another instance of "
+"the same name already holds that path, an archived one included, so this "
+"one's copies form a chain of their own. Set by the panel when the instance "
+"is created, renamed or moved to another project."
+msgstr ""
+"Se añade a la ruta de copia que calcula el destino cuando otra instancia del "
+"mismo nombre ya ocupa esa ruta, aunque esté archivada, para que las copias de "
+"esta formen una cadena propia. Lo fija el panel al crear la instancia, al "
+"cambiarle el nombre o al pasarla a otro proyecto."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__addons
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__addons
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_repo_mixin__addons
@@ -2192,6 +2205,11 @@ msgstr "Límite de memoria Backup"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__backup_dst
 msgid "Backup Path"
 msgstr "Ruta de copia"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__backup_path_suffix
+msgid "Backup Path Suffix"
+msgstr "Sufijo de la ruta de copia"
 
 #. module: incubacloud
 #. odoo-javascript

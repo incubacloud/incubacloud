@@ -168,7 +168,10 @@ def _yaml_dq_escape(value):
 #: nothing left to remove; the relay's state is what the health probe and
 #: the relay's test mail read of its deliveries. ``move_to_host``, the
 #: rollback, the watchdog, the move's executors, the webhook, the teardown,
-#: the probe and the test mail write them with ``sudo``.
+#: the probe and the test mail write them with ``sudo``. The backup path's
+#: suffix keeps an instance's copies out of a path another of the same name
+#: holds (``_claim_own_backup_path``): cleared by hand, its chain would join
+#: that one's.
 _PLATFORM_FIELDS = frozenset({
     "move_origin_host_id", "move_target_host_id", "move_chain_job_ids",
     "move_rollback_in_progress", "move_frozen_source_host_id",
@@ -178,6 +181,7 @@ _PLATFORM_FIELDS = frozenset({
     "pr_update_cut_off",
     "removal_finalized",
     "smtp_relay_state", "smtp_relay_checked_at", "smtp_relay_error",
+    "backup_path_suffix",
 })
 
 #: When an instance was archived and up to when its purge deletes: set by
@@ -863,11 +867,22 @@ class CloudInstance(models.Model):
                 or global_backend
             )
 
+    backup_path_suffix = fields.Char(
+        copy=False,
+        readonly=True,
+        help="Added to the backup path the destination computes when "
+             "another instance of the same name already holds that path, "
+             "an archived one included, so this one's copies form a chain "
+             "of their own. Set by the panel when the instance is created, "
+             "renamed or moved to another project.",
+    )
+
     @api.depends(
         "custom_backup_dst",
         "effective_backup_backend",
         "name",
         "project_id.remote_folder",
+        "backup_path_suffix",
     )
     def _compute_instance_backup_dst(self):
         for inst in self:
@@ -878,9 +893,11 @@ class CloudInstance(models.Model):
     def _computed_backup_dst(self):
         """The path the destination computes for this instance, ignoring its own.
 
-        ``{backup_dst}/{project folder}/{name}``: where the panel puts an
-        instance's copies when nothing else is written
-        (``custom_backup_dst``).
+        ``{backup_dst}/{project folder}/{name}{suffix}``: where the panel
+        puts an instance's copies when nothing else is written
+        (``custom_backup_dst``). The suffix is empty unless another
+        instance of the same name held the path first
+        (``_claim_own_backup_path``).
 
         :return: the path, or ``""`` without a destination or a name
         :rtype: str
@@ -889,9 +906,78 @@ class CloudInstance(models.Model):
         bb = self.effective_backup_backend
         if not (bb and bb.backup_dst and self.name):
             return ""
-        folder = (self.project_id.remote_folder if self.project_id else "") \
+        return f"{bb.backup_dst}/{self._backup_folder()}/{self.name}" \
+            f"{self.backup_path_suffix or ''}"
+
+    def _backup_folder(self):
+        """The folder of the destination this instance's copies go under.
+
+        :return: its project's remote folder, or ``default``
+        :rtype: str
+        """
+        self.ensure_one()
+        return (self.project_id.remote_folder if self.project_id else "") \
             or "default"
-        return f"{bb.backup_dst}/{folder}/{self.name}"
+
+    def _backup_path_tails(self, suffix):
+        """How the paths this instance would compute with *suffix* end.
+
+        Core's chain: ``/{folder}/{name}{suffix}``. An addon that keeps
+        more of the copy beside it adds the ending of its prefix. Compared
+        by the ending and not the whole path, so the check holds before
+        the instance has a destination, and whatever destination another
+        record's path is on.
+
+        :param str suffix: a ``backup_path_suffix``, ``""`` for none
+        :rtype: list
+        """
+        self.ensure_one()
+        return [f"/{self._backup_folder()}/{self.name}{suffix}"]
+
+    def _claim_own_backup_path(self):
+        """Give each instance a backup path no other record holds.
+
+        An instance that takes the name of another, an archived one above
+        all, computes the same path: its copies would continue that one's
+        duplicity chain, and a purge of either would take the other's.
+        When another record already holds a path that ends as this one's
+        would (``_backup_path_tails``), the instance takes the suffix
+        ``-<id>``; otherwise none. Another record is one of the same name,
+        or one with a suffix of its own, whose name and suffix may spell
+        this one's name; a suffix taken by an instance of that spelling is
+        passed over for the next. The path is otherwise left as the
+        destination computes it, the one imports, runbooks and a recovery
+        by hand use.
+
+        Called when the computed path moves anyway: on creation, and when
+        the name or the project changes. Not for an instance with a path
+        of its own written (``custom_backup_dst``), which the field's
+        check holds to the same rule. Of several claimed together, the
+        first keeps the path and the later ones take suffixes.
+        """
+        Instance = self.env["cloud.instance"].sudo().with_context(
+            active_test=False,
+        )
+        for inst in self:
+            if inst.custom_backup_dst or not inst.name:
+                continue
+            for suffix in ("", *(f"-{inst.id}" + (f"-{n}" if n else "")
+                                 for n in range(10))):
+                tails = inst._backup_path_tails(suffix)
+                others = Instance.search([
+                    ("id", "!=", inst.id), "|", "|",
+                    ("name", "=", inst.name),
+                    ("name", "=", f"{inst.name}{suffix}"),
+                    ("backup_path_suffix", "!=", False),
+                ]).filtered(lambda other: other not in self or other.id < inst.id)
+                if not any(
+                    (path or "").rstrip("/").endswith(tail)
+                    for other in others for path in other._backup_paths_held()
+                    for tail in tails
+                ):
+                    break
+            if (inst.backup_path_suffix or "") != suffix:
+                inst.sudo().write({"backup_path_suffix": suffix or False})
 
     def _backup_paths_held(self):
         """The backup paths this instance's copies are kept under.
@@ -929,7 +1015,10 @@ class CloudInstance(models.Model):
 
         With *held*, *prefix* is a path to write as this instance's own
         (``custom_backup_dst``): one under another instance's path is
-        refused too, as that one's purge would empty it.
+        refused too, as that one's purge would empty it, and so is the
+        path of one of the same name, whose chain it would continue: an
+        instance that takes the name of another computes a path of its
+        own (``_claim_own_backup_path``).
 
         :param str prefix: the duplicity or wal-g prefix
         :param bool held: also refuse a *prefix* under another's path
@@ -975,7 +1064,7 @@ class CloudInstance(models.Model):
             for path in other._backup_paths_held():
                 theirs = dst_key(path)
                 if (
-                    theirs == key and other.name == self.name
+                    theirs == key and other.name == self.name and not held
                     and self._backup_succession(other)
                 ):
                     continue
@@ -1667,6 +1756,14 @@ class CloudInstance(models.Model):
             name in vals and (inst[name] or False) != (vals[name] or False)
             for name in ("smtp_relay_auth", "smtp_relay_host")
         ))
+        # A form sends the name back on every save: only a change moves
+        # the computed backup path.
+        path_moved = self.filtered(lambda inst: (
+            "name" in vals and inst.name != vals["name"]
+        ) or (
+            "project_id" in vals
+            and inst.project_id.id != (vals["project_id"] or False)
+        ))
         result = super().write(vals)
         relay_moved._forget_relay_state()
         # Odoo checks the record rules on the instance as it was: one moved
@@ -1674,6 +1771,9 @@ class CloudInstance(models.Model):
         # only to a project its writer is a member of.
         if "project_id" in vals:
             self.check_access("write")
+        # The computed backup path moves with the name and the project:
+        # it must not move into one another instance holds.
+        path_moved._claim_own_backup_path()
         # Auto-generate domain when a host is assigned to an instance
         # that doesn't have any domains yet (e.g. imported without host).
         if "host_id" in vals and vals["host_id"]:
@@ -5706,7 +5806,8 @@ class CloudInstance(models.Model):
         A path written other than the one the destination computes must
         not overlap a destination's or another instance's
         (``_backup_prefix_conflict``): a purge of one would empty the
-        other's copies.
+        other's copies. That of one of the same name, archived included,
+        too: the copies would continue its chain.
 
         :raises ValidationError: for a path outside it, or one that
             overlaps
@@ -6391,6 +6492,7 @@ class CloudInstance(models.Model):
         # is born only in a project its creator is a member of.
         records.check_access("create")
         self._check_new_record_rows(records, creating)
+        records._claim_own_backup_path()
         Whitelist = self.env["cloud.instance.whitelist"]
         for inst in records:
             # A staging is born with the egress list its host already
