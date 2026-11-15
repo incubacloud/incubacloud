@@ -6,10 +6,17 @@ import { ImportOdooshModal } from "../import_odoojs_modal/import_odoojs_modal";
 import { TruncationBanner } from "../truncation_banner/truncation_banner";
 import { useService } from "@web/core/utils/hooks";
 import { rpc } from '@web/core/network/rpc';
+import {
+    canReopenFirstSteps,
+    FirstSteps,
+    firstStepsStore,
+    loadFirstSteps,
+    setFirstStepsHidden,
+} from "../first_steps/first_steps";
 
 export class ProjectDashboard extends Component {
     static template = "incubacloud.ProjectDashboard";
-    static components = { ProjectCard, TruncationBanner };
+    static components = { ProjectCard, TruncationBanner, FirstSteps };
 
     setup() {
         this.state = useState({
@@ -32,7 +39,27 @@ export class ProjectDashboard extends Component {
         }, 300);
 
         this.dialogService = useService("dialog");
+        this.firstSteps = useState(firstStepsStore);
         this.loadProjects();
+        // Apart from the projects: it never holds them up, and a failure
+        // leaves the card out.
+        loadFirstSteps();
+    }
+
+    /** @returns {boolean} whether the first steps card shows */
+    get firstStepsShown() {
+        const data = this.firstSteps.data;
+        return !!(data && data.enabled && data.visible);
+    }
+
+    /** @returns {boolean} whether the line under the title offers the card back */
+    get firstStepsReopen() {
+        return canReopenFirstSteps(this.firstSteps.data);
+    }
+
+    /** Open the first steps card again, closed by this user. */
+    async reopenFirstSteps() {
+        await setFirstStepsHidden(false);
     }
 
     openCreateProject() {

@@ -8,6 +8,11 @@ import { IcModal } from "../ic_modal/ic_modal";
 import { RlSelect } from "../rl_select/rl_select";
 import { SearchSelect } from "../search_select/search_select";
 import { PasswordInput } from "../password_input/password_input";
+import {
+    firstStepsStore,
+    loadFirstSteps,
+    setFirstStepsHidden,
+} from "../first_steps/first_steps";
 
 // The control of each field a notification Save can stop on.
 const NOTIF_FIELD_IDS = {
@@ -30,6 +35,7 @@ export class AppHeader extends Component {
     };
 
     setup() {
+        this.firstSteps = useState(firstStepsStore);
         this.state = useState({
             userName: session.name || session.username || "",
             userLogin: session.username || "",
@@ -251,6 +257,23 @@ export class AppHeader extends Component {
         ev.stopPropagation();
         this.state.showUserMenu = !this.state.showUserMenu;
         this.state.showProjectSwitcher = false;
+        // Off the home page nothing asked for the first steps yet.
+        if (this.state.showUserMenu && !this.firstSteps.loaded) {
+            loadFirstSteps();
+        }
+    }
+
+    /** @returns {boolean} whether the menu offers the first steps: on, and something left */
+    get firstStepsInMenu() {
+        const data = this.firstSteps.data;
+        return !!(data && data.enabled && data.pending);
+    }
+
+    /** Open the first steps card again and go to the home page, where it is. */
+    async openFirstSteps() {
+        this.state.showUserMenu = false;
+        await setFirstStepsHidden(false);
+        this.env.navigate("projects");
     }
 
     /** Switch between the light and dark UI theme and persist the choice. */

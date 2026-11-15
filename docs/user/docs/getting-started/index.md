@@ -16,6 +16,28 @@ Three short guides that take you from zero to a running Odoo instance:
 
 Each step is independent — if you already have an account, jump straight to step 2.
 
+## The first steps list
+
+While your panel still lacks something to run Odoo, **Projects**, its home
+page, shows **First steps**: get a server, set up backups and deploy Odoo,
+then two optional ones, your own domain and outgoing mail. Each step says
+whether it is done, started or still to do, has the button that takes you to
+the screen where you do it and a link to its guide. The button of the step that
+comes next is the green one. A step whose last attempt failed says so, and its
+button opens the page where you see what failed.
+
+Only users with the Manager role see it: the first two steps are theirs.
+
+- Once the three required steps are done, the list folds to one line; click it
+  to see the steps again.
+- **×** in its corner closes the list for you; other users still see it.
+- To bring it back, click **First steps** next to the number of projects, or
+  in the menu under your name.
+
+When every step is done, the list goes away for good. A panel that already
+had its first deployment when the list arrived does not show it for the optional
+steps; you can still open it from the menu under your name.
+
 ## What you'll need
 
 - An account with one of the identity providers listed on the sign-up page, such

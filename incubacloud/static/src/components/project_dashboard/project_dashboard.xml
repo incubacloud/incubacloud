@@ -9,6 +9,10 @@
                     <h1 class="rl-ptitle">Projects</h1>
                     <p class="rl-psub">
                         <t t-esc="state.total"/> project<t t-if="state.total !== 1">s</t>
+                        <t t-if="firstStepsReopen">
+                            · <button type="button" class="ic-fs-reopen"
+                                      t-on-click="() => this.reopenFirstSteps()">First steps</button>
+                        </t>
                     </p>
                 </div>
                 <t t-if="env.permissions?.can_create_project">
@@ -27,6 +31,8 @@
                               total="state.total"
                               limit="state.limit"
                               label="'projects'"/>
+
+            <FirstSteps/>
 
             <!-- Loading: a skeleton, so a slow fetch never looks like "empty". -->
             <t t-if="state.loading">
@@ -55,7 +61,8 @@
                 </div>
             </t>
 
-            <!-- Empty state -->
+            <!-- Empty state: the first steps card takes its place while it shows -->
+            <t t-elif="state.projects.length === 0 and firstStepsShown"/>
             <t t-elif="state.visible_projects.length === 0">
                 <div class="rl-stub">
                     <span class="rl-si"><t t-out="env.icon('projects', 46)"/></span>

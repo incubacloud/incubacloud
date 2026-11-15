@@ -173,6 +173,10 @@
                         <button class="ic-header-user-action" t-on-click="goToSessions">
                             <i class="fa fa-shield" aria-hidden="true"/> Sessions and access
                         </button>
+                        <button t-if="firstStepsInMenu" class="ic-header-user-action"
+                                t-on-click="() => this.openFirstSteps()">
+                            <i class="fa fa-list-ol" aria-hidden="true"/> First steps
+                        </button>
                         <div class="ic-header-user-sep"/>
                         <button class="ic-header-user-action" t-on-click="toggleTheme">
                             <t t-if="state.theme === 'light'"><i class="fa fa-moon-o" aria-hidden="true"/> Dark theme</t>
