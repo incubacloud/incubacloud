@@ -3,6 +3,8 @@
 Mixed into ``CloudDataLoadController`` in ``data_load.py``.
 """
 
+import asyncio
+
 import asyncssh
 import boto3
 from botocore.exceptions import ClientError, ParamValidationError
@@ -472,7 +474,7 @@ class BackendsMixin:
             return {"ok": False, "error": _(
                 "The user may not write in %(path)s.", path=b.sftp_path or "~",
             )}
-        if isinstance(cause, TimeoutError):
+        if isinstance(cause, (TimeoutError, asyncio.TimeoutError)):
             return {"ok": False, "error": _("The server did not answer in time.")}
         return {"ok": False, "error": _(
             "Could not use the SFTP server: %(error)s",
@@ -484,7 +486,7 @@ class BackendsMixin:
         try:
             result = b._sftp_test()
         except (UserError, SftpUnreachable, asyncssh.Error, OSError,
-                TimeoutError) as exc:
+                TimeoutError, asyncio.TimeoutError) as exc:
             return self._sftp_failure(b, exc)
         return {"ok": True, **result}
 
@@ -507,7 +509,7 @@ class BackendsMixin:
             try:
                 b.sudo()._measure_usage()
             except (UserError, SftpUnreachable, asyncssh.Error, OSError,
-                    TimeoutError) as exc:
+                    TimeoutError, asyncio.TimeoutError) as exc:
                 return self._sftp_failure(b, exc)
             return {
                 "ok": True,

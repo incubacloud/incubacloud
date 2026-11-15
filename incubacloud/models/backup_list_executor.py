@@ -279,7 +279,7 @@ class BackupListExecutor(AbstractSSHExecutor):
             files = await asyncio.wait_for(_walk(), _SFTP_OPERATION_TIMEOUT)
         except (
             SftpUnreachable, sftp_dst.DstError, UserError, OSError,
-            asyncssh.Error, TimeoutError,
+            asyncssh.Error, TimeoutError, asyncio.TimeoutError,
         ) as exc:
             _logger.warning(
                 "SFTP listing failed for %s: %s", inst.name, type(exc).__name__,
