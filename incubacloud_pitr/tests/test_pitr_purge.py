@@ -830,3 +830,60 @@ class TestANeutralizedCopy(_SwitchedOffCase):
         self.assertFalse(self.inst.pitr_purge_at)
         self.assertFalse(self.inst.pitr_rendered_prefix)
         self.assertFalse(self.inst.pitr_rendered_backend_id)
+
+
+class TestASuccessorArchivesUnderAPrefixOfItsOwn(_PitrCase):
+    """The recovery prefix follows the backup path's suffix (``backup_path_suffix``).
+
+    An instance that takes the name of an archived one whose project's
+    folder it took computes ``<folder>/<name>-<id>-pitr``: its archive is
+    not the archived one's, and neither purge reaches the other.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.inst.write({"pitr_enabled": True, "pitr_cluster_id": "7698"})
+        self.inst._finalize_removal(keep_in_panel=True)
+        self.assertEqual(self.inst.pitr_archived_prefix, PREFIX)
+        self.project.remote_folder = "pp-archived"
+        self.again = self.env["cloud.project"].create({
+            "name": "pitr-proj-again", "remote_folder": "pp",
+            "backup_backend_id": self.backend.id,
+        })
+
+    def _successor(self):
+        return self.env["cloud.instance"].create({
+            "name": "pitr-inst", "project_id": self.again.id,
+            "environment": "production", "host_id": self.host.id,
+            "state": "draft",
+        })
+
+    def test_its_recovery_prefix_follows_the_suffix(self):
+        successor = self._successor()
+        self.assertEqual(successor.backup_path_suffix, f"-{successor.id}")
+        self.assertEqual(
+            successor._pitr_prefix_base(),
+            f"s3://bucket/backups/pp/pitr-inst-{successor.id}-pitr",
+        )
+        self.assertIsNone(self.inst._backup_prefix_conflict(PREFIX))
+
+    def test_an_archive_left_alone_under_the_name_claims_it_too(self):
+        """Its chain path elsewhere: the recovery prefix alone ends as the
+        successor's would (``_backup_path_tails``)."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET custom_backup_dst = %s WHERE id = %s",
+            ("boto3+s3://bucket/imported/pitr-inst", self.inst.id),
+        )
+        self.env.invalidate_all()
+        successor = self._successor()
+        self.assertEqual(successor.backup_path_suffix, f"-{successor.id}")
+
+    def test_its_chain_path_still_says_its_prefix_once_archived(self):
+        successor = self._successor()
+        successor._finalize_removal(keep_in_panel=True)
+        successor.sudo().pitr_archived_prefix = False
+        self.assertEqual(
+            successor._pitr_prefix_from_chain(),
+            f"s3://bucket/backups/pp/pitr-inst-{successor.id}-pitr",
+        )

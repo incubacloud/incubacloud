@@ -278,14 +278,27 @@ class CloudInstance(models.Model):
     def _pitr_bucket_path(self):
         """Return ``(bucket, path)`` of the instance's recovery prefix.
 
+        Beside the duplicity path, with its suffix
+        (``backup_path_suffix``): ``<folder>/<name><suffix>-pitr``.
+
         :rtype: tuple
         """
         self.ensure_one()
         backend = self.effective_backup_backend
-        folder = (self.project_id.remote_folder if self.project_id else "") \
-            or "default"
-        parts = [(backend.s3_path or "").strip("/"), folder, f"{self.name}-pitr"]
+        parts = [
+            (backend.s3_path or "").strip("/"), self._backup_folder(),
+            f"{self.name}{self.backup_path_suffix or ''}-pitr",
+        ]
         return backend.s3_bucket, "/".join(p for p in parts if p)
+
+    def _backup_path_tails(self, suffix):
+        """Core's endings and the recovery prefix's, ``…-pitr``.
+
+        :param str suffix: a ``backup_path_suffix``, ``""`` for none
+        :rtype: list
+        """
+        tails = list(super()._backup_path_tails(suffix))
+        return tails + [f"/{self._backup_folder()}/{self.name}{suffix}-pitr"]
 
     def _pitr_prefix_base(self):
         """The wal-g prefix the clusters archive under (``s3://…``).
@@ -336,7 +349,8 @@ class CloudInstance(models.Model):
         For an instance archived before the prefix was frozen
         (``pitr_archived_prefix``): what ``_pitr_bucket_path`` gave when it
         was archived is its frozen chain path (``custom_backup_dst``) with
-        ``-pitr`` after it, the same destination path, folder and name.
+        ``-pitr`` after it, the same destination path, folder and name
+        (with the name's suffix, ``backup_path_suffix``).
         The one computed now follows the project: renamed, it names an
         empty folder; gone, the shared ``default`` one, where another
         instance of the same name may archive. Only a chain path that
@@ -354,7 +368,8 @@ class CloudInstance(models.Model):
             return ""
         rest = dst[len(scheme):]
         bucket, _sep, path = rest.partition("/")
-        if not (bucket and path) or not rest.endswith(f"/{self.name}"):
+        own = f"/{self.name}{self.backup_path_suffix or ''}"
+        if not (bucket and path) or not rest.endswith(own):
             return ""
         return f"s3://{rest}-pitr"
 
@@ -1443,7 +1458,8 @@ class CloudInstance(models.Model):
         self.ensure_one()
         folder = self.project_id.remote_folder or "default"
         taken = self.with_context(active_test=False).sudo().search([
-            ("name", "=", f"{self.name}-pitr"), ("id", "!=", self.id),
+            ("name", "=", f"{self.name}{self.backup_path_suffix or ''}-pitr"),
+            ("id", "!=", self.id),
         ]).filtered(
             lambda other: (other.project_id.remote_folder or "default") == folder
         )

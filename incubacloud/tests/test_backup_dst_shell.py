@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import importlib.util
 import json
+import logging
 import re
 import secrets
 import shlex
@@ -25,7 +26,7 @@ import yaml
 
 from odoo import fields
 from odoo import http as odoo_http
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, ValidationError
 from odoo.http import Request
 from odoo.tests.common import TransactionCase, new_test_user, tagged
 from odoo.tools import SQL
@@ -483,9 +484,36 @@ class TestTheUpdateNamesThePathsSavedBefore(_BackupDstCase):
         self.assertEqual(self.backend.s3_path, "with space")
 
     def test_paths_of_the_grammar_are_not_named(self):
+        """Not this instance's: a base may hold other records it names."""
         self._saved_before(_VALID[0])
-        with self.assertNoLogs(_MIGRATION_LOGGER, "WARNING"):
+        with self.assertLogs(_MIGRATION_LOGGER, "WARNING") as logs:
+            logging.getLogger(_MIGRATION_LOGGER).warning("the update ran")
             self._migrate()
+        self.assertNotIn(f"(id {self.instance.id}", "\n".join(logs.output))
+
+    def test_a_path_two_records_share_is_named_alerted_and_kept(self):
+        self.instance._finalize_removal(keep_in_panel=True)
+        path = self.instance.custom_backup_dst
+        live = self.env["cloud.instance"].create({
+            "name": "bd-inst",
+            "project_id": self.env["cloud.project"].create({"name": "bd-proj-2"}).id,
+            "environment": "production", "host_id": self.host.id,
+            "state": "deployed", "backup_backend_id": self.backend.id,
+        })
+        self._saved_before(path, live)
+        with self.assertLogs(_MIGRATION_LOGGER, "WARNING") as logs:
+            self._migrate()
+        output = "\n".join(logs.output)
+        self.assertIn(f"the backup path {path} is held by", output)
+        self.assertIn(f"bd-inst (id {self.instance.id}, archived)", output)
+        self.assertIn(f"bd-inst (id {live.id}, live)", output)
+        alert = self.env["cloud.alert"].search([
+            ("code", "=", "backup_path_shared"), ("state", "=", "active"),
+            ("message", "like", path),
+        ])
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(live.instance_backup_dst, path)
+        self.assertFalse(live.backup_path_suffix)
 
 
 class TestTheEnvironmentFilesKeepEveryLine(_BackupDstCase):
@@ -781,17 +809,25 @@ class TestAPurgeReachesOnlyItsOwnCopy(_BackupDstCase):
             with self.subTest(dst=dst):
                 self.instance.sudo().write({"custom_backup_dst": dst})
 
-    def test_the_path_of_a_live_one_of_the_same_name_is_refused(self):
-        """Two live ones in a path prove no succession."""
+    def test_the_path_of_one_of_the_same_name_is_refused(self):
+        """Live, or archived a while before: its chain would be continued."""
         self.instance.sudo().write({"custom_backup_dst": f"{self.own}-imported"})
-        with self.assertRaises(ValidationError) as caught:
-            self.env["cloud.instance"].create({
-                "name": "bd-inst", "project_id": self.elsewhere.id,
-                "environment": "staging", "host_id": self.host.id,
-                "state": "deployed", "backup_backend_id": self.backend.id,
-                "custom_backup_dst": f"{self.own}-imported",
-            })
-        self.assertIn("bd-inst", str(caught.exception))
+        for archived in (False, True):
+            with self.subTest(archived=archived):
+                if archived:
+                    self.instance._finalize_removal(keep_in_panel=True)
+                    self._dated(
+                        self.instance,
+                        archived_at=fields.Datetime.now() - timedelta(days=2),
+                    )
+                with self.assertRaises(ValidationError) as caught:
+                    self.env["cloud.instance"].create({
+                        "name": "bd-inst", "project_id": self.elsewhere.id,
+                        "environment": "staging", "host_id": self.host.id,
+                        "state": "deployed", "backup_backend_id": self.backend.id,
+                        "custom_backup_dst": f"{self.own}-imported",
+                    })
+                self.assertIn("bd-inst", str(caught.exception))
 
     def _purge(self):
         """Archive the instance, delete it; return the purge's executor."""
@@ -1379,3 +1415,108 @@ class TestTheArchivedPurgeEndsWhereTheSuccessorBegan(_BackupDstCase):
         self.assertEqual(len(alert), 1)
         self.assertIn("continued its backup chain", alert.message)
         self.assertTrue(self.instance.exists())
+
+
+@tagged("post_install", "-at_install")
+class TestASuccessorGetsABackupPathOfItsOwn(_BackupDstCase):
+    """An instance that takes another's name computes a path no record holds.
+
+    ``-<id>`` after the name when another record already holds a path that
+    ends as its own would (``_claim_own_backup_path``): its first copy is
+    then a full of its own, and no purge of the other reaches it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.instance._finalize_removal(keep_in_panel=True)
+        self.archived_path = self.instance.custom_backup_dst
+        # Its project's folder freed for the new one, as starting over does.
+        self.project.remote_folder = "bd-proj-archived"
+        self.again = self.env["cloud.project"].create({
+            "name": "bd-proj-again", "remote_folder": "bd-proj",
+        })
+
+    def _create(self, name="bd-inst", **vals):
+        """A staging of *name* in the project that took the folder."""
+        return self.env["cloud.instance"].create({
+            "name": name, "project_id": self.again.id,
+            "environment": "staging", "host_id": self.host.id,
+            "state": "draft", "backup_backend_id": self.backend.id,
+        } | vals)
+
+    def test_the_successor_s_path_is_its_own(self):
+        successor = self._create()
+        self.assertEqual(successor.backup_path_suffix, f"-{successor.id}")
+        self.assertEqual(
+            successor.instance_backup_dst, f"{self.archived_path}-{successor.id}",
+        )
+        self.assertIsNone(
+            self.instance._backup_prefix_conflict(self.archived_path),
+        )
+        self.assertEqual(
+            successor._backup_purge_since(successor.instance_backup_dst), "",
+        )
+
+    def test_a_name_nobody_holds_keeps_the_path_the_destination_computes(self):
+        other = self._create("bd-new")
+        self.assertFalse(other.backup_path_suffix)
+        self.assertEqual(
+            other.instance_backup_dst, "boto3+s3://bd-bucket/backups/bd-proj/bd-new",
+        )
+
+    def test_two_of_a_name_without_a_project_get_two_paths(self):
+        # No host: the hostname it would give both is unique.
+        first, second = self.env["cloud.instance"].create([{
+            "name": "bd-free", "environment": "staging",
+            "backup_backend_id": self.backend.id,
+        }] * 2)
+        self.assertFalse(first.backup_path_suffix)
+        self.assertEqual(second.backup_path_suffix, f"-{second.id}")
+        self.assertNotEqual(first.instance_backup_dst, second.instance_backup_dst)
+
+    def test_a_rename_or_a_move_claims_it_and_a_form_s_save_does_not(self):
+        other = self._create("bd-other")
+        other.write({"name": "bd-inst"})
+        self.assertEqual(other.backup_path_suffix, f"-{other.id}")
+        other.write({"name": "bd-renamed"})
+        self.assertFalse(other.backup_path_suffix)
+        # A pair from before: the path shared, a save that sends the name
+        # back moves nothing.
+        old = self._create("bd-old")
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET name = %s WHERE id = %s",
+            (json.dumps({"en_US": "bd-inst"}), old.id),
+        )
+        self.env.invalidate_all()
+        self.assertEqual(old.instance_backup_dst, self.archived_path)
+        old.write({"name": "bd-inst", "project_id": self.again.id})
+        self.assertFalse(old.backup_path_suffix)
+        self.assertEqual(old.instance_backup_dst, self.archived_path)
+
+    def test_a_name_that_spells_another_s_suffixed_path_gets_its_own(self):
+        successor = self._create()
+        spelled = self._create(f"bd-inst-{successor.id}")
+        self.assertEqual(spelled.backup_path_suffix, f"-{spelled.id}")
+        self.assertNotEqual(spelled.instance_backup_dst, successor.instance_backup_dst)
+
+    def test_an_instance_with_a_path_of_its_own_gets_no_suffix(self):
+        own = self._create(custom_backup_dst="boto3+s3://bd-bucket/imported/bd-inst")
+        self.assertFalse(own.backup_path_suffix)
+
+    def test_archiving_the_successor_freezes_its_own_path(self):
+        successor = self._create()
+        path = successor.instance_backup_dst
+        successor._finalize_removal(keep_in_panel=True)
+        self.assertEqual(successor.custom_backup_dst, path)
+        self.assertNotEqual(path, self.archived_path)
+
+    def test_nobody_but_the_platform_writes_it(self):
+        successor = self._create()
+        user = new_test_user(
+            self.env, login="bd-suffix-admin",
+            groups="base.group_user,incubacloud.group_cloud_manager",
+        )
+        with self.assertRaises(AccessError) as caught:
+            successor.with_user(user).write({"backup_path_suffix": False})
+        self.assertIn("backup_path_suffix", str(caught.exception))
