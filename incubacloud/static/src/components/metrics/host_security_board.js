@@ -288,7 +288,7 @@ export class HostSecurityBoard extends ChartBoard {
    * @param {Object} inst ``{id, name}``
    * @returns {string}
    */
-  instanceName(inst) {
+  instanceLabel(inst) {
     return inst.name || _t("unidentified");
   }
 
@@ -299,7 +299,7 @@ export class HostSecurityBoard extends ChartBoard {
    * @returns {string}
    */
   instancesText(instances) {
-    return (instances || []).map((i) => `${this.instanceName(i)} (${this.fmtNumber(i.attempts)})`).join(", ") || "—";
+    return (instances || []).map((i) => `${this.instanceLabel(i)} (${this.fmtNumber(i.attempts)})`).join(", ") || "—";
   }
 
   /**
