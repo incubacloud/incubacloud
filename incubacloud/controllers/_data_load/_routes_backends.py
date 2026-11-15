@@ -3,12 +3,15 @@
 Mixed into ``CloudDataLoadController`` in ``data_load.py``.
 """
 
+import asyncssh
 import boto3
 from botocore.exceptions import ClientError, ParamValidationError
 
 from odoo import _, http
+from odoo.exceptions import UserError
 from odoo.http import request
 
+from ...models.cloud_backup_backend import SftpUnreachable
 from .._safe_error import safe_error_response
 from ._helpers import _capped_search, _has_encrypted
 
@@ -38,6 +41,12 @@ class BackendsMixin:
         "quota_gb",
         "alert_threshold_pct",
         "alert_email",
+        # SFTP: where. The key pair and the trusted server key are the
+        # server's to write (``_SFTP_SERVER_FIELDS``), never the SPA's.
+        "sftp_host",
+        "sftp_port",
+        "sftp_user",
+        "sftp_path",
     }
     # NOTE: ``managed_reservation_id`` and ``archived_until`` are NOT in the
     # allowlist. They are written exclusively by server-side flows
@@ -92,6 +101,7 @@ class BackendsMixin:
                     "s3_bucket": b.s3_bucket or "",
                     "s3_path": b.s3_path or "",
                     "s3_endpoint_url": b.s3_endpoint_url or "",
+                    "sftp_host": b.sftp_host or "",
                     "backup_dst": b.backup_dst or "",
                     "instance_count": usage.get(b.id, 0),
                     "quota_gb": b.quota_gb or 0.0,
@@ -130,6 +140,20 @@ class BackendsMixin:
             "s3_access_key_id": b.s3_access_key_id or "",
             "has_s3_secret_access_key": _has_encrypted(b, "s3_secret_access_key"),
             "has_passphrase": _has_encrypted(b, "passphrase"),
+            # SFTP: the public half and the trusted server key's
+            # fingerprint. Never the private key: no route reads it.
+            "sftp_host": b.sftp_host or "",
+            "sftp_port": b.sftp_port or 22,
+            "sftp_user": b.sftp_user or "",
+            "sftp_path": b.sftp_path or "",
+            "sftp_public_key": b.sftp_public_key or "",
+            "sftp_host_key_fingerprint": b.sftp_host_key_fingerprint or "",
+            "sftp_host_key_trusted": bool(b.sftp_host_key_fingerprint),
+            "sftp_host_key_trusted_at": (
+                b.sftp_host_key_trusted_at.isoformat()
+                if b.sftp_host_key_trusted_at else ""
+            ),
+            "sftp_host_key_trusted_by": b.sftp_host_key_trusted_by.name or "",
             "backup_image_version": b.backup_image_version or "latest",
             "email_from": b.email_from or "",
             "email_to": b.email_to or "",
@@ -173,6 +197,102 @@ class BackendsMixin:
         # Writing the retention owner confirms it (see the model's write):
         # the page drops its «Unconfirmed» note on this answer.
         return {"ok": True, "retention_owner_declared": b.retention_owner_declared}
+
+    #: Connections to SFTP servers a user may open from the panel per hour
+    #: (reading the key, trusting it, testing, measuring), as the relay test.
+    _SFTP_CONNECTIONS_PER_HOUR = 20
+
+    def _sftp_rate_limited(self):
+        """Count one connection to an SFTP server against the user's hour.
+
+        :return: the deny dict when over the limit, else None
+        :rtype: dict or None
+        """
+        uid = request.env.uid
+        allowed = request.env["cloud.rate.limit"].sudo().hit(
+            f"sftp_backend:{uid}",
+            max_per_window=self._SFTP_CONNECTIONS_PER_HOUR,
+            window_seconds=3600,
+        )
+        if allowed:
+            return None
+        return {
+            "ok": False,
+            "error": _(
+                "Too many connections to SFTP servers in the last hour. "
+                "Try again later."
+            ),
+        }
+
+    def _sftp_backend(self, backend_id):
+        """Return the SFTP destination *backend_id*, or the error dict.
+
+        :return: ``(backend, None)`` or ``(None, {'ok': False, ...})``
+        :rtype: tuple
+        """
+        self._sec()._check_can_manage_settings()
+        b = request.env["cloud.backup.backend"].browse(backend_id)
+        if not b.exists():
+            return None, {"ok": False, "error": _("Backend not found")}
+        if b.backend_type != "sftp":
+            return None, {
+                "ok": False, "error": _("This destination is not SFTP."),
+            }
+        return b, None
+
+    @http.route(["/cloud/sftp_backend_read_host_key"], type="jsonrpc", auth="user")
+    def cloud_sftp_backend_read_host_key(self, backend_id):
+        """Read the key the SFTP server presents; trust nothing.
+
+        Only the key exchange runs: no credential is sent.
+        """
+        b, error = self._sftp_backend(backend_id)
+        if error:
+            return error
+        limited = self._sftp_rate_limited()
+        if limited:
+            return limited
+        try:
+            return {"ok": True, **b._sftp_read_host_key()}
+        except UserError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    @http.route(["/cloud/sftp_backend_trust_host_key"], type="jsonrpc", auth="user")
+    def cloud_sftp_backend_trust_host_key(self, backend_id, expected_fingerprint):
+        """Trust the server key the person saw, if it is still the one presented."""
+        b, error = self._sftp_backend(backend_id)
+        if error:
+            return error
+        limited = self._sftp_rate_limited()
+        if limited:
+            return limited
+        try:
+            found = b._sftp_trust_host_key(expected_fingerprint)
+        except UserError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {
+            "ok": True,
+            "sftp_host_key_fingerprint": found,
+            "sftp_host_key_trusted_at": (
+                b.sftp_host_key_trusted_at.isoformat()
+                if b.sftp_host_key_trusted_at else ""
+            ),
+            "sftp_host_key_trusted_by": b.sftp_host_key_trusted_by.name or "",
+        }
+
+    @http.route(["/cloud/sftp_backend_regenerate_key"], type="jsonrpc", auth="user")
+    def cloud_sftp_backend_regenerate_key(self, backend_id):
+        """Replace an SFTP destination's key pair and return the new public key.
+
+        The instances log in with the old key until they are rebuilt: the
+        page says to keep both lines in ``authorized_keys`` until then.
+        """
+        self._sec()._check_can_manage_settings()
+        b = request.env["cloud.backup.backend"].browse(backend_id)
+        if not b.exists():
+            return {"ok": False, "error": _("Backend not found")}
+        b._sftp_regenerate_key()
+        return {"ok": True, "sftp_public_key": b.sftp_public_key or ""}
 
     @http.route(["/cloud/delete_backup_backend"], type="jsonrpc", auth="user")
     def cloud_delete_backup_backend(self, backend_id):
@@ -247,6 +367,16 @@ class BackendsMixin:
         b = request.env["cloud.backup.backend"].browse(backend_id)
         if not b.exists():
             return {"ok": False, "error": _("Backend not found.")}
+        if b.backend_type == "sftp":
+            limited = self._sftp_rate_limited()
+            if limited:
+                return limited
+            return self._sftp_test_answer(b)
+        if b.backend_type != "s3":
+            return {
+                "ok": False,
+                "error": _("Testing this type of destination is not supported."),
+            }
         if not b.s3_bucket:
             return {"ok": False, "error": _("No bucket configured.")}
 
@@ -310,6 +440,54 @@ class BackendsMixin:
         except Exception as exc:
             return safe_error_response(exc, _("Backend connection test failed"))
 
+    def _sftp_failure(self, b, exc):
+        """Say why the panel could not use an SFTP destination.
+
+        A failed key exchange is told apart by reading the key the server
+        presents now and comparing fingerprints
+        (``_sftp_check_presented_key``, which raises the alert), not by
+        the error's type.
+
+        :param b: the ``cloud.backup.backend``
+        :param exc: what was raised
+        :rtype: dict
+        """
+        if isinstance(exc, UserError):
+            return {"ok": False, "error": str(exc)}
+        cause = exc.__cause__ if isinstance(exc, SftpUnreachable) else exc
+        presented = b._sftp_check_presented_key()
+        if presented:
+            return {"ok": False, "error": _(
+                "The server presents the key %(presented)s, not the trusted "
+                "%(trusted)s. Check it with your provider before trusting it.",
+                presented=presented, trusted=b.sftp_host_key_fingerprint,
+            )}
+        if isinstance(cause, asyncssh.PermissionDenied):
+            return {"ok": False, "error": _(
+                "The server refused the key. Add this line to the user's "
+                "authorized_keys: %(key)s",
+                key=b.sftp_public_key,
+            )}
+        if isinstance(cause, asyncssh.SFTPPermissionDenied):
+            return {"ok": False, "error": _(
+                "The user may not write in %(path)s.", path=b.sftp_path or "~",
+            )}
+        if isinstance(cause, TimeoutError):
+            return {"ok": False, "error": _("The server did not answer in time.")}
+        return {"ok": False, "error": _(
+            "Could not use the SFTP server: %(error)s",
+            error=str(cause) or type(cause).__name__,
+        )}
+
+    def _sftp_test_answer(self, b):
+        """Run the SFTP connection test of *b* and shape the answer."""
+        try:
+            result = b._sftp_test()
+        except (UserError, SftpUnreachable, asyncssh.Error, OSError,
+                TimeoutError) as exc:
+            return self._sftp_failure(b, exc)
+        return {"ok": True, **result}
+
     @http.route(["/cloud/measure_backup_usage"], type="jsonrpc", auth="user")
     def cloud_measure_backup_usage(self, backend_id):
         """Run an on-demand usage measurement for *backend_id*.
@@ -322,6 +500,22 @@ class BackendsMixin:
         b = request.env["cloud.backup.backend"].browse(backend_id)
         if not b.exists():
             return {"ok": False, "error": _("Backend not found.")}
+        if b.backend_type == "sftp":
+            limited = self._sftp_rate_limited()
+            if limited:
+                return limited
+            try:
+                b.sudo()._measure_usage()
+            except (UserError, SftpUnreachable, asyncssh.Error, OSError,
+                    TimeoutError) as exc:
+                return self._sftp_failure(b, exc)
+            return {
+                "ok": True,
+                "last_measured_gb": b.last_measured_gb or 0.0,
+                "last_measured_at": (
+                    b.last_measured_at.isoformat() if b.last_measured_at else ""
+                ),
+            }
         if not b.s3_bucket or not b.s3_access_key_id:
             return {
                 "ok": False,

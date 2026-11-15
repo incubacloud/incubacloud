@@ -18,6 +18,10 @@ go than a bucket nobody can reach any more.
 """
 import logging
 
+from odoo import _
+from odoo.exceptions import UserError
+
+from . import sftp_dst
 from .abstract_executor import AbstractSSHExecutor
 
 _logger = logging.getLogger(__name__)
@@ -51,6 +55,11 @@ PURGE_ARCHIVED_ALERT_BY_EXIT = {
 #: The prefix was already empty — the chain is gone by other means. Not
 #: a failure: the invariant already holds, so the record may go.
 PURGE_ARCHIVED_EXIT_ALREADY_EMPTY = 10
+
+#: The SFTP key and trusted server key, beside the first environment file
+#: (``backup_purge_archived.sh`` looks for them there).
+SFTP_KEY_NAME = "purge-ssh-key"
+SFTP_KNOWN_HOSTS_NAME = "purge-known_hosts"
 
 
 class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
@@ -152,6 +161,10 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         lines = [f"DST={dst or inst.custom_backup_dst}"]
         if inst.purge_cutoff_at:
             lines.append(f"PURGE_BEFORE={inst.purge_cutoff_at.isoformat()}")
+        if backend.backend_type == "sftp":
+            # The key and the trusted server key travel as files of their
+            # own (``_sftp_files``), mounted where the program reads them.
+            return "\n".join(lines) + "\n"
         if backend.s3_access_key_id:
             lines.append(f"AWS_ACCESS_KEY_ID={backend.s3_access_key_id}")
         if backend.s3_secret_access_key:
@@ -176,7 +189,54 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         way out, and the job its directory, failure included. One file
         per prefix of the copy (``_env_contents``).
         """
-        await self._upload_private_files(transport, self._env_contents())
+        await self._upload_private_files(
+            transport, {**self._env_contents(), **self._sftp_files()},
+        )
+
+    def _sftp_files(self):
+        """Return the SFTP key and trusted server key, for an SFTP copy.
+
+        Written beside the environment files, 0600 in the job's directory,
+        and mounted read-only by ``backup_purge_archived.sh``, which
+        removes them on its way out. Every prefix is checked first: a
+        path off the destination's server, or not one instance's folder,
+        stops the job before the key leaves the panel.
+
+        :return: ``{remote path: content}``, empty for an S3 destination
+        :rtype: dict
+        :raise UserError: when a prefix is not this destination's, or the
+            server key was never trusted
+        """
+        backend = self._inst().effective_backup_backend.sudo()
+        if backend.backend_type != "sftp":
+            return {}
+        for dst in self._dsts():
+            try:
+                path = sftp_dst.check_dst(
+                    backend.sftp_user, backend.sftp_host, backend.sftp_port, dst,
+                )
+            except sftp_dst.DstError as exc:
+                raise UserError(_(
+                    "%(path)s is not on the server of the backup destination "
+                    "%(name)s: nothing was deleted.",
+                    path=dst, name=backend.name,
+                )) from exc
+            if not sftp_dst.instance_path(path):
+                raise UserError(_(
+                    "%(path)s is not one instance's folder: nothing was deleted.",
+                    path=dst,
+                ))
+        if not backend.sftp_known_hosts or not backend.sftp_private_key:
+            raise UserError(_(
+                "Confirm the SFTP server's key on the backup destination "
+                "%(name)s: nothing was deleted.",
+                name=backend.name,
+            ))
+        key = backend.sftp_private_key
+        return {
+            self._job_path(SFTP_KEY_NAME): key if key.endswith("\n") else key + "\n",
+            self._job_path(SFTP_KNOWN_HOSTS_NAME): backend.sftp_known_hosts.strip() + "\n",
+        }
 
     def get_commands(self):
         image = (

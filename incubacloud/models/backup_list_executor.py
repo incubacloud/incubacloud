@@ -1,10 +1,16 @@
+import asyncio
 import logging
 import re
 from datetime import datetime, timedelta
 
-from odoo import fields
+import asyncssh
 
+from odoo import fields
+from odoo.exceptions import UserError
+
+from . import sftp_dst
 from .abstract_executor import AbstractSSHExecutor
+from .cloud_backup_backend import _SFTP_OPERATION_TIMEOUT, SftpUnreachable
 
 _logger = logging.getLogger(__name__)
 
@@ -38,6 +44,14 @@ _INC_FILE_RE = re.compile(
     + r'duplicity(?:-new-signatures|-inc)\.'
     r'\d{8}T\d{6}Z\.to\.(\d{8}T\d{6}Z)\..+$'
 )
+
+
+#: What duplicity's paramiko prints when the SFTP server's key is not the
+#: trusted one (``does not match``, on the error output, as duplicity's
+#: fatal errors are) or not one it knows (it then asks on its input, which
+#: the command closes). The listing joins its error output to its output
+#: so both reach ``on_failure``.
+_SFTP_HOST_KEY_REFUSED = ("does not match", "authenticity of host")
 
 
 def _duplicity_filename_to_iso(key):
@@ -192,7 +206,7 @@ class BackupListExecutor(AbstractSSHExecutor):
             (
                 "List backups",
                 f"cd {d} && docker compose exec -T backup"
-                f" dup collection-status \"{dst}\"",
+                f" dup collection-status \"{dst}\" </dev/null 2>&1",
             ),
         ]
 
@@ -230,8 +244,67 @@ class BackupListExecutor(AbstractSSHExecutor):
         )
         self._sync_backup_records(parsed)
         self._check_backup_freshness()
-        # Best-effort S3 size pass — never fails the job.
-        self._populate_sizes_from_s3()
+        # Best-effort size pass — never fails the job.
+        await self._populate_sizes()
+
+    async def _populate_sizes(self):
+        """Write each set's bytes, read from the destination by its type."""
+        backend = self._inst().effective_backup_backend.sudo()
+        if backend.backend_type == 'sftp':
+            await self._populate_sizes_from_sftp(backend)
+        else:
+            self._populate_sizes_from_s3()
+
+    async def _populate_sizes_from_sftp(self, backend):
+        """List the instance's SFTP folder and write per-set bytes.
+
+        Awaited in the job's own loop. Best-effort, like the S3 pass: a
+        server that cannot be reached leaves the sizes as they are.
+
+        :param backend: the instance's ``cloud.backup.backend``, as the
+            platform
+        """
+        inst = self._inst()
+        try:
+            path = sftp_dst.check_dst(
+                backend.sftp_user, backend.sftp_host, backend.sftp_port,
+                inst.instance_backup_dst,
+            )
+            kwargs = backend._sftp_connect_kwargs()
+
+            async def _walk():
+                async with backend._sftp_client(kwargs) as sftp:
+                    return await backend._sftp_walk(sftp, path)
+
+            files = await asyncio.wait_for(_walk(), _SFTP_OPERATION_TIMEOUT)
+        except (
+            SftpUnreachable, sftp_dst.DstError, UserError, OSError,
+            asyncssh.Error, TimeoutError,
+        ) as exc:
+            _logger.warning(
+                "SFTP listing failed for %s: %s", inst.name, type(exc).__name__,
+            )
+            return
+        sizes_by_iso = {}
+        for name, size in files:
+            iso = _duplicity_filename_to_iso(name.rsplit('/', 1)[-1])
+            if iso:
+                sizes_by_iso[iso] = sizes_by_iso.get(iso, 0) + size
+        self._write_sizes(sizes_by_iso)
+
+    def _write_sizes(self, sizes_by_iso):
+        """Write *sizes_by_iso* (set timestamp → bytes) onto the rows."""
+        if not sizes_by_iso:
+            return
+        rows = self.env['cloud.instance.backup'].sudo().search(
+            [('instance_id', '=', self._inst().id)],
+        )
+        for row in rows:
+            if not row.backup_time:
+                continue
+            iso = row.backup_time.strftime('%Y%m%dT%H%M%SZ')
+            if iso in sizes_by_iso:
+                row.size = sizes_by_iso[iso]
 
     def _sync_backup_records(self, parsed):
         """Sync parsed duplicity data to cloud.instance.backup records."""
@@ -405,19 +478,44 @@ class BackupListExecutor(AbstractSSHExecutor):
             )
             return
 
-        if not sizes_by_iso:
-            return
-
-        rows = self.env['cloud.instance.backup'].sudo().search(
-            [('instance_id', '=', inst.id)],
-        )
-        for row in rows:
-            if not row.backup_time:
-                continue
-            iso = row.backup_time.strftime('%Y%m%dT%H%M%SZ')
-            if iso in sizes_by_iso:
-                row.size = sizes_by_iso[iso]
+        self._write_sizes(sizes_by_iso)
 
     async def on_failure(self, results, errors):
         for err in errors:
             self._sys(f"✗ {err}")
+        stdout = (results.get('List backups') or {}).get('stdout', '')
+        if any(text in stdout for text in _SFTP_HOST_KEY_REFUSED):
+            await self._sftp_host_key_refused()
+
+    async def _sftp_host_key_refused(self):
+        """Raise the changed-key alert, or say the instance needs a build.
+
+        Only when the instance runs with the server key trusted now: one
+        built before a new key was trusted still holds the old one, and
+        what it needs is its changes applied, not an alert that would be
+        raised again the day after it was resolved. And even then only
+        when the server presents another key than the trusted one, read
+        without credentials (``_sftp_check_presented_key_async``: this runs
+        in the job's own loop).
+        """
+        inst = self._inst()
+        backend = inst.effective_backup_backend.sudo()
+        if backend.backend_type != 'sftp':
+            return
+        applied = (
+            (inst.applied_config_snapshot or {}).get('backup_sftp') or {}
+        ).get('host_key', '')
+        if applied != (backend.sftp_host_key_fingerprint or ''):
+            self._sys(
+                "The SFTP server's key trusted on the destination is not the "
+                "one this instance runs with: apply the instance's changes "
+                "(rebuild) so it gets the trusted key."
+            )
+            return
+        presented = await backend._sftp_check_presented_key_async()
+        if presented:
+            self._sys(
+                f"The SFTP server presents the key {presented}, not the "
+                f"trusted {backend.sftp_host_key_fingerprint}: check it and "
+                "trust it again on the backup destination."
+            )

@@ -23,7 +23,7 @@ from ..net.restore_source import (
     validate as validate_restore_url,
 )
 from ..restore_staging import purge_stale
-from . import _odoo_versions, _relay_oauth
+from . import _odoo_versions, _relay_oauth, sftp_dst
 from ._odoo_versions import ODOO_VERSION_SELECTION
 from . import _config_snapshot_diff as _snapshot_diff
 from ._backup_retention import TEMPLATE_BACKUP_RETENTION, valid_backup_retention
@@ -1106,11 +1106,14 @@ class CloudInstance(models.Model):
                     "backup_smtp_report_success": bb.smtp_report_success,
                     "backup_deletion": bb.retention_owner == "cron",
                     "backup_tz": bb.backup_tz or "UTC",
-                    "backup_aws_access_key_id": bb.s3_access_key_id or "",
-                    "backup_aws_secret_access_key": bb.s3_secret_access_key or "",
                     "backup_passphrase": bb.passphrase or "",
                 }
             )
+            if bb.backend_type == "s3":
+                answers.update({
+                    "backup_aws_access_key_id": bb.s3_access_key_id or "",
+                    "backup_aws_secret_access_key": bb.s3_secret_access_key or "",
+                })
         return answers
 
     def _render_config_snapshot(self):
@@ -1159,7 +1162,27 @@ class CloudInstance(models.Model):
                 if (retention := inst._cron_backup_retention())
                 and retention != TEMPLATE_BACKUP_RETENTION else {}
             ),
+            # Only for an SFTP destination, for the same reason: the key
+            # pair and the trusted server key reach the host in files of
+            # their own (``_extra_env_files``). Fingerprints, never a key.
+            **(
+                {"backup_sftp": inst._backup_sftp_backend()._sftp_snapshot()}
+                if inst._backup_sftp_backend() else {}
+            ),
         }
+
+    def _backup_sftp_backend(self):
+        """Return the SFTP destination this instance backs up to, if any.
+
+        :return: the effective ``cloud.backup.backend``, as the platform,
+            when backups are on and it is SFTP; an empty recordset else
+        :rtype: cloud.backup.backend
+        """
+        self.ensure_one()
+        bb = self.effective_backup_backend.sudo()
+        if bb and bb.backend_type == "sftp" and self._backup_enabled():
+            return bb
+        return self.env["cloud.backup.backend"]
 
     #: Fields a group writes and only the system reads: ``{field: group}``.
     #: Saving the OAuth2 relay's client secret is a developer's, as its
@@ -1856,15 +1879,78 @@ class CloudInstance(models.Model):
         :rtype: dict
         """
         self.ensure_one()
-        if not self._relay_oauth_renders():
-            return {}
-        return {
-            _relay_oauth.CREDENTIALS_FILE: _relay_oauth.credentials_json(
+        files = self._backup_sftp_files()
+        if self._relay_oauth_renders():
+            files[_relay_oauth.CREDENTIALS_FILE] = _relay_oauth.credentials_json(
                 self.smtp_relay_oauth_directory_id or "",
                 self.smtp_relay_oauth_client_id or "",
                 self._relay_oauth_secret(),
                 self.smtp_relay_user or "",
-            ),
+            )
+        return files
+
+    def _backup_sftp_files(self):
+        """Return the files the ``backup`` service logs in to SFTP with.
+
+        The key, the trusted server key and ``~/.ssh/config``
+        (``sftp_dst.SSH_DIR``). Refuses the build first when they cannot
+        protect the copies: no confirmed server key, a key that cannot be
+        read, or a backup path that is not on the destination's server.
+        duplicity's paramiko asks about a server it does not know instead
+        of refusing it, and only finds the key under the server's name as
+        the path writes it: the path and the key must name the same
+        server, user and port (``sftp_dst.check_dst``).
+
+        Deploy and rebuild remove the directory when the instance does not
+        back up to SFTP (``DeployInstanceExecutor._write_extra_env_step``).
+
+        :return: ``{relative_path: content}``, empty without SFTP
+        :rtype: dict
+        :raise UserError: when the build must not go ahead
+        """
+        self.ensure_one()
+        bb = self._backup_sftp_backend()
+        if not bb:
+            return {}
+        if not bb.sftp_host_key_fingerprint or not bb.sftp_known_hosts:
+            raise UserError(_(
+                "Confirm the SFTP server's key on the backup destination "
+                "%(name)s: read it, compare it and trust it, then try again.",
+                name=bb.name,
+            ))
+        try:
+            key = bb.sftp_private_key or ""
+        except ValueError:
+            key = ""
+        if not key:
+            raise UserError(_(
+                "The SFTP key of the backup destination %(name)s cannot be "
+                "read. Generate a new one, add it to the server and try again.",
+                name=bb.name,
+            ))
+        dst = self.instance_backup_dst or ""
+        try:
+            path = sftp_dst.check_dst(
+                bb.sftp_user, bb.sftp_host, bb.sftp_port, dst,
+            )
+        except sftp_dst.DstError as exc:
+            raise UserError(_(
+                "The backup path of %(instance)s (%(path)s) is not on the "
+                "server of its destination %(name)s (%(user)s@%(host)s, port "
+                "%(port)s). A path on another SFTP server is not supported.",
+                instance=self.name, path=dst, name=bb.name,
+                user=bb.sftp_user, host=bb.sftp_host, port=bb.sftp_port,
+            )) from exc
+        if not sftp_dst.instance_path(path):
+            raise UserError(_(
+                "The backup path of %(instance)s (%(path)s) must end in a "
+                "folder of its own: it would be shared with other instances.",
+                instance=self.name, path=dst,
+            ))
+        return {
+            sftp_dst.SSH_KEY_FILE: key if key.endswith("\n") else key + "\n",
+            sftp_dst.SSH_KNOWN_HOSTS_FILE: bb.sftp_known_hosts.strip() + "\n",
+            sftp_dst.SSH_CONFIG_FILE: sftp_dst.SSH_CONFIG,
         }
 
     def _teardown_pre_steps(self, inst_dir, keep_in_panel):

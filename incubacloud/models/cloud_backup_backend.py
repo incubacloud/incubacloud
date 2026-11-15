@@ -1,16 +1,26 @@
+import asyncio
+import contextlib
+import hashlib
+import ipaddress
 import logging
+import secrets
+import stat
 from datetime import timedelta
 from urllib.parse import urlparse
 
+import asyncssh
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
+from ..net.hostname import is_host_address
+from ..net.outbound import OutboundError, _resolve_public
+from . import sftp_dst, ssh_host_keys
 from ._backup_retention import valid_backup_retention
 from .cloud_instance import _GLOBAL_BACKUP_PARAM
-from .encrypted_char import EncryptedChar
+from .encrypted_char import EncryptedChar, EncryptedText
 from .password_utils import generate_password
 
 _logger = logging.getLogger(__name__)
@@ -20,6 +30,44 @@ _logger = logging.getLogger(__name__)
 # without being noisy.
 _ALERT_DEBOUNCE_DAYS = 7
 
+#: The comment of the key pair an SFTP destination generates: what the
+#: line in the server's ``authorized_keys`` is recognised by.
+SFTP_KEY_COMMENT = "incubacloud-backup"
+
+#: Fields only the server writes on an SFTP destination: the key pair it
+#: generates and the server key a person confirmed, with its fingerprint.
+#: Refused to any write that does not run as the platform, so a manager
+#: cannot set a trusted key over ``call_kw`` without reading it first and
+#: being audited, nor a fingerprint the page and the backup listing would
+#: compare against.
+_SFTP_SERVER_FIELDS = (
+    "sftp_private_key",
+    "sftp_public_key",
+    "sftp_known_hosts",
+    "sftp_host_key_fingerprint",
+    "sftp_host_key_trusted_at",
+    "sftp_host_key_trusted_by",
+)
+
+#: Files listed at most per folder walk, as an S3 listing is capped.
+_SFTP_LISTING_CAP = 10000
+
+#: Seconds a whole SFTP operation of the panel may take.
+_SFTP_OPERATION_TIMEOUT = 60
+
+
+class SftpUnreachable(Exception):
+    """The panel could not reach or log in to an SFTP server.
+
+    Kept apart from an answer of the server (a folder that is not there):
+    a measure reports it as unreachable, never as an empty folder.
+    """
+
+
+#: What an SFTP destination's copies are reached by: changing one leaves
+#: a copy kept on the old server out of reach (``_check_sftp_identity``).
+_SFTP_IDENTITY_FIELDS = ("sftp_host", "sftp_port", "sftp_user")
+
 
 class CloudBackupBackend(models.Model):
     _name = "cloud.backup.backend"
@@ -28,7 +76,7 @@ class CloudBackupBackend(models.Model):
 
     name = fields.Char(required=True)
     backend_type = fields.Selection(
-        selection=[("s3", "S3 Compatible")],
+        selection=[("s3", "S3 Compatible"), ("sftp", "SFTP")],
         string="Type",
         required=True,
         default="s3",
@@ -53,6 +101,46 @@ class CloudBackupBackend(models.Model):
     s3_secret_access_key = EncryptedChar(
         string="Secret Access Key",
         groups="incubacloud.group_cloud_manager",
+    )
+
+    # ── SFTP ────────────────────────────────────────────────────────────────
+    # The panel generates the key pair; the person adds the public half to
+    # the server and confirms the server's own key (``sftp_known_hosts``).
+
+    sftp_host = fields.Char(string="SFTP Server")
+    sftp_port = fields.Integer(string="SFTP Port", default=22)
+    sftp_user = fields.Char(string="SFTP User")
+    sftp_path = fields.Char(
+        string="SFTP Path",
+        default="backups",
+        help="Folder under the user's home (e.g. backups). Start with / "
+        "for an absolute path.",
+    )
+    sftp_private_key = EncryptedText(
+        string="SFTP Private Key",
+        groups="base.group_system",
+        copy=False,
+    )
+    sftp_public_key = fields.Char(
+        string="SFTP Public Key",
+        readonly=True,
+        copy=False,
+        help="Add this line to the server's authorized_keys.",
+    )
+    sftp_known_hosts = fields.Text(
+        string="Trusted Server Key",
+        readonly=True,
+        copy=False,
+        groups="incubacloud.group_cloud_manager",
+    )
+    sftp_host_key_fingerprint = fields.Char(
+        string="Server Key Fingerprint",
+        compute="_compute_sftp_host_key_fingerprint",
+        store=True,
+    )
+    sftp_host_key_trusted_at = fields.Datetime(readonly=True, copy=False)
+    sftp_host_key_trusted_by = fields.Many2one(
+        "res.users", readonly=True, copy=False,
     )
 
     # ── Encryption ─────────────────────────────────────────────────────────
@@ -141,7 +229,10 @@ class CloudBackupBackend(models.Model):
         help="Computed duplicity DST URL (e.g. boto3+s3://bucket/path).",
     )
 
-    @api.depends("backend_type", "s3_bucket", "s3_path")
+    @api.depends(
+        "backend_type", "s3_bucket", "s3_path",
+        "sftp_host", "sftp_port", "sftp_user", "sftp_path",
+    )
     def _compute_backup_dst(self):
         for rec in self:
             if rec.backend_type == "s3" and rec.s3_bucket:
@@ -150,8 +241,518 @@ class CloudBackupBackend(models.Model):
                     rec.backup_dst = f"boto3+s3://{rec.s3_bucket}/{path}"
                 else:
                     rec.backup_dst = f"boto3+s3://{rec.s3_bucket}"
+            elif rec.backend_type == "sftp" and rec.sftp_host and rec.sftp_user:
+                try:
+                    rec.backup_dst = sftp_dst.build(
+                        rec.sftp_user, rec.sftp_host, rec.sftp_port,
+                        rec.sftp_path,
+                    )
+                except sftp_dst.DstError:
+                    # The constraint refuses it on save; computed before.
+                    rec.backup_dst = ""
             else:
                 rec.backup_dst = ""
+
+    @api.depends("sftp_known_hosts")
+    def _compute_sftp_host_key_fingerprint(self):
+        for rec in self:
+            rec.sftp_host_key_fingerprint = ssh_host_keys.fingerprint(
+                rec.sudo().sftp_known_hosts,
+            ) or False
+
+    # ── SFTP server key ─────────────────────────────────────────────────────
+
+    #: Raised when the SFTP server presents another key than the trusted one.
+    _SFTP_HOST_KEY_ALERT_CODE = "backup_sftp_host_key_changed"
+
+    @api.model
+    def _sftp_network_policy(self):
+        """Return where this panel may connect to an SFTP server.
+
+        ``'any'`` in the core: a self-hosted panel reaches a NAS or a
+        server on its private network. A layer may answer ``'public'``.
+
+        :rtype: str
+        """
+        return "any"
+
+    def _sftp_address(self):
+        """Return the address the panel dials for this destination.
+
+        Always the destination's server, never one read from a DST. With
+        the ``'public'`` policy every address of the name must be public
+        and the one checked is returned, so the connection does not
+        resolve the name a second time. On the hosts the name is resolved
+        again, which is safe: with the server key pinned, a name that
+        turned inward only reaches a key exchange that is refused.
+
+        :rtype: str
+        :raise UserError: when the policy refuses the server
+        """
+        self.ensure_one()
+        host = (self.sftp_host or "").strip()
+        if self._sftp_network_policy() != "public":
+            return host
+        try:
+            return _resolve_public(host, self.sftp_port or 22, version=4)
+        except OutboundError as exc:
+            raise UserError(_(
+                "%(host)s must resolve to public addresses only: this panel "
+                "connects only to SFTP servers on a public address.",
+                host=host,
+            )) from exc
+
+    def _sftp_presented_line(self):
+        """Read the key the server presents, filed under the URL's name.
+
+        The line is labelled with the server as the URL names it
+        (``host`` on 22, ``[host]:port`` otherwise), which is what
+        duplicity's paramiko looks up, whatever address was dialled.
+
+        :return: the ``known_hosts`` line
+        :rtype: str
+        :raise UserError: when the server cannot be reached, presents no
+            key, or a key type paramiko does not read
+        """
+        self.ensure_one()
+        address = self._sftp_key_address()
+        try:
+            key = ssh_host_keys.presented_host_key(address, self.sftp_port)
+        except (asyncssh.Error, OSError, TimeoutError) as exc:
+            raise self._sftp_key_read_error(exc) from exc
+        return self._sftp_presented_key_line(key)
+
+    async def _sftp_presented_line_async(self):
+        """:meth:`_sftp_presented_line` for a caller inside an event loop.
+
+        The ``backup_list`` job reads the key from its own running loop,
+        where the synchronous form cannot start another one.
+
+        :return: the ``known_hosts`` line
+        :rtype: str
+        :raise UserError: as :meth:`_sftp_presented_line`
+        """
+        self.ensure_one()
+        address = self._sftp_key_address()
+        try:
+            key = await ssh_host_keys.presented_host_key_async(
+                address, self.sftp_port,
+            )
+        except (asyncssh.Error, OSError, TimeoutError) as exc:
+            raise self._sftp_key_read_error(exc) from exc
+        return self._sftp_presented_key_line(key)
+
+    def _sftp_key_address(self):
+        """Return the address the server key is read at, SFTP only.
+
+        :rtype: str
+        :raise UserError: on another type, or a server the policy refuses
+        """
+        if self.backend_type != "sftp":
+            raise UserError(_("Only an SFTP destination has a server key."))
+        return self._sftp_address()
+
+    def _sftp_key_read_error(self, exc):
+        """Return the error a failed reading of the server key is told by.
+
+        :param Exception exc: what the connection raised
+        :rtype: UserError
+        """
+        return UserError(_(
+            "Could not read the key of %(host)s:%(port)s: %(error)s",
+            host=self.sftp_host, port=self.sftp_port,
+            error=str(exc) or type(exc).__name__,
+        ))
+
+    def _sftp_presented_key_line(self, key):
+        """Return the ``known_hosts`` line of the key the server presented.
+
+        :param key: the ``asyncssh`` key, or None when none was presented
+        :rtype: str
+        :raise UserError: without a key, or with a type paramiko does not read
+        """
+        if not key:
+            raise UserError(_("The server presented no key."))
+        line = ssh_host_keys.known_hosts_line(
+            self.sftp_host, self.sftp_port, key,
+        )
+        kind = ssh_host_keys.key_type(line)
+        if kind not in ssh_host_keys.ACCEPTED_KEY_TYPES:
+            raise UserError(_(
+                "The server presents a %(type)s key, which the backups "
+                "cannot check. Offer an Ed25519, ECDSA or RSA host key.",
+                type=kind,
+            ))
+        return line
+
+    def _sftp_read_host_key(self):
+        """Report the key the server presents now, trusting nothing.
+
+        :return: ``fingerprint`` and ``key_type`` presented now, and
+            ``trusted_fingerprint`` (``''`` when none is trusted)
+        :rtype: dict
+        """
+        self.ensure_one()
+        line = self._sftp_presented_line()
+        return {
+            "fingerprint": ssh_host_keys.fingerprint(line),
+            "key_type": ssh_host_keys.key_type(line),
+            "trusted_fingerprint": self.sftp_host_key_fingerprint or "",
+        }
+
+    def _sftp_trust_host_key(self, expected_fingerprint):
+        """Trust the server key a person saw, if the server still presents it.
+
+        The key is read again and compared with *expected_fingerprint*,
+        the one the person approved: a server that presents another one in
+        between is refused, logged and audited, and nothing is stored.
+
+        :param str expected_fingerprint: the ``SHA256:…`` the person saw
+        :return: the fingerprint now trusted
+        :rtype: str
+        :raise UserError: when the presented key is not the approved one
+        """
+        self.ensure_one()
+        line = self._sftp_presented_line()
+        found = ssh_host_keys.fingerprint(line)
+        Audit = self.env["cloud.audit.log"].sudo()
+        if not expected_fingerprint or found != expected_fingerprint:
+            _logger.warning(
+                "[sftp %s] refused to trust %s: %s was approved",
+                self.name, found, expected_fingerprint,
+            )
+            Audit.create({
+                "action": "SFTP server key refused",
+                "details": (
+                    f"backup destination {self.name} (id {self.id}): "
+                    f"presented {found}, approved {expected_fingerprint}"
+                ),
+            })
+            raise UserError(_(
+                "The server now presents %(found)s, not the key you "
+                "approved (%(approved)s). Read the key again and compare it "
+                "with the one your provider shows.",
+                found=found, approved=expected_fingerprint or "-",
+            ))
+        self.sudo().write({
+            "sftp_known_hosts": line,
+            "sftp_host_key_trusted_at": fields.Datetime.now(),
+            "sftp_host_key_trusted_by": self.env.user.id,
+        })
+        Audit.create({
+            "action": "SFTP server key trusted",
+            "details": f"backup destination {self.name} (id {self.id}): {found}",
+        })
+        self.env["cloud.alert"].sudo().resolve_alert(
+            self._SFTP_HOST_KEY_ALERT_CODE, key=self._alert_key(),
+        )
+        return found
+
+    # ── SFTP sessions: test, measure, sizes ─────────────────────────────────
+
+    def _sftp_connect_kwargs(self):
+        """Return how the panel logs in to this destination's server.
+
+        The destination's own server at the address the network policy
+        checked (``_sftp_address``), its key in memory (never written to
+        disk or to the log), and the trusted server key as the only key
+        accepted: passed as a key, not by host pattern, so dialling a
+        checked address rather than the name changes nothing.
+
+        :rtype: dict
+        :raise UserError: without a trusted server key or a readable key
+        """
+        self.ensure_one()
+        bb = self.sudo()
+        if not bb.sftp_known_hosts or not bb.sftp_host_key_fingerprint:
+            raise UserError(_(
+                "Read and trust the SFTP server's key first."
+            ))
+        try:
+            client_key = asyncssh.import_private_key(bb.sftp_private_key or "")
+            kind, data = bb.sftp_known_hosts.split()[1:3]
+            trusted = asyncssh.import_public_key(f"{kind} {data}")
+        except (ValueError, asyncssh.KeyImportError) as exc:
+            raise UserError(_(
+                "The SFTP key of %(name)s cannot be read: generate a new one.",
+                name=self.name,
+            )) from exc
+        return {
+            "host": self._sftp_address(),
+            "port": self.sftp_port or 22,
+            "username": self.sftp_user,
+            "client_keys": [client_key],
+            "known_hosts": ([trusted], [], []),
+            "agent_path": None,
+            "password": None,
+            "connect_timeout": ssh_host_keys.CONNECT_TIMEOUT,
+            "login_timeout": ssh_host_keys.TOTAL_TIMEOUT,
+        }
+
+    @contextlib.asynccontextmanager
+    async def _sftp_client(self, kwargs):
+        """Open an SFTP client on this destination's server.
+
+        :param dict kwargs: :meth:`_sftp_connect_kwargs`, read before the
+            loop runs (it reads the database)
+        :raise SftpUnreachable: when the connection or the login fails
+        """
+        try:
+            conn = await asyncssh.connect(**kwargs)
+        except (asyncssh.Error, OSError, TimeoutError) as exc:
+            raise SftpUnreachable(exc) from exc
+        try:
+            async with conn.start_sftp_client() as sftp:
+                yield sftp
+        finally:
+            conn.close()
+
+    def _sftp_run(self, coro_factory):
+        """Run ``coro_factory(sftp)`` on a fresh loop, within the time limit.
+
+        For a caller outside an event loop (a route, a cron). One inside a
+        loop (``backup_list``'s ``on_success``) awaits the async form.
+
+        :param coro_factory: ``async def f(sftp)``
+        :return: what it returns
+        """
+        self.ensure_one()
+        kwargs = self._sftp_connect_kwargs()
+
+        async def _go():
+            async with self._sftp_client(kwargs) as sftp:
+                return await coro_factory(sftp)
+
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                asyncio.wait_for(_go(), _SFTP_OPERATION_TIMEOUT),
+            )
+        except TimeoutError as exc:
+            raise SftpUnreachable(exc) from exc
+        finally:
+            loop.close()
+
+    @staticmethod
+    async def _sftp_walk(sftp, path, cap=None):
+        """Return ``(relative path, size)`` of every file under *path*.
+
+        Links are neither followed nor counted (``lstat`` semantics of a
+        directory listing): a link out of the folder must not make
+        another folder's files this one's.
+
+        :param sftp: an open ``asyncssh.SFTPClient``
+        :param str path: the folder (``''`` for the home)
+        :param int cap: stop after this many files (``None``: no cap)
+        :return: the files found; empty when *path* does not exist
+        :rtype: list
+        """
+        cap = cap or _SFTP_LISTING_CAP
+        found = []
+        pending = [path or "."]
+        while pending and len(found) < cap:
+            current = pending.pop()
+            try:
+                names = await sftp.readdir(current)
+            except asyncssh.SFTPNoSuchFile:
+                if current == (path or "."):
+                    return []
+                continue
+            for entry in names:
+                name = entry.filename
+                if name in (".", ".."):
+                    continue
+                full = f"{current}/{name}"
+                kind = entry.attrs.type
+                if kind == asyncssh.FILEXFER_TYPE_DIRECTORY or (
+                    kind is None and entry.attrs.permissions is not None
+                    and stat.S_ISDIR(entry.attrs.permissions)
+                ):
+                    pending.append(full)
+                elif kind == asyncssh.FILEXFER_TYPE_REGULAR or (
+                    kind is None and entry.attrs.permissions is not None
+                    and stat.S_ISREG(entry.attrs.permissions)
+                ):
+                    found.append((full, entry.attrs.size or 0))
+                    if len(found) >= cap:
+                        break
+        if len(found) >= cap:
+            _logger.warning(
+                "[sftp] %s: stopped at %d files; sizes and usage under it "
+                "count those only", path or ".", cap,
+            )
+        return found
+
+    def _sftp_scan(self, path):
+        """Synchronous :meth:`_sftp_walk` of *path* on this destination.
+
+        :param str path: the folder (``''`` for the home)
+        :rtype: list
+        :raise SftpUnreachable: when the server cannot be reached
+        """
+        self.ensure_one()
+        return self._sftp_run(lambda sftp: self._sftp_walk(sftp, path))
+
+    def _sftp_measure_prefix(self, dst):
+        """Return ``(bytes, files)`` of an instance's folder on this server.
+
+        The folder is read off *dst*, which must name this destination's
+        server (``sftp_dst.check_dst``) and one instance's folder: either
+        error raises, so the copy is reported unreachable, never missing.
+
+        :param str dst: the frozen ``sftp://`` path
+        :rtype: tuple
+        """
+        self.ensure_one()
+        path = sftp_dst.check_dst(
+            self.sftp_user, self.sftp_host, self.sftp_port, dst,
+        )
+        if not sftp_dst.instance_path(path):
+            raise sftp_dst.DstError(f"{dst} is not one instance's folder")
+        files = self._sftp_scan(path)
+        return float(sum(size for _p, size in files)), len(files)
+
+    def _sftp_test(self):
+        """Log in, create the folder, write and delete a file, read the space.
+
+        :return: ``free_bytes`` (None when the server does not say)
+        :rtype: dict
+        :raise SftpUnreachable: when the connection or the login fails
+        :raise asyncssh.SFTPError: when the folder cannot be written
+        """
+        self.ensure_one()
+        path = sftp_dst.check_path(self.sftp_path) or "."
+        probe = f"{path}/.incubacloud-probe-{secrets.token_hex(8)}"
+
+        async def _probe(sftp):
+            if path != ".":
+                await sftp.makedirs(path, exist_ok=True)
+            async with sftp.open(probe, "w") as fh:
+                await fh.write("incubacloud\n")
+            await sftp.remove(probe)
+            try:
+                vfs = await sftp.statvfs(path)
+            except asyncssh.SFTPError:
+                return {"free_bytes": None}
+            return {"free_bytes": vfs.f_bavail * vfs.f_frsize}
+
+        return self._sftp_run(_probe)
+
+    def _sftp_check_presented_key(self):
+        """Raise the changed-key alert if the server presents another key.
+
+        Compares fingerprints read with the key exchange alone, rather
+        than reading the failure's type: a server that stopped offering
+        the trusted key's algorithm fails the negotiation, not the key
+        check. Nothing is trusted here; the person confirms a new key on
+        the destination's page.
+
+        :return: the fingerprint presented when it differs, else ``''``
+        :rtype: str
+        """
+        self.ensure_one()
+        if not self.sftp_host_key_fingerprint:
+            return ""
+        try:
+            line = self._sftp_presented_line()
+        except UserError:
+            # Not reachable now: nothing to compare, nothing to say.
+            return ""
+        return self._sftp_alert_on_other_key(line)
+
+    async def _sftp_check_presented_key_async(self):
+        """:meth:`_sftp_check_presented_key` inside a running event loop.
+
+        :return: the fingerprint presented when it differs, else ``''``
+        :rtype: str
+        """
+        self.ensure_one()
+        if not self.sftp_host_key_fingerprint:
+            return ""
+        try:
+            line = await self._sftp_presented_line_async()
+        except UserError:
+            return ""
+        return self._sftp_alert_on_other_key(line)
+
+    def _sftp_alert_on_other_key(self, line):
+        """Raise the changed-key alert when *line* is not the trusted key.
+
+        :param str line: the ``known_hosts`` line the server presents now
+        :return: its fingerprint when it differs from the trusted one,
+            else ``''``
+        :rtype: str
+        """
+        trusted = self.sftp_host_key_fingerprint or ""
+        presented = ssh_host_keys.fingerprint(line)
+        if not trusted or presented == trusted:
+            return ""
+        self.env["cloud.alert"].sudo().raise_alert(
+            self._SFTP_HOST_KEY_ALERT_CODE,
+            _(
+                "The SFTP server of the backup destination %(name)s presents "
+                "the key %(presented)s, not the trusted %(trusted)s. Backups "
+                "to it fail until the key is checked and trusted again.",
+                name=self.name, presented=presented, trusted=trusted,
+            ),
+            level="critical",
+            key=self._alert_key(),
+            payload={"backup_backend_id": self.id},
+        )
+        return presented
+
+    # ── SFTP validation ─────────────────────────────────────────────────────
+
+    @api.constrains(
+        "backend_type", "sftp_host", "sftp_port", "sftp_user", "sftp_path",
+        "retention_owner",
+    )
+    def _check_sftp_fields(self):
+        """Refuse an SFTP destination its values cannot safely reach.
+
+        The values end up in a URL, the backup container's environment and
+        copier's answers: a host is a DNS name or an IPv4 address (an IPv6
+        literal would need brackets duplicity does not write), the user
+        and the path are limited to characters nothing reads twice
+        (``sftp_dst``). There is no bucket lifecycle on a server, so only
+        the cron or nobody can own the retention.
+
+        :raise ValidationError: on the first value refused
+        """
+        for rec in self.filtered(lambda r: r.backend_type == "sftp"):
+            host = (rec.sftp_host or "").strip()
+            if not host or not is_host_address(host):
+                raise ValidationError(_(
+                    "Enter the SFTP server as a host name or an IPv4 address."
+                ))
+            try:
+                if ipaddress.ip_address(host).version == 6:
+                    raise ValidationError(_(
+                        "IPv6 addresses are not supported for SFTP yet: "
+                        "enter a host name instead."
+                    ))
+            except ValueError:
+                pass
+            if not 1 <= (rec.sftp_port or 0) <= 65535:
+                raise ValidationError(_("The SFTP port goes from 1 to 65535."))
+            if not sftp_dst.USER_RE.match(rec.sftp_user or ""):
+                raise ValidationError(_(
+                    "The SFTP user may hold letters, digits, dots, dashes "
+                    "and underscores, up to 100 characters."
+                ))
+            try:
+                sftp_dst.check_path(rec.sftp_path)
+            except sftp_dst.DstError as exc:
+                raise ValidationError(_(
+                    "The SFTP path may hold letters, digits, dots, dashes "
+                    "and underscores between slashes, without empty, . or "
+                    ".. parts."
+                )) from exc
+            if rec.retention_owner == "lifecycle":
+                raise ValidationError(_(
+                    "An SFTP server has no bucket lifecycle: let the backup "
+                    "cron delete old backups, or nobody."
+                ))
 
     # ── Deletion guard ──────────────────────────────────────────────────────
 
@@ -259,14 +860,128 @@ class CloudBackupBackend(models.Model):
 
     # ── Password handling ───────────────────────────────────────────────────
 
-    _PASSWORD_FIELDS = ("s3_secret_access_key", "passphrase")
+    _PASSWORD_FIELDS = ("s3_secret_access_key", "passphrase", "sftp_private_key")
+
+    def _check_server_fields(self, vals):
+        """Refuse the fields only the server writes, unless it is writing.
+
+        :param dict vals: values of a ``create`` or ``write``
+        :raise UserError: when *vals* holds one of them outside ``sudo``
+        """
+        if self.env.su:
+            return
+        refused = sorted(set(vals) & set(_SFTP_SERVER_FIELDS))
+        if refused:
+            raise UserError(_(
+                "%(fields)s cannot be set by hand: the panel generates the "
+                "key and records the server key you confirm.",
+                fields=", ".join(refused),
+            ))
+
+    def _sftp_frozen_instances(self):
+        """Return the instances whose copy is pinned on this destination.
+
+        An archived instance, or an imported one, carries its copy's
+        place in ``custom_backup_dst``: a path on this destination's
+        server, read with its key and its trusted server key. Archived
+        ones included (``active_test``), as ``_deletion_blockers`` counts
+        them.
+
+        :rtype: cloud.instance
+        """
+        self.ensure_one()
+        return (
+            self.env["cloud.instance"]
+            .sudo()
+            .with_context(active_test=False)
+            .search([("custom_backup_dst", "!=", False)])
+            .filtered(lambda i: i.effective_backup_backend == self)
+        )
+
+    def _check_sftp_identity(self, vals):
+        """Refuse moving an SFTP destination that holds pinned copies.
+
+        The user, the server and the port are the destination's, never a
+        DST's (``sftp_dst``): an archived or imported instance's copy
+        stays on the server it was written to, and a destination that
+        moved would read and purge it with the wrong key and server key,
+        or not at all.
+
+        :param dict vals: values of a ``write``
+        :raise UserError: when one changes and such an instance exists
+        """
+        for rec in self.filtered(lambda r: r.backend_type == "sftp"):
+            moved = [
+                f for f in _SFTP_IDENTITY_FIELDS
+                if f in vals and vals[f] != rec[f]
+            ]
+            if not moved:
+                continue
+            pinned = rec._sftp_frozen_instances()
+            if pinned:
+                raise UserError(_(
+                    "The server, port and user of %(name)s cannot change: "
+                    "%(instances)s keep their copy on the current server. "
+                    "Create a new destination for the other server.",
+                    name=rec.name,
+                    instances=", ".join(pinned.mapped("name")),
+                ))
+
+    @api.model
+    def _normalize_sftp_vals(self, vals):
+        """Write the SFTP server and port of *vals* as they are compared.
+
+        The server in lower case, without the spaces around it: duplicity's
+        paramiko looks the server key up under the URL's host as
+        ``urlparse`` lowers it and compares the labels exactly, so a key
+        trusted under ``Backup.example.com`` would read as an unknown
+        server on every copy and every purge. The port as an integer: the
+        page may send it as text, and ``"22" != 22`` would read as another
+        port, dropping the trusted key or refusing a move that is none.
+
+        :param dict vals: values of a ``create`` or ``write``, changed in
+            place
+        :raise ValidationError: when the port is not a number
+        """
+        if isinstance(vals.get("sftp_host"), str):
+            vals["sftp_host"] = vals["sftp_host"].strip().lower()
+        if isinstance(vals.get("sftp_port"), str):
+            try:
+                vals["sftp_port"] = int(vals["sftp_port"].strip() or 0)
+            except ValueError as exc:
+                raise ValidationError(_(
+                    "The SFTP port goes from 1 to 65535."
+                )) from exc
 
     def write(self, vals):
         self._check_can_manage_settings()
+        self._check_server_fields(vals)
+        self._normalize_sftp_vals(vals)
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
                 del vals[field]
+        if "backend_type" in vals and any(
+            rec.backend_type != vals["backend_type"] for rec in self
+        ):
+            raise UserError(_(
+                "A backup destination keeps its type: create a new "
+                "destination for the other type."
+            ))
+        self._check_sftp_identity(vals)
+        endpoint_moved = self.filtered(
+            lambda r: r.backend_type == "sftp" and any(
+                f in vals and vals[f] != r[f] for f in ("sftp_host", "sftp_port")
+            )
+        )
         res = super().write(vals)
+        if endpoint_moved:
+            # Another server, or another port of it: the key confirmed
+            # was the old endpoint's, and must be confirmed again.
+            endpoint_moved.sudo().write({
+                "sftp_known_hosts": False,
+                "sftp_host_key_trusted_at": False,
+                "sftp_host_key_trusted_by": False,
+            })
         # An explicit user choice of retention_owner resolves the
         # ambiguous state and its warning alert. Migrations bypass the
         # ORM (raw SQL), so this only fires for real operator edits.
@@ -298,10 +1013,82 @@ class CloudBackupBackend(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         self._check_can_manage_settings()
+        private_keys = []
         for vals in vals_list:
+            self._check_server_fields(vals)
+            self._normalize_sftp_vals(vals)
             if not vals.get("passphrase"):
                 vals["passphrase"] = generate_password()
-        return super().create(vals_list)
+            private = None
+            if vals.get("backend_type") == "sftp":
+                pair = self._sftp_key_pair()
+                private = pair.pop("sftp_private_key")
+                vals.update(pair)
+            private_keys.append(private)
+        records = super().create(vals_list)
+        # The private half is a field of the platform (``base.group_system``),
+        # which Odoo refuses in the values of a manager who is not an Odoo
+        # administrator: the server writes it, as on a regeneration.
+        for rec, private in zip(records, private_keys):
+            if private:
+                rec.sudo().write({"sftp_private_key": private})
+        return records
+
+    @api.model
+    def _sftp_key_pair(self):
+        """Generate the Ed25519 key pair an SFTP destination logs in with.
+
+        The private half stays in the panel, encrypted and readable by the
+        platform only; the public half is what the person adds to the
+        server's ``authorized_keys``.
+
+        :return: ``sftp_private_key`` (OpenSSH PEM) and ``sftp_public_key``
+            (one ``authorized_keys`` line)
+        :rtype: dict
+        """
+        key = asyncssh.generate_private_key(
+            "ssh-ed25519", comment=SFTP_KEY_COMMENT,
+        )
+        kind, data = key.export_public_key("openssh").decode().split()[:2]
+        return {
+            "sftp_private_key": key.export_private_key("openssh").decode(),
+            "sftp_public_key": f"{kind} {data} {SFTP_KEY_COMMENT}",
+        }
+
+    def _sftp_regenerate_key(self):
+        """Replace the key pair; the instances get it on their next build.
+
+        The new public key has to be on the server before then: until each
+        instance is rebuilt it keeps logging in with the old one, so the
+        old line stays in ``authorized_keys`` until all are.
+        """
+        self.ensure_one()
+        if self.backend_type != "sftp":
+            raise UserError(_("Only an SFTP destination has a key."))
+        self.sudo().write(self._sftp_key_pair())
+        self.env["cloud.audit.log"].sudo().create({
+            "action": "SFTP backup key regenerated",
+            "details": f"backup destination {self.name} (id {self.id})",
+        })
+
+    def _sftp_snapshot(self):
+        """Return what an instance's configuration snapshot keeps of SFTP.
+
+        Fingerprints only, never a key: a new key pair or a newly trusted
+        server key leaves the instances on this destination with changes
+        to apply, because the files that carry them reach a host on a
+        build only.
+
+        :return: ``public`` (SHA-256 of the public key) and ``host_key``
+            (the trusted server key's fingerprint)
+        :rtype: dict
+        """
+        self.ensure_one()
+        public = self.sftp_public_key or ""
+        return {
+            "public": hashlib.sha256(public.encode()).hexdigest() if public else "",
+            "host_key": self.sftp_host_key_fingerprint or "",
+        }
 
     # ── Effective alert threshold ──────────────────────────────────────────
 
@@ -335,6 +1122,22 @@ class CloudBackupBackend(models.Model):
 
     # ── Usage measurement (boto3 ListObjectsV2 + sum) ──────────────────────
 
+    def _check_backend_type_supported(self, what):
+        """Raise on a type *what* does not handle, instead of answering empty.
+
+        An empty answer reads as an empty destination: an archived copy
+        reported lost, a quota at zero. Not knowing has to say so.
+
+        :param str what: the operation, for the message
+        :raise UserError: on a type other than S3
+        """
+        self.ensure_one()
+        if self.backend_type not in ("s3", "sftp"):
+            raise UserError(_(
+                "%(what)s does not handle %(type)s destinations.",
+                what=what, type=self.backend_type,
+            ))
+
     def _measure_prefix(self, dst):
         """Return ``(bytes, object_count)`` under the duplicity DST *dst*.
 
@@ -359,8 +1162,11 @@ class CloudBackupBackend(models.Model):
         :return: tuple of total size in bytes and number of objects.
         """
         self.ensure_one()
-        if self.backend_type != "s3" or not dst:
+        self._check_backend_type_supported("_measure_prefix")
+        if not dst:
             return 0.0, 0
+        if self.backend_type == "sftp":
+            return self._sftp_measure_prefix(dst)
         parsed = urlparse(dst.replace("boto3+s3://", "s3://"))
         bucket = parsed.netloc
         prefix = parsed.path.strip("/")
@@ -396,7 +1202,19 @@ class CloudBackupBackend(models.Model):
         (cron or on-demand endpoint) decides whether to swallow.
         """
         self.ensure_one()
-        if self.backend_type != "s3" or not self.s3_bucket:
+        self._check_backend_type_supported("_measure_usage")
+        if self.backend_type == "sftp":
+            total = sum(
+                size for _path, size in self._sftp_scan(
+                    sftp_dst.check_path(self.sftp_path),
+                )
+            )
+            self.sudo().write({
+                "last_measured_gb": total / (1024**3),
+                "last_measured_at": fields.Datetime.now(),
+            })
+            return
+        if not self.s3_bucket:
             return
         if not self.s3_access_key_id or not self.s3_secret_access_key:
             return
@@ -487,9 +1305,14 @@ class CloudBackupBackend(models.Model):
         """
         backends = self.sudo().search(
             [
+                "|",
+                "&", "&",
                 ("backend_type", "=", "s3"),
                 ("s3_bucket", "!=", False),
                 ("s3_access_key_id", "!=", False),
+                "&",
+                ("backend_type", "=", "sftp"),
+                ("sftp_host_key_fingerprint", "!=", False),
             ]
         )
         ok, failed = 0, 0
@@ -498,6 +1321,13 @@ class CloudBackupBackend(models.Model):
                 backend._measure_usage()
                 backend._maybe_send_threshold_alert()
                 ok += 1
+            except SftpUnreachable as exc:
+                failed += 1
+                _logger.warning(
+                    "[backup-usage-cron] %s: measurement failed: %s",
+                    backend.display_name, exc,
+                )
+                backend._sftp_check_presented_key()
             except (BotoCoreError, ClientError) as exc:
                 failed += 1
                 _logger.warning(

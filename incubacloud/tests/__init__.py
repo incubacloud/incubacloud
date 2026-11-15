@@ -319,3 +319,8 @@ from . import test_cron_heartbeat
 from . import test_panel_address_change
 from . import test_session_cookie_binding
 from . import test_frame_ancestors
+from . import test_backup_backend_sftp
+from . import test_backup_backend_sftp_host_key
+from . import test_backup_sftp_deploy
+from . import test_backup_backend_sftp_use
+from . import test_purge_archived_sftp

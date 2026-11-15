@@ -1,0 +1,29 @@
+{
+  "_doc": "How an sftp:// DST reads: duplicity's urlparse, one leading slash dropped. Shared by test_sftp_dst.py (incubacloud/models/sftp_dst.py) and purge_prefix_program.bats (the copy inside scripts/lib/purge_prefix.sh). A null result is a DST both refuse.",
+  "cases": [
+    ["sftp://u1@backup.example.com/backups/p/i", ["u1", "backup.example.com", 22, "backups/p/i"]],
+    ["sftp://u1@backup.example.com:23/backups/p/i", ["u1", "backup.example.com", 23, "backups/p/i"]],
+    ["sftp://u1@backup.example.com:22/p/i", ["u1", "backup.example.com", 22, "p/i"]],
+    ["sftp://u1@backup.example.com//srv/backups/p/i", ["u1", "backup.example.com", 22, "/srv/backups/p/i"]],
+    ["sftp://u1@backup.example.com/p/i/", ["u1", "backup.example.com", 22, "p/i"]],
+    ["sftp://u1@backup.example.com", ["u1", "backup.example.com", 22, ""]],
+    ["sftp://u1@backup.example.com/", ["u1", "backup.example.com", 22, ""]],
+    ["sftp://u123456-sub1@203.0.113.7:2222/a.b/c_d/e-f", ["u123456-sub1", "203.0.113.7", 2222, "a.b/c_d/e-f"]],
+    ["sftp://u1@Backup.Example.COM/backups/p/i", ["u1", "backup.example.com", 22, "backups/p/i"]],
+    ["sftp://u1@backup.example.com//", null],
+    ["sftp://u1@backup.example.com/p//i", null],
+    ["sftp://u1@backup.example.com/p/../i", null],
+    ["sftp://u1@backup.example.com/p/./i", null],
+    ["sftp://u1@backup.example.com/p i/x", null],
+    ["sftp://u1@backup.example.com/p;rm/x", null],
+    ["sftp://backup.example.com/p/i", null],
+    ["sftp://u1:secret@backup.example.com/p/i", null],
+    ["sftp://u1@backup.example.com:99999/p/i", null],
+    ["sftp://u1@backup.example.com:0/p/i", null],
+    ["sftp://u1@backup.example.com/p/i?x=1", null],
+    ["sftp://u1@backup.example.com/p/i#x", null],
+    ["sftp://u1@backup.example.com/p?/i", null],
+    ["boto3+s3://bucket/p/i", null],
+    ["", null]
+  ]
+}

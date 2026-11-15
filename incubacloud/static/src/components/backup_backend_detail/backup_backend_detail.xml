@@ -104,12 +104,17 @@
                                             <label for="bbd-type">Type</label>
                                             <RlSelect
                     id="'bbd-type'"
-                    value="'s3'"
-                    disabled="true"
+                    value="state.form.backend_type"
+                    disabled="typeLocked"
                     ariaLabel="'Backend type'"
-                    options="[{ value: 's3', label: 'S3 Compatible' }]"
-                    onChange="() => {}"
+                    ariaDescribedby="'bbd-type-note'"
+                    options="typeOptions"
+                    onChange="(value) => this.setType(value)"
                   />
+                                            <span class="ic-form-note" id="bbd-type-note">
+                                                <t t-if="typeLocked">A destination keeps its type: create another one for the other type.</t>
+                                                <t t-else="">Chosen when creating: it cannot change afterwards.</t>
+                                            </span>
                                         </div>
                                         <div class="rl-frow ic-w-s">
                                             <label for="bbd-image">Image version</label>
@@ -176,11 +181,7 @@
                         value="state.form.retention_owner"
                         ariaLabel="'Retention owner'"
                         ariaDescribedby="'bbd-retention_owner-note'"
-                        options="[
-                                                      { value: 'cron', label: 'Duplicity cron' },
-                                                      { value: 'lifecycle', label: 'Bucket lifecycle' },
-                                                      { value: 'none', label: 'Nobody — infinite archive' },
-                                                  ]"
+                        options="retentionOwnerOptions"
                         onChange="(value) => this.onInput('retention_owner', { target: { value: value } })"
                       />
                                                 <span
@@ -321,7 +322,135 @@
 
                         <!-- ── Storage ──────────────────────────────────────── -->
                         <t t-if="state.tab === 'storage'">
-                            <div class="ic-set-block">
+                            <div class="ic-set-block" t-if="isSftp">
+                                <div class="ic-set-block__body">
+                                    <div class="ic-rgrid">
+                                        <div
+                  t-att-class="'rl-frow ic-w-m' + (validator.fieldError('sftp_host') ? ' has-error' : '')"
+                >
+                                            <label for="bbd-sftp_host">Server <span class="rl-req">*</span></label>
+                                            <input
+                    id="bbd-sftp_host"
+                    t-att-aria-invalid="validator.fieldError('sftp_host') ? 'true' : undefined"
+                    t-att-aria-describedby="validator.fieldError('sftp_host') ? 'bbd-err-sftp_host' : undefined"
+                    type="text"
+                    placeholder="u123456.your-storagebox.de"
+                    t-att-value="state.form.sftp_host"
+                    t-on-input="(ev) => this.onInput('sftp_host', ev)"
+                    t-on-blur="() => validator.touch('sftp_host')"
+                  />
+                                            <t t-if="validator.fieldError('sftp_host')">
+                                                <span class="ic-field-error" id="bbd-err-sftp_host" t-esc="validator.fieldError('sftp_host')"/>
+                                            </t>
+                                        </div>
+                                        <div
+                  t-att-class="'rl-frow ic-w-s' + (validator.fieldError('sftp_port') ? ' has-error' : '')"
+                >
+                                            <label for="bbd-sftp_port">Port</label>
+                                            <input
+                    id="bbd-sftp_port"
+                    type="number"
+                    min="1"
+                    max="65535"
+                    t-att-aria-invalid="validator.fieldError('sftp_port') ? 'true' : undefined"
+                    t-att-aria-describedby="validator.fieldError('sftp_port') ? 'bbd-err-sftp_port' : undefined"
+                    t-att-value="state.form.sftp_port"
+                    t-on-input="(ev) => this.onInput('sftp_port', ev)"
+                    t-on-blur="() => validator.touch('sftp_port')"
+                  />
+                                            <t t-if="validator.fieldError('sftp_port')">
+                                                <span class="ic-field-error" id="bbd-err-sftp_port" t-esc="validator.fieldError('sftp_port')"/>
+                                            </t>
+                                        </div>
+                                        <div
+                  t-att-class="'rl-frow ic-w-m' + (validator.fieldError('sftp_user') ? ' has-error' : '')"
+                >
+                                            <label for="bbd-sftp_user">User <span class="rl-req">*</span></label>
+                                            <input
+                    id="bbd-sftp_user"
+                    type="text"
+                    placeholder="u123456-sub1"
+                    t-att-aria-invalid="validator.fieldError('sftp_user') ? 'true' : undefined"
+                    t-att-aria-describedby="validator.fieldError('sftp_user') ? 'bbd-err-sftp_user' : undefined"
+                    t-att-value="state.form.sftp_user"
+                    t-on-input="(ev) => this.onInput('sftp_user', ev)"
+                    t-on-blur="() => validator.touch('sftp_user')"
+                  />
+                                            <t t-if="validator.fieldError('sftp_user')">
+                                                <span class="ic-field-error" id="bbd-err-sftp_user" t-esc="validator.fieldError('sftp_user')"/>
+                                            </t>
+                                        </div>
+                                        <div class="rl-frow ic-w-m">
+                                            <label for="bbd-sftp_path">Folder</label>
+                                            <input
+                    id="bbd-sftp_path"
+                    type="text"
+                    placeholder="backups"
+                    aria-describedby="bbd-sftp_path-note"
+                    t-att-value="state.form.sftp_path"
+                    t-on-input="(ev) => this.onInput('sftp_path', ev)"
+                  />
+                                            <span class="ic-form-note" id="bbd-sftp_path-note">Under the user's home; start with / for an absolute path. Each instance writes to its own folder inside it.</span>
+                                        </div>
+                                        <t t-if="backupDst">
+                                            <div class="rl-frow ic-w-l">
+                                                <label for="bbd-sftp-dst">Backup path</label>
+                                                <output id="bbd-sftp-dst" class="rl-mono ic-backup-dst" t-esc="backupDst"/>
+                                            </div>
+                                        </t>
+                                    </div>
+                                    <p class="ic-form-note">The connection test runs from this panel; the backups run from each server that hosts an instance. A server that only accepts some addresses must accept both. Changing an instance's destination starts a new backup chain: the earlier backups stay where they were.</p>
+                                </div>
+                            </div>
+
+                            <!-- The panel's key and the server's key -->
+                            <section class="ic-set-block" aria-labelledby="bbd-g-sftp-keys" t-if="isSftp">
+                                <div class="ic-set-block__head">
+                                    <h3 class="ic-set-block__title" id="bbd-g-sftp-keys">Keys</h3>
+                                </div>
+                                <div class="ic-set-block__body">
+                                    <t t-if="isNew">
+                                        <p class="ic-form-note">The panel generates a key for this destination when you create it. You then add it to the server and confirm the server's key here.</p>
+                                    </t>
+                                    <t t-else="">
+                                        <div class="rl-frow ic-w-l">
+                                            <label for="bbd-sftp-authorized">Public key for the server's authorized_keys</label>
+                                            <output id="bbd-sftp-authorized" class="rl-mono ic-backup-dst" aria-describedby="bbd-sftp-authorized-note" t-esc="authorizedKeysLine"/>
+                                            <span class="ic-form-note" id="bbd-sftp-authorized-note">Add this line to the user's ~/.ssh/authorized_keys. restrict keeps the key to file transfers; leave it out if your provider does not accept options.</span>
+                                            <div class="ic-sftp-actions">
+                                                <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="() => this.copy(authorizedKeysLine)">Copy</button>
+                                                <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="regenerateKey">Regenerate key</button>
+                                            </div>
+                                        </div>
+                                        <div class="rl-frow ic-w-l">
+                                            <span class="ic-sftp-label" id="bbd-sftp-hostkey-label">Server key</span>
+                                            <t t-if="state.sftp.fingerprint">
+                                                <output class="rl-mono" aria-labelledby="bbd-sftp-hostkey-label" t-esc="state.sftp.fingerprint"/>
+                                                <span class="ic-form-note" t-if="state.sftp.trusted_by">Trusted by <t t-esc="state.sftp.trusted_by"/>.</span>
+                                            </t>
+                                            <t t-else="">
+                                                <span class="ic-form-note" aria-labelledby="bbd-sftp-hostkey-label">Not trusted yet: instances cannot back up to this destination until you trust the server's key.</span>
+                                            </t>
+                                            <t t-if="state.presented">
+                                                <div class="ic-sftp-presented" role="status">
+                                                    <p>The server presents this <t t-esc="state.presented.key_type"/> key:</p>
+                                                    <p class="rl-mono" t-esc="state.presented.fingerprint"/>
+                                                    <p>Compare it with the fingerprint your provider shows before you trust it.</p>
+                                                    <button type="button" class="rl-btn rl-btn-primary rl-btn-sm" t-att-disabled="state.trustingKey" t-on-click="trustHostKey">Trust this key</button>
+                                                </div>
+                                            </t>
+                                            <div class="ic-sftp-actions">
+                                                <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm" t-att-disabled="state.readingKey" t-on-click="readHostKey">
+                                                    <t t-if="state.readingKey">Reading…</t>
+                                                    <t t-else="">Read the server key</t>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </t>
+                                </div>
+                            </section>
+
+                            <div class="ic-set-block" t-if="!isSftp">
                                 <div class="ic-set-block__body">
                                     <div class="ic-rgrid">
                                         <div
@@ -388,10 +517,14 @@
                                  passphrase the backups are encrypted with -->
                             <section class="ic-set-block" aria-labelledby="bbd-g-access">
                                 <div class="ic-set-block__head">
-                                    <h3 class="ic-set-block__title" id="bbd-g-access">Access and encryption</h3>
+                                    <h3 class="ic-set-block__title" id="bbd-g-access">
+                                        <t t-if="isSftp">Encryption</t>
+                                        <t t-else="">Access and encryption</t>
+                                    </h3>
                                 </div>
                                 <div class="ic-set-block__body">
                                     <div class="ic-rgrid">
+                                        <t t-if="!isSftp">
                                         <div class="rl-frow ic-w-m">
                                             <label for="bbd-access_key">Access key ID</label>
                                             <input
@@ -410,6 +543,7 @@
                     onChange="(val) => this.onPasswordChange('s3_secret_access_key', val)"
                   />
                                         </div>
+                                        </t>
                                         <div class="rl-frow ic-w-m">
                                             <label for="bbd-passphrase" id="bbd-passphrase-label">Passphrase</label>
                                             <PasswordInput

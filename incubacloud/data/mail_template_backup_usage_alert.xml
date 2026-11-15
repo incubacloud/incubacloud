@@ -29,7 +29,7 @@
         (<t t-out="round(object.last_measured_gb, 2)"/> GB used of
         <t t-out="object.quota_gb"/> GB quota; alert threshold is
         <t t-out="ctx.get('backup_alert_threshold_pct')"/>%).</p>
-    <p>Bucket: <code t-out="object.s3_bucket"/></p>
+    <p>Destination: <code t-out="object.backup_dst"/></p>
     <p>To stop receiving these alerts, raise the quota, lower the
         threshold to <code>-1</code> (disabled), or move objects out
         of the bucket.</p>

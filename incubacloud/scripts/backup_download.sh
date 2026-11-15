@@ -159,7 +159,7 @@ case "$op" in
         docker compose exec -T backup sh -c \
             "rm -rf $CTR_TMP && mkdir -p $CTR_TMP && dup restore --force \
              $(dup_time_flag "$when") --path-to-restore ${dbname}.sql \
-             \"\$DST\" $CTR_TMP/${dbname}.sql"
+             \"\$DST\" $CTR_TMP/${dbname}.sql" </dev/null
         ;;
 
     package-sql)
@@ -181,7 +181,7 @@ case "$op" in
         ic_log "restoring the full backup ($when)"
         docker compose exec -T backup sh -c \
             "rm -rf $CTR_TMP && mkdir -p $CTR_TMP && dup restore --force \
-             $(dup_time_flag "$when") \"\$DST\" $CTR_TMP/"
+             $(dup_time_flag "$when") \"\$DST\" $CTR_TMP/" </dev/null
         ;;
 
     package-full)

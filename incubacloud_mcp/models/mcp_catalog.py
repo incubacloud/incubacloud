@@ -62,6 +62,12 @@ _SESSIONS = (
     "their access (#48)."
 )
 
+_SFTP_KEYS = (
+    "An SFTP backup destination's key pair and the server key it trusts "
+    "are set in the panel only: a person compares the fingerprint (#93, "
+    "decision 3)."
+)
+
 #: Core routes no tool calls, each with why.
 CORE_EXCLUDED = {
     "/cloud": _SPA,
@@ -78,6 +84,9 @@ CORE_EXCLUDED = {
     "/cloud/reveal_git_hook_secret": _GIT_HOOKS,
     "/cloud/delete_git_hook": _GIT_HOOKS,
     "/cloud/reprocess_git_event": _GIT_HOOKS,
+    "/cloud/sftp_backend_regenerate_key": _SFTP_KEYS,
+    "/cloud/sftp_backend_read_host_key": _SFTP_KEYS,
+    "/cloud/sftp_backend_trust_host_key": _SFTP_KEYS,
     "/cloud/generate_host_key": (
         "The new server form's SSH key; credentials are only written in the "
         "panel (decision 6)."

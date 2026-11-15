@@ -115,6 +115,28 @@ class TestSettingsTools(
         self.assertIn("rate_limit_mcp_user_per_min", payload["rate_limits"])
         self._assert_no_secret(json.dumps(result))
 
+    def test_an_sftp_destination_s_keys_never_cross_the_mcp(self):
+        """get_settings shows the public key, never the private key or the
+        trusted server key's line; update_settings cannot set either."""
+        sftp = self.env["cloud.backup.backend"].create({
+            "name": "mcp-sftp", "backend_type": "sftp",
+            "sftp_host": "backup.example.com", "sftp_user": "u1",
+        })
+        line = "backup.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMcpTrustedLine"
+        sftp.sudo().write({"sftp_known_hosts": line})
+        private = sftp.sudo().sftp_private_key.splitlines()[1]
+        result = self._call_tool(self.key, "get_settings", {"backend_id": sftp.id})
+        raw = json.dumps(result)
+        self.assertIn(sftp.sftp_public_key.split()[1], raw)
+        self.assertNotIn(private, raw)
+        self.assertNotIn("IMcpTrustedLine", raw)
+        self._call_tool(self.key, "update_settings", {
+            "section": "backup_backend", "backend_id": sftp.id,
+            "values": {"sftp_known_hosts": "evil ssh-ed25519 AAAA", "sftp_private_key": "x"},
+        })
+        self.assertEqual(sftp.sudo().sftp_known_hosts, line)
+        self.assertEqual(sftp.sudo().sftp_private_key.splitlines()[1], private)
+
     def _general(self):
         """The general settings, as get_settings reads them."""
         return self._payload(self._call_tool(self.key, "get_settings"))["general"]
