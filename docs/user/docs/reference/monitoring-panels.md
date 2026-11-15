@@ -46,6 +46,16 @@ the window with a sample and red where there was none. A lane turning red
 means the machine is down, or just its agent — *this is alerted* after five
 minutes. Servers with a silence come first; your own open their board.
 
+**Security.** Figures only, with no address or user: failed SSH logins and
+bans in the last hour and per hour over the window, the servers under SSH
+brute force and the instances under web-login brute force now (counted with
+the same thresholds as their [alerts](security-alerts.md)), the servers whose
+security logs do not arrive or are off, those not hardened, and your servers
+with open security alerts. Below, your servers to look at, the worst first,
+each with what it has; an Administrator opens its Security view from there.
+On the panel that runs the central the figures count every account's
+servers, and only your own are listed.
+
 ## Hosts
 
 In **Monitoring**, **Hosts** shows one server's board: pick it with the
@@ -111,6 +121,14 @@ flat is the interesting one: the same load is getting harder to serve.
     An instance on a plan that sleeps when idle stops its containers on
     purpose. It disappears from these charts while asleep and does **not**
     raise an alert for it.
+
+### Security
+
+The server's **Metrics** tab switches between *Performance*, the cards
+above, and *Security*: its sign-ins, `sudo`, bans, changes to the watched
+files and the failed web logins of its instances, with tables of addresses
+for Administrators. What it shows and who sees what:
+[Security logs](../hosts/security.md#the-security-view).
 
 ## An instance's Metrics tab
 

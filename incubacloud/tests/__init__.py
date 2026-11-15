@@ -103,6 +103,7 @@ from . import (
     test_host_hardening,
     test_job_type_gate_invariant,
     test_metric_rules,
+    test_metric_rule_security,
     test_host_metrics_handover,
     test_observability_wiring,
     test_form_error_accessibility,
@@ -302,7 +303,13 @@ from . import test_session_guard
 from . import test_sessions_access
 from . import test_pg_collector
 from . import test_security_logs
+from . import test_agents_credential
+from . import test_security_logs_parse
+from . import test_security_events
 from . import test_central_without_grafana
+from . import test_geoip
+from . import test_security_board
+from . import test_fleet_security
 from . import test_central_delete_guard
 from . import test_central_single_path
 from . import test_instance_name_index_real_cursors

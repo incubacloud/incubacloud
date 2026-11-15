@@ -46,6 +46,12 @@ _METRICS_BOARD = (
     "yet, read_access_log reads an instance's requests."
 )
 
+_SECURITY_LINES = (
+    "A server's raw security lines, the Security view's \"see lines\": they "
+    "carry addresses, users and commands, for whoever manages servers alone "
+    "(D4); no tool reads them."
+)
+
 _CENTRAL_HISTORY = (
     "Leaves the metrics central's history behind: a person decides it in "
     "Settings › Monitoring, after a confirmation."
@@ -105,6 +111,8 @@ CORE_EXCLUDED = {
     "/cloud/instance/resource_series": _METRICS_BOARD,
     "/cloud/host/resource_series": _METRICS_BOARD,
     "/cloud/fleet/resource_series": _METRICS_BOARD,
+    "/cloud/host/security_board": _METRICS_BOARD,
+    "/cloud/host/security_lines": _SECURITY_LINES,
     "/cloud/instance/db_activity": _METRICS_BOARD,
     "/cloud/instance/slow_routes": _METRICS_BOARD,
     "/cloud/monitoring/empty_central": _CENTRAL_HISTORY,
@@ -195,8 +203,10 @@ CORE_DYNAMIC_CALLS = {
     },
     # The charts' common board loads the route its subclass names in
     # ``get route()``: /cloud/instance/resource_series (metrics_board.js),
-    # /cloud/host/resource_series (host_board.js) and
-    # /cloud/fleet/resource_series (fleet_board.js), all classified above.
+    # /cloud/host/resource_series (host_board.js),
+    # /cloud/fleet/resource_series (fleet_board.js) and
+    # /cloud/host/security_board (host_security_board.js), all classified
+    # above.
     "/incubacloud/static/src/components/metrics/chart_board.js": {
         "this.route": frozenset(),
     },

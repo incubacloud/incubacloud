@@ -18,6 +18,10 @@ in the core repository.
 - On your hosts, the panel installs **Traefik**, **PostgreSQL**, **WAL-G**,
   **rclone**, **Fluent Bit**, **Loki**, **VictoriaMetrics** and other tools, as
   their authors publish them.
+- **DB-IP IP to Country Lite** (CC BY 4.0, DB-IP.com) tells the panel the
+  country of the addresses in your servers' security logs when its Odoo has
+  no GeoIP database of its own. The panel downloads it once a month and looks
+  addresses up locally: no address leaves the panel.
 
 IncubaCloud's own code is licensed separately: see
 [Licensing](https://github.com/incubacloud/incubacloud/blob/19.0/README.md#licensing).

@@ -155,6 +155,36 @@ describe("FleetBoard", () => {
             .toBe("inset-inline-start:25.00%;inline-size:25.00%");
     });
 
+    test("the Security figures take a tone, the central's and the panel's", () => {
+        const comp = boardWith(FleetBoard, {
+            panels: { security: { value: { ssh_failed_1h: 340, ssh_bruteforce: 1, bans_1h: 5,
+                weblogin_bruteforce: 0, silent: 0 } } },
+            security: { state: "ready", off: 2, unhardened: 0, alerts_hosts: 1, rows: [], hidden: 0 },
+        });
+        const tiles = Object.fromEntries(comp.securityTiles.map((t) => [t.key, t]));
+        expect(tiles.ssh_failed_1h.tone).toBe("ok");
+        expect(tiles.ssh_bruteforce.tone).toBe("warn");
+        expect(tiles.weblogin_bruteforce.tone).toBe("ok");
+        expect(tiles.alerts_hosts.tone).toBe("bad");
+        expect(tiles.off.value).toBe("2");
+        expect(tiles.unhardened.tone).toBe("ok");
+        expect(boardWith(FleetBoard, { panels: {}, security: {} }).securityTiles[0].value).toBe("—");
+    });
+
+    test("a server of the Security block says what to look at, worst first", () => {
+        const comp = boardWith(FleetBoard, { panels: {} });
+        const flags = comp.securityFlags({
+            alerts: 2, level: "critical", ssh_bruteforce: 340, weblogin_bruteforce: 1,
+            silent: true, off: false, unhardened: true,
+        });
+        expect(flags.map((f) => f.key)).toEqual([
+            "alerts", "ssh_bruteforce", "weblogin_bruteforce", "silent", "unhardened",
+        ]);
+        expect(flags[0].tone).toBe("bad");
+        expect(flags[0].text).toBe("Security alerts: 2");
+        expect(comp.securityFlags({ alerts: 1, level: "warning" })[0].tone).toBe("warn");
+    });
+
     test("only a server of this panel opens, for whoever manages hosts", () => {
         const opened = [];
         const comp = boardWith(FleetBoard, null, { onOpenHost: (id) => opened.push(id) });
@@ -269,6 +299,58 @@ describe("Boards, mounted", () => {
         await animationFrame();
         expect(".ic-mb-stub[data-reason=busy] h3").toHaveText("The metrics central is busy");
         expect(".ic-mb-stub[data-reason=busy]").toHaveAttribute("role", "status");
+    });
+
+    test("the fleet's Security block lists this panel's servers, with a link for a manager", async () => {
+        const opened = [];
+        answer({
+            "/cloud/fleet/resource_series": {
+                ok: true, scope: "operator", start: 0, end: 3600, step: 30, timing: {},
+                panels: {
+                    summary: { value: { hosts: 3 } }, ingest: { rows: [], hidden: 0 },
+                    security: { value: { ssh_failed_1h: 340, ssh_bruteforce: 2, bans_1h: 5,
+                        weblogin_bruteforce: 3, silent: 1 } },
+                    security_ssh: { series: [] },
+                },
+                alerts: { performance: 0, security: 1 },
+                silence: { code: "window" },
+                security: { state: "ready", off: 1, unhardened: 0, alerts_hosts: 1, hidden: 0, rows: [
+                    { host_id: 3, name: "srv-01", own: true, off: false, unhardened: false,
+                        alerts: 1, level: "critical", ssh_bruteforce: 340 },
+                    { host_id: 5, name: "srv-02", own: true, off: true, unhardened: false },
+                ] },
+            },
+        });
+        await mountWithCleanup(FleetBoard, {
+            props: { onOpenHost: (id) => opened.push(id) }, env: ENV, noMainContainer: true,
+        });
+        await animationFrame();
+        expect("[data-security=ready] [data-tile=ssh_bruteforce] .ic-fb-tile-value").toHaveText("2");
+        expect("[data-security=ready] [data-tile=off] .ic-fb-tile-value").toHaveText("1");
+        expect("[data-note=operator]").toHaveCount(1);
+        expect(".ic-fb-sec-row").toHaveCount(2);
+        expect(".ic-fb-sec-row[data-host='3'] [data-flag=alerts]").toHaveClass("is-bad");
+        expect(".ic-fb-sec-row[data-host='5'] [data-flag=off]").toHaveText("Security logs off");
+        expect("[data-panel=security_ssh] .ic-mb-empty").toHaveText("No failed SSH login on the servers in this window.");
+        await click(".ic-fb-sec-row[data-host='3'] a");
+        expect(opened).toEqual([3]);
+    });
+
+    test("the fleet's Security block of a panel without the permission says so alone", async () => {
+        answer({
+            "/cloud/fleet/resource_series": {
+                ok: true, scope: "account", start: 0, end: 3600, step: 30, timing: {},
+                panels: { summary: { value: { hosts: 1 } }, ingest: { rows: [], hidden: 0 } },
+                alerts: { performance: 0, security: 0 },
+                silence: { code: "window" },
+                security: { state: "unavailable" },
+            },
+        });
+        await mountWithCleanup(FleetBoard, { env: { ...ENV, permissions: { can_view_metrics: true } }, noMainContainer: true });
+        await animationFrame();
+        expect("[data-security=unavailable] .ic-fb-sec-title").toHaveText("Security logs are not available on this panel yet");
+        expect("[data-security=unavailable] [data-panel=security]").toHaveCount(0);
+        expect(".ic-fb-sec-row").toHaveCount(0);
     });
 
     test("Monitoring draws the fleet, then a server, with no frame", async () => {

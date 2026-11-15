@@ -1,6 +1,6 @@
 {
     "name": "Incubacloud",
-    "version": "1.0.229",
+    "version": "1.0.231",
     "summary": "Deploy, manage and monitor doodba-based Odoo instances via SSH",
     "sequence": 10,
     "description": """
@@ -70,6 +70,8 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         "data/notification_digest_cron.xml",
         "data/traefik_templates.xml",
         "data/move_recovery_cron.xml",
+        "data/geoip_refresh_cron.xml",
+        "data/security_events_cron.xml",
         # Views
         "views/dashboard_action.xml",
         "views/menus.xml",
@@ -156,6 +158,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
             "incubacloud/static/src/components/metrics/time_series_chart.xml",
             "incubacloud/static/src/components/metrics/chart_board.xml",
             "incubacloud/static/src/components/metrics/host_board.xml",
+            "incubacloud/static/src/components/metrics/host_security_board.xml",
             "incubacloud/static/src/components/metrics/fleet_board.xml",
             "incubacloud/static/src/components/monitoring/monitoring.xml",
             "incubacloud/static/src/components/search_select/search_select.xml",

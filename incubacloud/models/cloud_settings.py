@@ -696,6 +696,7 @@ class CloudSettings(models.Model):
             "metrics_enabled": False,
             "metrics_central_public_host": False,
             "metrics_accounts_deployed": False,
+            "metrics_credentials_deployed": False,
         })
         Alert = self.env["cloud.alert"].sudo()
         for code in ("metrics_central_failed", "metrics_acl_sync_failed"):
@@ -785,6 +786,16 @@ class CloudSettings(models.Model):
              "read every account's series there, through the operator's "
              "read-only route. Empty: only the central's host itself, "
              'which is right while the panel runs there.',
+    )
+    security_geoip = fields.Boolean(
+        string="Show the country of addresses",
+        default=True,
+        help="The country of the addresses in the servers' security logs, "
+             "looked up on the panel itself: no address leaves it. It uses "
+             "Odoo's GeoIP database when the server has one; otherwise the "
+             "panel downloads DB-IP's free country database (CC BY 4.0) "
+             "once a month. Off: no country is shown and nothing is "
+             "downloaded.",
     )
 
     # ── Metrics account helpers ────────────────────────────────────────────

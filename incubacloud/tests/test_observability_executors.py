@@ -405,25 +405,15 @@ class TestAccountRoutesNameTheirEndpoints(ObservabilityExecutorCase):
     the same question vmauth asks.
     """
 
-    #: What agents and a dashboard were measured using.
+    #: What the agents and the panel use: since 1.0.230 the panel's reads
+    #: alone, ``query`` and ``query_range`` (plan #84, C1.6).
     _ALLOWED = (
         "/w/api/v1/write",
         "/r/api/v1/query",
         "/r/api/v1/query_range",
-        "/r/api/v1/query_exemplars",
-        "/r/api/v1/series",
-        "/r/api/v1/labels",
-        "/r/api/v1/label/__name__/values",
-        "/r/api/v1/label/host/values",
-        "/r/api/v1/metadata",
-        "/r/api/v1/rules",
-        "/r/api/v1/status/buildinfo",
         "/lw/loki/api/v1/push",
         "/lr/loki/api/v1/query",
         "/lr/loki/api/v1/query_range",
-        "/lr/loki/api/v1/labels",
-        "/lr/loki/api/v1/label/job/values",
-        "/lr/loki/api/v1/index/stats",
     )
 
     #: Writes down a read route, deletions, and the backends' admin.
@@ -450,6 +440,17 @@ class TestAccountRoutesNameTheirEndpoints(ObservabilityExecutorCase):
         "/lr/loki/api/v1/delete",
         "/lr/flush",
         "/lr/config",
+        # Grafana's, which nothing uses since 12-nov-2026.
+        "/r/api/v1/query_exemplars",
+        "/r/api/v1/series",
+        "/r/api/v1/labels",
+        "/r/api/v1/label/__name__/values",
+        "/r/api/v1/metadata",
+        "/r/api/v1/rules",
+        "/r/api/v1/status/buildinfo",
+        "/lr/loki/api/v1/labels",
+        "/lr/loki/api/v1/label/job/values",
+        "/lr/loki/api/v1/index/stats",
     )
 
     def _account_paths(self):
@@ -498,11 +499,6 @@ class TestTheOperatorReadNamesItsEndpoints(ObservabilityExecutorCase):
         "/admin-r/health",
         "/admin-r/api/v1/query",
         "/admin-r/api/v1/query_range",
-        "/admin-r/api/v1/series",
-        "/admin-r/api/v1/labels",
-        "/admin-r/api/v1/label/__name__/values",
-        "/admin-r/api/v1/metadata",
-        "/admin-r/api/v1/status/buildinfo",
     )
 
     _REFUSED = (
@@ -519,6 +515,9 @@ class TestTheOperatorReadNamesItsEndpoints(ObservabilityExecutorCase):
         "/admin-r/healthz",
         "/admin-r/health/../flags",
         "/admin-r/api/v1/label/a/b/values",
+        "/admin-r/api/v1/series",
+        "/admin-r/api/v1/labels",
+        "/admin-r/api/v1/metadata",
     )
 
     def _read_patterns(self, executor_cls=ObservabilityCentralExecutor):
@@ -830,13 +829,20 @@ class TestTheCentralsSecretsOutliveTheJob(JobEndAssertions, ObservabilityExecuto
             for u in yaml.safe_load(extra["ic_vmauth_config"])["users"]
             if u["username"] != "operator"
         }
-        (account,) = users
+        accounts = [user for user in users if not user.endswith("-agent")]
+        (account,) = accounts
         self.assertTrue(account)
         self.assertEqual(self.stored(self.settings, "metrics_account"), account)
         self.assertEqual(
             self.stored(self.settings, "metrics_remote_write_token"),
             users[account],
         )
+        # The agents' user, where this panel mints its credentials.
+        agent = users.get(f"{account}-agent")
+        if agent:
+            self.assertEqual(
+                self.stored(self.settings, "metrics_agent_token"), agent,
+            )
         self.assertEqual(
             self.stored(self.settings, "metrics_operator_token"),
             extra["ic_operator_plain"],

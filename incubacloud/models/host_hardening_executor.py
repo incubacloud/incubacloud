@@ -429,6 +429,12 @@ class HostHardeningExecutor(AnsibleExecutor):
         # entry labelled for the old port, which asyncssh tolerates but
         # OpenSSH (every Ansible-backed job) reads as "host unknown".
         host._relabel_known_hosts_entry()
+        # The address the run came from: one of the panel's for this host
+        # (plan #84, A1), as the agents' install records it too. Nothing
+        # until the recipe exports ``ic_panel_source``, which waits for its
+        # next real change: a new recipe asks every hardened server to be
+        # hardened again.
+        host._record_panel_source(self.playbook_facts().get("ic_panel_source"))
         self._resolve_alert("hardening_failed")
         self._resolve_alert(HARDENING_OUTDATED_ALERT_CODE)
         self._sys(

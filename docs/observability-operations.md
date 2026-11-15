@@ -93,8 +93,8 @@ user:
 | Path | Rule |
 | --- | --- |
 | `/w/api/v1/write` metrics write | the route forces `extra_label=ic_account=<user>`; a client's own copy is **dropped** for colliding |
-| `/r/api/v1/{query,query_range,series,labels,label/<n>/values,…}` metrics read | the route forces `extra_filters[]={ic_account="<user>"}` the same way, so a client cannot widen the result |
-| `/lw/loki/api/v1/push`, `/lr/loki/api/v1/{query,query_range,…}` logs | the `X-Scope-OrgID` header is **set** from the user, replacing whatever the sender supplied |
+| `/r/api/v1/{query,query_range}` metrics read | the route forces `extra_filters[]={ic_account="<user>"}` the same way, so a client cannot widen the result |
+| `/lw/loki/api/v1/push`, `/lr/loki/api/v1/{query,query_range}` logs | the `X-Scope-OrgID` header is **set** from the user, replacing whatever the sender supplied |
 
 None of that is caution. Measured against real VictoriaMetrics + Loki
 (2026-08-10): vmauth drops a client's query arg that collides with the
@@ -119,15 +119,65 @@ An agent runs on a machine its owner has root on. Its claim about who it
 is can never be trusted, which is why the label comes from the
 credential and not from the payload.
 
-**Two credentials, and they are not interchangeable.** Each account has
-one, scoped to itself, and it is written to that account's hosts. The
-*operator* credential reads across every account (`/admin-r/`), deletes
-series (`/admin-d/`) and is never written to any host. `/admin-r/` serves
-the same read endpoints as an account's `/r/` plus `/health`
-(`_OPERATOR_READ_PATHS`); anything else, imports, exports, snapshots or
-flags, answers 400. It was `/admin-r/.*`, the whole backend, until
-12-nov-2026, when it was closed so the route could be opened to the
-panel's address under the public name.
+**Three credentials, and they are not interchangeable.** Each account has
+its own, scoped to itself, which the panel reads with, and an *agents'
+user*, `<account>-agent`, which only writes (`/w/` and `/lw/`), forced to
+the same account's label and Loki `X-Scope-OrgID`: the agents write with it, so
+root on one server can no longer read the logs and metrics of the
+account's other servers. The *operator* credential reads across every
+account (`/admin-r/`), deletes series (`/admin-d/`) and is never written
+to any host. `/admin-r/` serves the same read endpoints as an account's
+`/r/`, `query` and `query_range`, plus `/health` (`_OPERATOR_READ_PATHS`);
+anything else, imports, exports, snapshots or flags, answers 400. It was
+`/admin-r/.*`, the whole backend, until 12-nov-2026, when it was closed so
+the route could be opened to the panel's address under the public name.
+`/r/` and `/lr/` served Grafana's endpoints too (series, labels, label
+values, metadata, the log index) until 1.0.230.
+
+**The agents' user is handed out by state, never by version** (1.0.230,
+plan #84 A2):
+
+- The agents write with it only while the central's list carries it
+  with the token the panel holds (its digest in
+  `metrics_credentials_deployed`, not the user's name alone: a token
+  minted again is not in force until a sync puts it there), or where a
+  module that extends the panel hands it over only once its central knows
+  it (`cloud.settings._metrics_credentials_injected`); otherwise with the
+  account's credential, as before. A credential vmauth does not know is
+  a 401 loop on every server.
+- The moment it comes into force, every server's agents are applied
+  again (`_reapply_observability_everywhere`), so none stays on the
+  account's credential unseen. Each server records which one its agents
+  hold (`cloud.host.metrics_write_user`: `agent`, `account`, or empty
+  for an install before 1.0.230).
+- **The read credential is rotated once no server holds it:** every
+  active server whose agents were installed, or failed to be, writes with
+  the agents' user. The new one goes on the central beside the old one
+  (`metrics_read_token_next`; vmauth admits two passwords for one user,
+  measured on v1.102.0, 14-nov-2026), the panel moves to it once the list
+  carries it (`metrics_credentials_deployed` keeps a digest of each
+  credential in force) and the next sync drops the old one. From then on
+  the account's user only reads (`metrics_read_rotated`) and has a cap on
+  requests in flight, `READ_MAX_CONCURRENT` (8, provisional until step M
+  of plan #84 measures the board's and the cron's LogQL). The agents'
+  reconciliation cron drives it (`_reconcile_metrics_credentials`), and a
+  central deployed before 1.0.230 gets the agents' user with its next
+  sync or deployment.
+- While the agents' user is in force, the reconciliation re-applies, five
+  a pass, every installed server whose agents still write with the
+  account's credential, whatever its revision: an install that ran on the
+  old credential as the new one came, a job resumed by another worker, or
+  a server brought back from the archive.
+- **After the rotation:**
+  - An archived server whose agents still run is not waited for, and
+    gets a 401 for everything it sends once the old credential is gone.
+    Unarchived, the reconciliation applies it again with the agents' user.
+  - Going back to a core before 1.0.230 leaves without writes every server
+    that core applies again: it hands them the account's credential,
+    which no longer writes. It is fixed forward, by updating again.
+  - A second panel or tool pointed by hand at the central with the
+    account's credential loses it: give it the new read credential, which
+    only reads.
 
 vmauth keeps its credentials in clear (it has no hash support). That is
 mitigated the same way the agents' copy of the token is: the config lives
@@ -153,7 +203,8 @@ instance would train everyone to ignore the alert that matters.
 |---|---|
 | Agents per host | ~50 MB RAM total, and Fluent Bit ~61 MB idle, 81–87 MB under 600 failed SSH attempts a minute, where the server sends its security logs (F0, 9-nov-2026); its container is capped at 128 MB |
 | VictoriaMetrics | ~0.5–1 GB RAM; disk grows with series × retention |
-| Loki | the hosts' security logs: tens of lines a minute under attack, units at rest |
+| Loki | the hosts' security logs: tens of lines a minute under SSH attack, units at rest; a host's failed web logins up to 600 lines a minute (`ic_weblogin_per_minute`) |
+| Reading them back | the security events' cron: sign-ins, sudo (one read per user the panel signs in as) and auditd, 10 pages of 500 at most each, plus one instant query, every 5 minutes per panel; a Security view: 10 PromQL queries and, for a manager, six log reads, kept 60 s; the web-login alert: one read per firing instance, 10 a pass |
 
 The panel's own charts cost the central one PromQL query per panel each
 time a board is read: an instance's Metrics tab is ten (`metrics_charts.
@@ -170,13 +221,15 @@ jobs keep the host's 30 s for each); the board lets one run at a time, and
 each reading counts against the user's log reads per minute
 (`rate_limit_logs_per_min`).
 
-**The operator, and only the operator, has a cap on requests in flight:
-16** (`_OPERATOR_MAX_CONCURRENT`, vmauth's `max_concurrent_requests`,
-12-nov-2026). vmauth counts per user, not per route, and answers the next
-request 429 at once, with no queue. An account's user is shared by its
-agents' writes, its logs and its panel: a cap there answered a write 429
-while two reads ran (measured on v1.102.0 with a cap of 2), and after an
-outage every host empties its queue at once. So accounts have none. The
+**Only users that never write have a cap on requests in flight**: the
+operator, 16 (`_OPERATOR_MAX_CONCURRENT`, vmauth's
+`max_concurrent_requests`, 12-nov-2026), and an account's user once its
+read credential is rotated (above). vmauth counts per user, not per route,
+and answers the next request 429 at once, with no queue. An account's user
+that still writes is shared by agents' writes, logs and its panel: a cap
+there answered a write 429 while two reads ran (measured on v1.102.0 with
+a cap of 2), and after an outage every host empties its queue at once. So
+it has none, nor has the agents' user. The
 operator never writes; 16 covers four fleet boards at four queries each
 (measured: 16
 reads in flight pass, the 17th to 20th get 429, an account's 30 reads and
@@ -250,12 +303,17 @@ days**, because an incident is often found weeks after it began, and
 anything else 30 days: nothing else arrives since the agents stopped
 sending the proxies' access log (12-nov-2026), and 30 lets the access
 lines already stored, which carry the instances' visitors' addresses,
-expire as before. Both apply on the next central deploy. A host's
-credential reaches only the push and read routes above — Loki's delete
-API is not routed — so a host that is compromised cannot erase what it
-already sent. The proxy's access log stays on each host, in
+expire as before. Both apply on the next central deploy, which restarts
+Loki when its configuration changed (until 1.0.230 nothing did, and a new
+value never applied). Loki returns up to `ic_loki_max_query_series`
+series a query (5000, provisional until step M of plan #84 measures the
+top source addresses under a distributed attack; Loki's default, 500,
+breaks them). A host's credential reaches only the push routes above —
+Loki's delete API is not routed — so a host that is compromised cannot
+erase what it already sent. The proxy's access log stays on each host, in
 `/var/log/traefik/access.log` (rotated daily or past 100 MB, 30 days),
-where the panel reads it when asked.
+where the panel reads it when asked; of it, only the instances' failed
+web logins leave the server, as below.
 
 ### Security logs
 
@@ -267,25 +325,58 @@ itself and its counters never expire).
 
 - **Sources.** The journal's `ssh.service`, `sshd.service` and the
   identifiers `sshd`, `sshd-session`, `sshd-auth` (OpenSSH 9.8 and later)
-  and `sudo`; `/var/log/audit/audit.log` and `/var/log/fail2ban.log`. Each
-  from where it stopped, and from the end the first time.
+  and `sudo`; `/var/log/audit/audit.log`, `/var/log/fail2ban.log` and,
+  since 1.0.230, the proxy's `/var/log/traefik/access.log`. Each from
+  where it stopped, and from the end the first time.
 - **What leaves the server.** The journal's lines; of auditd, only the
   `SYSCALL` records of its four keys (`passwd_changes`, `shadow_changes`,
   `sudoers_changes`, `ssh_config_changes`) and the `PATH` records of the
   files they watch (auditd's other records were 68 % of what it sent
   under attack and repeat sshd and fail2ban); of fail2ban, the jail
   `sshd` whole, only the bans of `incubacloud-weblogin` (its `Found`
-  lines name the instances' users), the daemon's own lines, and no other
-  jail. Labels: `log_type`, `host`, `source` (`sshd`, `sudo`, `fail2ban`,
-  `auditd`).
+  lines repeat the `weblogin` lines below without the instance, which
+  fail2ban's line does not carry), the daemon's own lines, and no other
+  jail. Labels: `log_type`, `host_id` (since 1.0.230: the name is not
+  unique, and a rename does not re-apply the agents; lines from before
+  have none), `host`, `source` (`sshd`, `sudo`, `fail2ban`, `auditd`,
+  `weblogin`).
+- **The instances' failed web logins** (1.0.230, plan #84 C1.9). A native
+  `grep` keeps the access log's `POST`s to `/web/login` before anything
+  else sees them; the Lua keeps what the web-login jail counts as failed
+  (`POST`, `/web/login` or `/web/login/totp` with or without a query,
+  `200`) and drops the rest uncounted. Fields are found by their exact
+  quoted names, which a client cannot forge (Traefik escapes the quotes
+  it sends). The instance is the one whose Traefik prefix (`traefik_prefix`,
+  as vmagent's relabelling) a router, with `https-` or not, or a service
+  starts with, the longest winning, or whose exact service name a module
+  put in front of it (`traefik_extra`); none is `0` (a proxy kept by hand,
+  or a module's router answering for an instance asleep). What leaves is a
+  line of its own, `weblogin failed ip=<address> instance=<id> t=<the
+  proxy's time>`, never the request, its path, the host asked for or the
+  user, up to `ic_weblogin_per_minute` a minute (600, provisional until
+  step M measures it); above it they are counted and not sent, so an
+  attack on the open web port cannot fill the buffer SSH and auditd
+  share. The jail does not count `ignoreip` addresses (the panel, trusted
+  proxies); the counter does. A line longer than 32 KB (a `POST` to
+  `/web/login` with a long query) is skipped whole (`skip_long_lines`):
+  the jail counts it and the collector does not, so an attack spread over
+  many addresses with such requests would raise no alert. A known limit,
+  until step M of plan #84 measures Fluent Bit's memory with a buffer
+  above Traefik's largest header (1 MB). bats checks the Lua against the
+  jail's own filter on the same lines (`fluent_bit_lines.bats`, with
+  `IC_FLUENT_BIT_TEST=1`: it needs Docker, and the CI skips it); a test of
+  the module pins the filter, the grep and the Lua's condition together,
+  so none moves without running it.
 - **Counters**, scraped by vmagent from Fluent Bit (`job="security"`), with
   a closed set of labels: `ic_ssh_auth_failed_total` (one per connection
   that never authenticated), `ic_ssh_accepted_total{kind=panel|other,
   method}` (`panel` when the key's fingerprint is the panel's),
   `ic_sudo_total{kind=ansible|panel_user|other}` (a refused sudo is not
   counted here), `ic_sudo_failed_total`, `ic_f2b_total{jail, action}`,
-  `ic_audit_events_total{key, who=system|root|panel|user}` and
-  `ic_security_lines_total{source}`, the heartbeat of each source; plus
+  `ic_audit_events_total{key, who=system|root|panel|user}`,
+  `ic_weblogin_failed_total{instance_id}` (the ids the panel wrote, and
+  `0`) and `ic_security_lines_total{source}`, the heartbeat of each
+  source; plus
   `fluentbit_output_{proc_records,dropped_records,retries_failed}_total`
   (`job="security-agent"`). A counter appears with its first event, so
   `increase()` does not see that one.
@@ -307,10 +398,122 @@ itself and its counters never expire).
   module that extends the panel decides otherwise
   (`cloud.host._security_logs_after_upgrade`,
   `_security_logs_available`, `_security_logs_default`).
-- **Reading them.** Through `/lr/` with the account's credential.
+- **Reading them.** Through `/lr/` with the account's credential, which no
+  server holds once it is rotated (`models/logs.py`): the transport of the
+  charts (8 s, one retry, a 429 asked again after a pause and never
+  counted as the central down), 500 lines a page, pages taken by time from
+  the last instant of the one before, included, and a line read twice
+  counted once. Its parsers are anchored at the start of the line; the
+  user names and commands an attacker writes are cut to 32 and 64
+  characters of a closed set before they can reach a message, a sudo
+  record keeps the program without its arguments, and no record carries
+  the line itself. An auditd change is its `SYSCALL` joined to its `PATH`
+  records by server and `audit(seconds:serial)`, once every page is read;
+  a `SYSCALL` whose `PATH` has not arrived in the last 60 s of the window
+  waits for the next pass. The addresses with the most failed web logins
+  on an instance are counted on the panel over the last 1 000 `weblogin`
+  lines of its server (`logs.weblogin_top_sources`, IPv6 by its
+  /64), never by an aggregation per address, so Loki's
+  `max_query_series` cannot refuse them; a central that is busy or does
+  not answer gives no addresses, never an error.
+- **The panel's addresses and uid.** The agents' install reads
+  `SSH_CONNECTION` without `become` (sudo clears it) and the panel keeps,
+  per server, the last five addresses it came from, each forgotten 30
+  days after it was last seen, IPv6 by its /64
+  (`cloud.host.security_panel_sources`, for whoever manages servers, and
+  out of every MCP read). The address a change of the panel's address
+  left is forgotten everywhere when its alert closes. Nothing learns one
+  from Odoo.sh's notice, which carries no credential, nor from a log
+  line. The install also records the uid the panel signs in as
+  (`security_panel_uid`), which tells its changes in auditd's records.
 - **What it costs.** See *Costs and sizing*. Fluent Bit runs as root with
   every capability dropped but reading files, a read-only filesystem and
   no port published; its credential is in a 0600 file.
+- **The country of an address** (`models/geoip.py`, not shown yet).
+  Looked up on the panel, and only the country: no address leaves it.
+  From Odoo's `geoip_country_db` when that file is there (Odoo.sh ships
+  one; a Doodba image does not); otherwise from DB-IP's IP to Country
+  Lite (CC BY 4.0), which the daily *Refresh the GeoIP database* cron
+  downloads once a month from `download.db-ip.com` and keeps as an
+  attachment of the settings. While a month's file is not published, the
+  month before is taken. The download is HTTPS to that host alone (a
+  redirect elsewhere is refused), at most 32 MB, 64 MB uncompressed, in
+  60 s; a file that does not open as a country database never replaces
+  the one kept. Private, loopback and link-local addresses are *local*.
+  The setting *Show the country of addresses* (`security_geoip`, on by
+  default) turns both the lookup and the download off. A country from
+  DB-IP is shown with its attribution, `geoip.ATTRIBUTION`.
+- **The alerts of the security events**
+  (`models/cloud_security_events.py`, the *Read the servers' security
+  events* cron, every 5 minutes). Over the servers sending their security
+  logs whose agents were installed with `host_id` (`metrics_write_user`
+  set), three reads, each with its cursor in `ir.config_parameter`
+  (`incubacloud.security_events_cursor.<accepted|sudo|auditd>`): sign-ins,
+  sudo with the panel's own user left out in LogQL (one read per user the
+  panel signs in as), and auditd's changes. Each reads from 15 minutes
+  before its cursor to 30 seconds ago, at most 10 pages of 500 lines; the
+  cursor starts at "now" (nothing earlier is alerted on), stays where it
+  was when the read fails, and moves only to the last line read when the
+  pages ran out, two passes in a row of which raise
+  `security_events_backlog` (a warning per read, closed by the next pass
+  that reads to the end, or by a pass with no server or no central to
+  read). After an outage the window reaches 24 hours
+  back. One more instant query a pass counts each server's sshd, sudo,
+  fail2ban and auditd lines of the last 15 minutes: a server silent
+  longer than that (`cloud.host.security_last_line_at`) is read again
+  alone from where it went quiet, five a pass, since Fluent Bit sends what
+  it kept with the time it happened. That field and the panel's addresses
+  a connection learns are written on a READ COMMITTED cursor of their
+  own, as the metrics cron writes its hosts: the cron's transaction never
+  writes a server's row, so a job's hook or a save of the server during
+  the pass does not roll the pass back.
+  - *Sign-ins.* With the panel's key from an address it connects from
+    (`security_panel_sources`, or `_hardening_panel_ip` where a layer
+    knows it; IPv6 by /64), never an alert. Another key, or a password on
+    a server the panel signs in to with a key, is
+    `security_ssh_login_foreign` (critical); so is, on a server the panel
+    signs in to with a password or a key it cannot read, another user.
+    The key a change of the server's key replaced counts as the panel's
+    for a sign-in up to a minute after the change
+    (`security_previous_key_fingerprint`, `security_key_changed_at`). The
+    panel's key (or user) from an unknown address is confirmed first: the
+    cron opens one connection of its own to that server, at most 10 a
+    pass, and reads `SSH_CONNECTION`. The address it reads is learned as
+    the panel's there and counts as the panel's on every server for the
+    rest of the pass; the same address as the sign-in's, no alert; another,
+    `security_ssh_login_panel_key_elsewhere` (critical); no connection,
+    `security_ssh_login_unconfirmed` (a warning without the address). A
+    sign-in left without a connection stops its cursor for the next pass.
+  - *sudo.* Another user's command or refusal is `security_sudo_foreign`
+    (a warning), with the program and never its arguments.
+  - *Changes.* By login uid, against the uid the agents' install read for
+    the panel's user: another user is `security_sensitive_change`
+    (critical); the panel's user outside every job of the server or of its
+    instances, console and terminal of the panel (a minute's margin around
+    each), critical; root there, a warning (`ROOT_CHANGE_LEVEL`,
+    provisional until root's changes on the fleet are measured: root's
+    crontab writes with login uid 0 too), also where the panel signs in as
+    root; the system's own, nothing. Each event is judged in a savepoint
+    of its own: one that fails is logged and skipped, and the pass goes
+    on. A change's time is auditd's stamp, or Loki's instant when the
+    stamp is more than 24 hours away from it.
+  - *Once.* `cloud.security.event` keeps each event that raised or
+    refreshed an alert, by server and line digest (or auditd's stamp),
+    never the line, for 7 days: the overlap never counts one twice and a
+    dismissed alert does not come back for the same event. The alerts do
+    not resolve themselves; a repeat while one is open refreshes its text
+    with the count since the first, and the payload holds the count and
+    the last event's sanitized fields. Only the two sign-in alerts carry
+    an address; none carries a country. The texts are translated in the
+    language of the cron's context, a broken translation giving the
+    English one.
+- **For whoever reads the alerts and runs the servers.** What leaves a
+  server, who sees what and what the logs cannot prove, in the user guide's
+  *Security logs* (`docs/user/docs/hosts/security.md`); each alert and what
+  to do, in *Security alerts* (`reference/security-alerts.md`); the
+  operator's triage in [RB-43](runbooks/RB-43-security-alert-on-a-host.md).
+  The thresholds and what step M measures to fix them are in
+  `architecture.md`, *Security alerts and their thresholds*.
 
 ## The panel's own charts
 
@@ -401,6 +604,85 @@ silence come first, twenty at most.
 
 The three routes share one budget per user (20 boards a minute,
 `_BOARD_READS_PER_MIN`).
+
+The Fleet view's **Security** block (plan #84 C7) is figures only, for
+the same `developer` role and above, with no address, user or alert text
+for anyone:
+
+- **From the central** (`PANELS["fleet"]` with `needs: "fleet_security"`,
+  every account's on the operator's route): failed SSH logins and bans of
+  the last hour and per hour over the window, the servers under SSH brute
+  force and the instances under web-login brute force now (over the rules'
+  10-minute windows and with the current thresholds of
+  `security_ssh_bruteforce` and `security_weblogin_bruteforce`, so the
+  board and the alerts agree; instance `0` left out), and the servers
+  whose security logs do not arrive, as `security_logs_silent` reads it.
+- **From the panel's database**: the servers with *Send security logs* off
+  and those not hardened, and the servers with active security alerts
+  the caller can read, by count and worst level.
+- **The servers to look at** are this panel's own the caller can read,
+  twenty at most, the worst first. The per-server rows of the central
+  (`kind: "hosts"`) are matched by account and `host_id`, so a server of
+  another account is never named on the operator's board even when its
+  id is one of this panel's; a server whose switch is off is not counted
+  as silent.
+- **Not asked at all** where `_security_logs_available()` is false: the
+  block says security logs are not available on this panel yet.
+
+### A server's Security view
+
+The server's **Metrics** tab has two views, *Performance* (the board
+above) and *Security* (`models/metrics_security.py`, plan #84 C6),
+answered by `/cloud/host/security_board` within the same budget.
+
+- **Without reading the central:** *not available on this panel* while
+  `_security_logs_available()` is false (a managed panel until its
+  manager allows security logs), observability off or without a central
+  (the boards' own states), and *off* for a server whose *Send security
+  logs* is off.
+- **For the `developer` role and above:** `PANELS["host_security"]`,
+  Fluent Bit's counters only, none with an address or a user (failed SSH
+  connections and bans by jail a minute; sign-ins, sudo, auditd and lines
+  an hour by kind; the collector's deliveries and drops; failed web logins
+  per instance), the HTTP of the instances as means over the range with
+  their failed web logins, the web-login jail's bans and lifts, how many
+  addresses the last web logins came from, the defence from the panel's
+  own fields (how many addresses may reach SSH, never which; hardening and
+  whether its alert is open; CDN and closed origin; the switch and the last
+  line the cron read; the credential the agents write with; whether the
+  panel can tell its own key) and a diagnosis that names how many security
+  alerts are open, never their text.
+- **For `group_cloud_manager` alone, decided by the route:** the answer
+  carries `tables` (addresses with the most failed SSH connections and
+  the users tried, with country and whether the jail holds them now;
+  sign-ins of 7 days attributed as the security events' cron does, without
+  its confirming connection; sudo with the program alone; the watched
+  files' changes; the addresses with the most failed web logins with the
+  instances each went to; the web-login jail's bans of 7 days with the
+  instances tried before), and `/cloud/host/security_lines` gives the last
+  200 raw lines of one closed kind. Anyone else gets no `tables` key and
+  is refused the lines: hiding them on the screen is not the control.
+- **How the tables count:** on the panel, over the last 5 000 lines of a
+  window (10 pages of 500, newest first), by address with IPv6 by its /64,
+  the way the web-login alert counts (`logs.count_weblogin_sources`). No
+  aggregation by address runs in Loki, so `max_query_series` never refuses
+  a table during an attack from thousands of addresses (review M4); a
+  window that held more says *counted over the last 5 000 lines*. The
+  aggregations reach 24 hours whatever the range; the filtered reads
+  (sign-ins, sudo, changes, bans, one instance's web logins) reach 7 days.
+  An address is banned now when its last `Ban` of the jail has no `Unban`
+  after it. Countries are looked up when the answer is built and never
+  kept; the view names DB-IP's attribution when a country came from it.
+- **Ids, never LogQL:** the browser sends a host id, a range and at most
+  an instance id, which must be of an instance of that server the caller
+  can read. An instance in a table is named from the panel's database by
+  its id and only when it is of this server; any other id is
+  *unidentified*. An archived server, one the caller cannot read or an id
+  that is not an integer is *not found*, before anything is asked of the
+  central.
+- **Cost:** one board is 10 PromQL queries and, for a manager, six log
+  reads in parallel (four at a time), one for anyone else; an answer is
+  kept 60 s per person, server, window and filter.
 
 ## Where the central runs
 
@@ -692,6 +974,42 @@ Both database rules read only a fresh `ic_pg.prom`
 (`time() - node_textfile_mtime_seconds{file=~".*ic_pg.prom"} < 180`): with
 no collector, or one that stopped, there is no sample, so neither an alert
 nor a failure.
+
+The servers' security rules (#84, 14-nov-2026) read Fluent Bit's
+counters, which exist only where a server sends its security logs. Their
+thresholds are **provisional**: the measurements that fix them (the
+noise of normal use, the fleet's `already_banned` and failed web logins)
+are still to be taken, and each value is replaced with its measurement
+and date when they are.
+
+| Code | Reads | Threshold | Confirm | Why this value for now |
+| --- | --- | --- | --- | --- |
+| `security_ssh_bruteforce` | failed SSH connections in 10 min, per server | > 100 | 2 cycles | Ten a minute: a person who mistypes makes a few, a scanner of the internet hundreds (the F0 burst: 600 a minute) |
+| `security_f2b_ineffective` | fail2ban's `already banned` in 30 min, per server | > 20, critical | 2 cycles | An address banned that keeps arriving means the ban is not applied; under a heavy attack a few repeats while a ban is set may be normal, so a second reading before paging |
+| `security_weblogin_bruteforce` | failed web logins in 10 min, **per instance** (`ic_weblogin_failed_total`, `instance_id="0"` left out) | > 50 | 2 cycles | Five a minute against one instance: more than a forgotten password, well under what the web-login jail bans an address for |
+| `security_logs_silent` | 1 when Fluent Bit's exporter has not answered in 15 min, its Loki output dropped lines in 30 min, or it read lines of sshd, sudo or weblogin in 30 min and delivered none | > 0 | 2 cycles | "up" alone says Fluent Bit lives, not that Loki takes what it sends (a 401 is retried for hours without dropping anything); a second reading, as the other silence rules, so a line counted and not yet delivered at the scrape, or Loki down for a minute, does not page every server |
+
+Every one of them ends in `or (… * 0)`, a 0 for each target seen in the
+last hour (the reporting servers, for the silence rule): the evaluator
+resolves only a target the answer names, and Fluent Bit's counters vanish
+when it restarts, until the next line of their kind. Each target is
+judged once a pass, on its worst sample.
+
+**The web-login alert names the addresses with the most attempts.** Only
+when the rule fires, the panel reads that instance's `weblogin` lines of
+the last 10 minutes from the central's Loki and adds the three addresses
+with the most attempts and their count (IPv6 by /64) to the text; the
+alert's payload keeps the same list, never a line. At most 10 reads a
+pass, the instances with the most attempts first; the others, a central
+that is busy or fails, and a template without `%(sources)s` go out with
+the figure alone. A server reached through a CDN is not read: its proxy
+sees the CDN's addresses, and the text says so.
+
+**Names and messages are translatable.** The text is written in the
+language of the context the rules are evaluated in (the cron runs
+without one, so English), as every other alert producer does. A
+translation whose markers are broken, any `%` that is not `%(host)s`,
+`%(value)s`, `%(sources)s` or `%%`, is not used: the English text is.
 
 ## URLs: which one must resolve from where
 

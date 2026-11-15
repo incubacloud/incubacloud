@@ -1,0 +1,6 @@
+# The lines Loki holds for source="fail2ban": /var/log/fail2ban.log as
+# written. Debian 13, F0 of the observability plan (9-nov-2026). In this
+# order: a failure found, the ban it led to, the ban lifted.
+2026-11-09 17:59:37,702 fail2ban.filter         [6563]: INFO    [sshd] Found 172.31.2.1 - 2026-11-09 17:59:37
+2026-11-09 17:59:39,034 fail2ban.actions        [6563]: NOTICE  [sshd] Ban 172.31.2.1
+2026-11-09 17:59:41,189 fail2ban.actions        [6563]: NOTICE  [sshd] Unban 172.31.2.1

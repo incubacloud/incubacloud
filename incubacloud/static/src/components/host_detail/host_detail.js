@@ -21,6 +21,7 @@ import { required, hostname, portRange, when } from "../../utils/validators";
 import { confirmVia } from "../../utils/use_confirm";
 import { HostHardeningModal } from "../host_hardening_modal/host_hardening_modal";
 import { HostBoard } from "../metrics/host_board";
+import { HostSecurityBoard } from "../metrics/host_security_board";
 
 /** Tabs a link may open the page on (``?tab=``). */
 const LINKABLE_TABS = new Set(["overview", "metrics"]);
@@ -81,7 +82,7 @@ export class HostDetail extends Component {
     static template = "incubacloud.HostDetail";
     static components = {
         PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog, RlSelect, IcPager,
-        HostHardeningModal, IcMenu, HostBoard, SaveBar, SettingAdvanced,
+        HostHardeningModal, IcMenu, HostBoard, HostSecurityBoard, SaveBar, SettingAdvanced,
     };
 
     /** Rows per page for the server-paginated audit log. */
@@ -99,6 +100,9 @@ export class HostDetail extends Component {
 
         this.state = useState({
             tab: this.isNew ? "general" : (LINKABLE_TABS.has(this.props.tab) ? this.props.tab : "overview"),
+            // The Metrics tab's view: the server's performance or its
+            // security (plan #84, C6).
+            metricsView: "performance",
             // The job whose "Action required" says why, opened by a click.
             holdOpen: null,
             // Derived server-side and read-only: the ranges the host is

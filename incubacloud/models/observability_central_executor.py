@@ -29,6 +29,7 @@ from odoo import _
 from ..net.trusted_proxies import parse_ranges
 from .abstract_executor import JobRefused
 from .ansible_executor import AnsibleExecutor
+from .cloud_settings_agents import READ_MAX_CONCURRENT
 
 _logger = logging.getLogger(__name__)
 
@@ -48,7 +49,9 @@ _LOKI_URL = "http://loki:3100/"
 #:
 #: 1. 12-nov-2026: the central without Grafana, whose volume, provisioning
 #:    and image it removes.
-CENTRAL_REVISION = 1
+#: 2. 14-nov-2026: Loki's ``max_query_series``, and Loki restarted when its
+#:    configuration changes; the agents' write-only users (plan #84, C1).
+CENTRAL_REVISION = 2
 
 #: Its existence keeps what Grafana left on the central through the
 #: deployments, for an operator who wants it before the update removes it
@@ -66,22 +69,17 @@ _KEEP_GRAFANA_PARAM = "incubacloud.metrics_keep_grafana_data"
 # and the other account then saw the series as its own. The same route
 # created snapshots, forced merges and read the backend's flags.
 #
-# Writes are the one path each agent posts to. Reads are the query API a
-# dashboard and a metrics browser call; the panel uses ``query`` and
-# ``query_range``, and which of the rest the security view needs is
-# decided with it (review of 12-nov-2026). The log read route is
-# read-only, for the panel's reading of the security logs.
+# Writes are the one path each agent posts to. Reads are what the panel
+# calls, ``query`` and ``query_range``, on the metrics and on the logs
+# alike: nothing in the panel, the agents or the runbooks used the rest
+# (``series``, ``labels``, label values, metadata, the log index), which
+# Grafana asked for until 12-nov-2026 (plan #84, C1.6). The log read route
+# is read-only, for the panel's reading of the security logs.
 _ACCOUNT_WRITE_PATH = "/w/api/v1/write"
-_READ_ENDPOINTS = (
-    "query|query_range|query_exemplars|series|labels"
-    "|label/[^/]+/values|metadata|rules|status/buildinfo"
-)
+_READ_ENDPOINTS = "query|query_range"
 _ACCOUNT_READ_PATHS = f"/r/api/v1/({_READ_ENDPOINTS})"
 _ACCOUNT_LOG_WRITE_PATH = "/lw/loki/api/v1/push"
-_ACCOUNT_LOG_READ_PATHS = (
-    "/lr/loki/api/v1/(query|query_range|series|labels"
-    "|label/[^/]+/values|index/stats|index/volume|index/volume_range)"
-)
+_ACCOUNT_LOG_READ_PATHS = f"/lr/loki/api/v1/({_READ_ENDPOINTS})"
 
 #: The operator's cross-account read: the accounts' read endpoints and
 #: ``health``. It was ``/admin-r/.*``, the whole backend: imports,
@@ -96,13 +94,15 @@ _OPERATOR_READ_PATHS = f"/admin-r/(health|api/v1/({_READ_ENDPOINTS}))"
 _OPERATOR_DELETE_PATH = "/admin-d/api/v1/admin/tsdb/delete_series"
 
 #: Requests the operator may have in flight at once; vmauth answers the
-#: next one 429 at once, without a queue. Only the operator has a cap
-#: (12-nov-2026): vmauth counts per user, not per route, and an account's
-#: user is shared by its agents' writes, its logs and its panel, so a cap
-#: there refused writes while reads ran — and after an outage every host
-#: empties its queue at once. The operator never writes; 16 covers four
-#: fleet boards at four queries each. VictoriaMetrics queues the reads themselves
-#: (``-search.maxConcurrentRequests``, twice the cores, 10 s wait).
+#: next one 429 at once, without a queue. vmauth counts per user, not per
+#: route, so a user that writes has no cap: while an account's user was
+#: shared by its agents' writes, its logs and its panel, a cap there
+#: refused writes while reads ran — and after an outage every host empties
+#: its queue at once (12-nov-2026). The operator never writes; 16 covers
+#: four fleet boards at four queries each. An account's read user is capped
+#: too once it no longer writes (``READ_MAX_CONCURRENT``). VictoriaMetrics
+#: queues the reads themselves (``-search.maxConcurrentRequests``, twice
+#: the cores, 10 s wait).
 _OPERATOR_MAX_CONCURRENT = 16
 
 #: Set once the recorded deletion key has only ever reached the backend
@@ -121,6 +121,7 @@ ACME_SAME_NAME_ALERT = "metrics_central_acme_same_name"
 _CENTRAL_SECRET_FIELDS = (
     "metrics_account",
     "metrics_remote_write_token",
+    "metrics_agent_token",
     "metrics_operator_token",
     "metrics_delete_auth_key",
 )
@@ -137,17 +138,19 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         return self.job.host_id
 
     def _metrics_accounts(self, settings=None):
-        """Return ``[(user, password), ...]`` allowed to write and read.
+        """Return the vmauth users allowed to write or read, but the operator.
 
         Core knows exactly one account: this panel's own. A layer
-        that serves other panels overrides this to append one entry per
-        panel, because only it knows they exist — core ships to partners
-        and must stay ignorant of them.
+        that serves other panels overrides the settings' list to append
+        one entry per panel, because only it knows they exist — core
+        ships to partners and must stay ignorant of them.
 
-        The list becomes vmauth's user list, and the authenticated user
+        The list becomes vmauth's user list, and each user's account
         *is* the label the central forces on every series. So adding an
         account here is the single act that grants a panel the right to
-        write, and removing it is the single act that revokes it.
+        write, and removing it is the single act that revokes it. Each
+        account brings its agents' user, which only writes
+        (``cloud.settings._vmauth_users``).
 
         :param settings: the ``cloud.settings`` record to resolve the
             list through. Listing may mint a credential for every
@@ -157,7 +160,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         """
         if settings is None:
             settings = self.env["cloud.settings"].sudo()
-        return settings._desired_metrics_accounts()
+        return settings._vmauth_users()
 
     def _accounts_for_deployment(self, settings=None):
         """Return the account list this run is built from, memoised.
@@ -203,12 +206,14 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             with it (see ``cloud.settings._ensure_metrics_delete_key``);
             otherwise it is only read.
         :return: ``(accounts, operator_token, delete_key)`` where
-            ``accounts`` is ``[(user, password), ...]`` and ``delete_key``
-            may be empty
+            ``accounts`` is the vmauth users (``_metrics_accounts``) and
+            ``delete_key`` may be empty
         """
         with self._durable_env() as env:
             settings = env["cloud.settings"].sudo()._get_system()
             settings._ensure_metrics_credential()
+            # The agents' own user, which only writes (plan #84, C1).
+            settings._ensure_metrics_agent_token()
             accounts = self._accounts_for_deployment(settings)
             operator_token = settings._ensure_operator_credential()
             if mint_delete_key:
@@ -263,16 +268,14 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             )
             return
         settings = self.env["cloud.settings"].sudo()._get_system()
-        settings.write({
-            "metrics_accounts_deployed": "\n".join(
-                sorted(user for user, _password in accounts)
-            ),
-        })
+        # The users and their credentials' digests; the agents' user and a
+        # read credential rotated in act on it there.
+        settings._metrics_record_deployed(accounts)
         # The accounts authenticate from now on: whoever hands them out
         # hears it here, from both jobs that write the list.
         settings._metrics_accounts_shipped()
 
-    def _account_url_map(self, user):
+    def _account_url_map(self, user, read=True, write=True):
         """Return the vmauth ``url_map`` for one account.
 
         Every route points ``url_prefix`` at the backend ROOT (carrying
@@ -291,25 +294,32 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         forced read filter does nothing to a write sent down the read
         route.
 
-        :param user: the account name, used both as the credential's user
-            half and as the ``ic_account`` label value.
-        :return: a list of vmauth url_map entries.
+        :param user: the account name, the ``ic_account`` label value and
+            Loki's ``X-Scope-OrgID``; the user half of the credential too, but for
+            the agents' user (``<account>-agent``), which is forced to its
+            account's.
+        :param bool read: whether the routes include ``/r/`` and ``/lr/``.
+        :param bool write: whether they include ``/w/`` and ``/lw/``.
+        :return: a list of vmauth url_map entries, writes first.
         """
         # {ic_account="<user>"} url-encoded: raw braces/quotes would break
         # the url_prefix as a URL. Verified in the lab.
         acct_filter = f'%7Bic_account%3D%22{user}%22%7D'
-        return [
-            {
+        routes = []
+        if write:
+            routes.append({
                 "src_paths": [_ACCOUNT_WRITE_PATH],
                 "url_prefix": f"{_VM_URL}?extra_label=ic_account={user}",
                 "drop_src_path_prefix_parts": 1,
-            },
-            {
+            })
+        if read:
+            routes.append({
                 "src_paths": [_ACCOUNT_READ_PATHS],
                 "url_prefix": f"{_VM_URL}?extra_filters[]={acct_filter}",
                 "drop_src_path_prefix_parts": 1,
-            },
-            {
+            })
+        if write:
+            routes.append({
                 "src_paths": [_ACCOUNT_LOG_WRITE_PATH],
                 "url_prefix": _LOKI_URL,
                 # SET, not appended: a client cannot spoof it. The header
@@ -317,22 +327,26 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 # level it did not apply in v1.102 (lab).
                 "headers": [f"X-Scope-OrgID: {user}"],
                 "drop_src_path_prefix_parts": 1,
-            },
-            {
+            })
+        if read:
+            routes.append({
                 "src_paths": [_ACCOUNT_LOG_READ_PATHS],
                 "url_prefix": _LOKI_URL,
                 "headers": [f"X-Scope-OrgID: {user}"],
                 "drop_src_path_prefix_parts": 1,
-            },
-        ]
+            })
+        return routes
 
     def _vmauth_config(self, accounts, operator_token, delete_key=""):
         """Render the vmauth ``-auth.config`` YAML for the whole central.
 
-        One vmauth ``user`` per account (writes and reads only its own
-        series and logs) plus one operator (the cross-account read of the
-        same endpoints, and series deletion), the only user with a cap on
-        concurrent requests (see ``_OPERATOR_MAX_CONCURRENT``). There is
+        Per account: its own user (reads its own series and logs, and
+        writes them until its credential is rotated), its agents' user
+        (writes only) and, while a read credential is rotated in, the same
+        user with the new password (reads only). Then one operator (the
+        cross-account read of the same endpoints, and series deletion).
+        Only users that never write have a cap on concurrent requests
+        (``_OPERATOR_MAX_CONCURRENT``, ``READ_MAX_CONCURRENT``). There is
         deliberately NO ``unauthorized_user`` section:
         its absence is what makes a credential-less request 401 rather
         than proxied.
@@ -351,22 +365,30 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         appends the path, so a prefix naming ``delete_series`` answers
         400.
 
-        :param accounts: ``[(user, token), ...]``.
+        :param accounts: the vmauth users, as
+            ``cloud.settings._vmauth_users`` returns them.
         :param operator_token: the cross-account operator credential.
         :param delete_key: VictoriaMetrics' ``-deleteAuthKey``; empty
             leaves the deletion route out, for a central not yet started
             with a key.
         :return: the YAML document as a string.
         """
-        users = [
-            {
-                "username": user,
-                "password": token,
-                "url_map": self._account_url_map(user),
+        users = []
+        for account in accounts:
+            if not (account["username"] and account["password"]):
+                continue
+            user = {
+                "username": account["username"],
+                "password": account["password"],
             }
-            for user, token in accounts
-            if user and token
-        ]
+            if account.get("capped"):
+                user["max_concurrent_requests"] = READ_MAX_CONCURRENT
+            user["url_map"] = self._account_url_map(
+                account["account"],
+                read=account.get("read", True),
+                write=account.get("write", True),
+            )
+            users.append(user)
         operator_map = [
             {
                 "src_paths": [_OPERATOR_READ_PATHS],
@@ -532,10 +554,11 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         accounts, operator_token, delete_key = (
             self._ensure_central_secrets(mint_delete_key=True)
         )
+        names = {account["account"] for account in accounts}
         self._sys(
             f"Deploying the metrics central on {self._host().name} "
             f"(retention {settings.metrics_retention_days or 90} days, "
-            f"{len(accounts)} account(s))."
+            f"{len(names)} account(s))."
         )
         if not accounts:
             # Unreachable for core, which just minted its own. A layer

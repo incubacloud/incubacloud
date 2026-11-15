@@ -123,6 +123,7 @@ nav:
     - Connect your own VPS: hosts/connect.md
     - Panel on an internal network: hosts/internal-network.md
     - Order a VPS: hosts/hire.md
+    - Security logs: hosts/security.md
   - Backups:
     - backups/index.md
     - Restore a backup: backups/restore.md
@@ -148,6 +149,7 @@ nav:
   - Reference:
     - reference/index.md
     - Notifications: reference/notifications.md
+    - Security alerts: reference/security-alerts.md
     - Monitoring: reference/monitoring.md
     - Monitoring panels: reference/monitoring-panels.md
     - Service limits: reference/limits.md

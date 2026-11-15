@@ -36,7 +36,7 @@ from odoo.addons.incubacloud.tests.test_observability_executors import (
 
 #: The label names the security counters and Loki's streams may carry
 #: (risk 7 of the plan): never an address, a user or a path.
-CLOSED_LABELS = {"kind", "method", "jail", "action", "key", "who", "source"}
+CLOSED_LABELS = {"kind", "method", "jail", "action", "key", "who", "source", "instance_id"}
 
 #: And the values each one may take.
 CLOSED_VALUES = {
@@ -46,8 +46,35 @@ CLOSED_VALUES = {
     "action": {"found", "ban", "unban", "already_banned"},
     "key": {"passwd_changes", "shadow_changes", "sudoers_changes", "ssh_config_changes"},
     "who": {"system", "root", "panel", "user"},
-    "source": {"sshd", "sudo", "fail2ban", "auditd"},
+    "source": {"sshd", "sudo", "fail2ban", "auditd", "weblogin"},
 }
+
+
+#: The web-login jail's filter, the collector's grep before its Lua and
+#: the Lua's test of the same failure, as they must change: together, with
+#: the bats run (review of 14-nov-2026, M3).
+_WEBLOGIN_FAILREGEX = (
+    '^(?=.*"RequestMethod":"POST")'
+    '(?=.*"RequestPath":"/web/login(?:/totp)?(?:\\?[^"]*)?")'
+    '(?=.*"DownstreamStatus":200,).*"ClientHost":"<HOST>"'
+)
+_WEBLOGIN_GREP = ['log "RequestMethod":"POST"', 'log "RequestPath":"/web/login']
+_WEBLOGIN_LUA = """\
+local function weblogin_failed(line)
+    if not line:find('"RequestMethod":"POST"', 1, true) then
+        return false
+    end
+    if not line:find('"DownstreamStatus":200,', 1, true) then
+        return false
+    end
+    local path = field(line, "RequestPath")
+    if not path then
+        return false
+    end
+    local query = path:find("?", 1, true)
+    local base = query and path:sub(1, query - 1) or path
+    return base == "/web/login" or base == "/web/login/totp"
+end"""
 
 
 def _key_file():
@@ -83,7 +110,10 @@ class TestTheRenderedCollector(TransactionCase):
                 labels.add(name)
         loki = config["pipeline"]["outputs"][0]
         self.assertEqual(loki["labels"], "log_type=security")
-        self.assertEqual(loki["label_keys"], "$host,$source")
+        # test_fluent_bit_labels_host_id: the id beside the name, which is
+        # not unique (plan #84, C1.3).
+        self.assertEqual(loki["label_keys"], "$host_id,$host,$source")
+        self.assertEqual(loki["remove_keys"], "host_id,host,source")
         self.assertLessEqual(labels, CLOSED_LABELS)
         # Every value the classification gives a label is a literal of
         # its closed set.
@@ -161,6 +191,82 @@ class TestTheRenderedCollector(TransactionCase):
         for tail in inputs[1:]:
             self.assertIs(tail["read_from_head"], False)
             self.assertTrue(tail["db"].startswith("/var/lib/fluent-bit/"))
+
+    def test_the_access_log_is_read_for_failed_web_logins_alone(self):
+        """C1.9: the proxy's log, from the end, a grep before the Lua."""
+        config = self._config()
+        access = next(
+            i for i in config["pipeline"]["inputs"] if i["tag"] == "proxy.access"
+        )
+        self.assertEqual(access["path"], "/var/log/traefik/access.log")
+        self.assertIs(access["read_from_head"], False)
+        self.assertIs(access["skip_long_lines"], True)
+        filters = config["pipeline"]["filters"]
+        grep, lua = filters[0], filters[1]
+        self.assertEqual((grep["name"], grep["match"]), ("grep", "proxy.access"))
+        self.assertEqual(grep["logical_op"], "and")
+        self.assertIn('log "RequestMethod":"POST"', grep["regex"])
+        self.assertEqual(lua["name"], "lua")
+        self.assertTrue(re.fullmatch(lua["match_regex"], "proxy.access"))
+        counter = next(f for f in filters if f.get("emitter_name") == "m_weblogin")
+        self.assertEqual(counter["add_label"], ["instance_id $c_web_instance"])
+        loki = config["pipeline"]["outputs"][0]
+        self.assertTrue(re.fullmatch(loki["match_regex"], "proxy.access"))
+
+    def test_the_failed_web_login_line_is_the_lua_s_own(self):
+        """Address, instance id and the proxy's time: nothing of the request."""
+        lua = playbook.fluent_bit_files()["classify.lua"]
+        self.assertIn(
+            'return "weblogin failed ip=" .. ip .. " instance=" .. id .. " t=" .. t',
+            lua,
+        )
+        self.assertNotIn("RequestHost", lua)
+        self.assertNotIn("ClientUsername", lua)
+        # The instance is an id the panel wrote, or "0".
+        self.assertIn('local best, best_len = "0", 0', lua)
+
+    def test_the_lua_and_the_jail_change_together(self):
+        """The collector counts what the web-login jail bans, and nothing else.
+
+        Only the bats runs the Lua (``fluent_bit_lines.bats``, which
+        GitHub's CI skips without Docker): the jail's filter, the native
+        grep before the Lua and the Lua's own test are pinned here
+        together, so that one cannot move without this failing (review of
+        14-nov-2026, M3).
+        """
+        hint = (
+            "the web-login jail's filter, the collector's grep or its Lua "
+            "changed: change the other two to match, run "
+            "IC_FLUENT_BIT_TEST=1 bats incubacloud/tests/shell/fluent_bit_lines.bats "
+            "and update this test"
+        )
+        path = os.path.join(
+            get_module_path("incubacloud"), "ansible", "playbooks", "host_hardening.yml",
+        )
+        with open(path, encoding="utf-8") as fh:
+            tasks = yaml.safe_load(fh)[0]["tasks"]
+        jail = next(
+            t for t in tasks if t.get("name") == "Write the fail2ban web-login filter"
+        )["ansible.builtin.copy"]["content"]
+        failregex = re.search(r"^failregex = (.+)$", jail, re.MULTILINE)[1]
+        self.assertEqual(failregex, _WEBLOGIN_FAILREGEX, hint)
+        grep = self._config()["pipeline"]["filters"][0]
+        self.assertEqual(grep["regex"], _WEBLOGIN_GREP, hint)
+        lua = playbook.fluent_bit_files()["classify.lua"]
+        body = re.search(
+            r"^local function weblogin_failed\(line\)\n.*?^end$", lua,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertTrue(body, hint)
+        self.assertEqual(body[0], _WEBLOGIN_LUA, hint)
+        # And what the Lua asks for is what the filter asks for.
+        for literal in ('"RequestMethod":"POST"', '"DownstreamStatus":200,'):
+            self.assertIn(literal, body[0], hint)
+            self.assertIn(literal, failregex, hint)
+        self.assertIn('"RequestPath":"/web/login(?:/totp)?(?:\\?[^"]*)?"', failregex, hint)
+        self.assertIn(
+            'return base == "/web/login" or base == "/web/login/totp"', body[0], hint,
+        )
 
     def test_the_log_store_url_is_split(self):
         loki = self._config(
@@ -303,9 +409,9 @@ class TestTheExecutorAndTheSwitch(CorePermissionMixin, ObservabilityExecutorCase
         )
         self.assertIn("cadvisor, vmagent did not", errors[0])
 
-    def test_the_revision_is_three(self):
-        """Three since vmagent keeps its queue in its volume (13-nov-2026)."""
-        self.assertEqual(AGENTS_REVISION, 3)
+    def test_the_revision_is_four(self):
+        """Four since the agents write with their own user (plan #84, C1)."""
+        self.assertEqual(AGENTS_REVISION, 4)
 
     def _succeed(self, sent, **facts):
         executor = self._make(ObservabilityAgentsExecutor)

@@ -381,3 +381,97 @@ def diagnose_host(board, host, now):
         "tone": tone,
         "findings": [{"code": c, "tone": t, "text": x} for c, t, x in found],
     }
+
+
+#: Failed SSH connections in 10 minutes above which the Security view
+#: says a brute force is under way: the threshold the shipped
+#: ``security_ssh_bruteforce`` rule starts with, read from the rule when
+#: it is there so the view and the alert agree (plan #84, C6).
+SSH_BRUTEFORCE_10M = 100
+
+
+def _security_alerts(host):
+    """Return the active security alerts of a server and its instances.
+
+    :param host: the ``cloud.host``.
+    :returns: the ``cloud.alert`` records, read as the system: the view
+        names how many there are and how grave, never their text.
+    """
+    return host.env["cloud.alert"].sudo().search([
+        ("state", "=", "active"), ("code", "=like", "security_%"),
+        "|", ("host_id", "=", host.id), ("instance_id.host_id", "=", host.id),
+    ])
+
+
+def _ssh_threshold(host):
+    """Return the SSH brute-force threshold of the rule, or the shipped one.
+
+    :param host: the ``cloud.host`` (its env reads the rule).
+    :rtype: float
+    """
+    rule = host.env["cloud.metric.rule"].sudo().search(
+        [("code", "=", "security_ssh_bruteforce"), ("active", "=", True)], limit=1,
+    )
+    return rule.threshold if rule else SSH_BRUTEFORCE_10M
+
+
+def diagnose_host_security(board, host, now):
+    """Return a server's Security view diagnosis: an overall tone and its sentences.
+
+    Open security alerts first (how many and how grave: their text is
+    the Alerts page's), then what the counters say of the last minutes:
+    a brute force under way, a collector down, a server whose security
+    lines stopped. No address and no user: everyone who sees the view
+    reads it.
+
+    :param dict board: the Security view's answer, ``panels`` in it.
+    :param host: the ``cloud.host`` (its env translates).
+    :param float now: current time, unix seconds.
+    :returns: ``{"current": bool, "tone", "findings": [{code, tone,
+        text}]}``, as :func:`diagnose_host`.
+    :rtype: dict
+    """
+    window = max(_NOW_SLACK_SECONDS, 2 * board["step"])
+    if now - board["end"] > window:
+        return {"current": False, "tone": "ok", "findings": []}
+    env = host.env
+    found = []
+    alerts = _security_alerts(host)
+    if alerts:
+        critical = any(alert.level == "critical" for alert in alerts)
+        found.append(("alerts", "bad" if critical else "warn", env._(
+            "%(count)s security alerts are open on this server or its "
+            "instances. They are listed in Alerts.",
+            count=len(alerts),
+        )))
+    now_values = board["panels"].get("now", {}).get("value") or {}
+    failed = now_values.get("ssh_failed_10m") or 0
+    if failed > _ssh_threshold(host):
+        found.append(("ssh_bruteforce", "warn", env._(
+            "SSH brute force under way: %(failed)s failed connections in "
+            "the last 10 minutes; fail2ban banned %(bans)s addresses in "
+            "the last hour.",
+            failed=formatLang(env, failed, digits=0),
+            bans=formatLang(env, now_values.get("bans_1h") or 0, digits=0),
+        )))
+    if now_values.get("collector_up") == 0:
+        found.append(("collector_down", "bad", env._(
+            "The collector of the security logs on this server is not "
+            "running: nothing new arrives from it.",
+        )))
+    elif now_values.get("lines_15m") == 0:
+        found.append(("quiet", "info", env._(
+            "No SSH, sudo, fail2ban or auditd line arrived from this server "
+            "in the last 15 minutes. A quiet server sends few; the "
+            "Security logs not arriving alert says when they stop.",
+        )))
+    if not found:
+        found.append(("calm", "ok", env._(
+            "Calm: no attack under way and no security alert open.",
+        )))
+    tone = max((f[1] for f in found), key=_TONES.index)
+    return {
+        "current": True,
+        "tone": tone,
+        "findings": [{"code": c, "tone": t, "text": x} for c, t, x in found],
+    }

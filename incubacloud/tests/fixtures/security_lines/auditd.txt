@@ -1,0 +1,12 @@
+# The lines Loki holds for source="auditd": /var/log/audit/audit.log as
+# written, log_format = ENRICHED: after the raw fields a 0x1D separator and
+# the same fields translated. Debian 13, F0 of the observability plan
+# (9-nov-2026). The report printed them with the middle fields elided
+# ("…"); they are filled here with what auditd writes there for that call.
+# In this order: useradd by root over SSH (auid 0), touch with sudo by the
+# panel's user over SSH (auid 1000), touch by the system (systemd-run, auid
+# unset), and the PATH record of a removal in sshd_config.d.
+type=SYSCALL msg=audit(1794247181.251:525): arch=c000003e syscall=257 success=yes exit=5 a0=ffffff9c a1=7ffd1c2a3e10 a2=20902 a3=0 items=1 ppid=8590 pid=8598 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=3 comm="useradd" exe="/usr/sbin/useradd" subj=unconfined key="passwd_changes"ARCH=x86_64 SYSCALL=openat AUID="root" UID="root" GID="root" EUID="root" SUID="root" FSUID="root" EGID="root" SGID="root" FSGID="root"
+type=SYSCALL msg=audit(1794247183.383:590): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffe5b8c4f2a a2=941 a3=1b6 items=2 ppid=8667 pid=8669 auid=1000 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=5 comm="touch" exe="/usr/bin/touch" subj=unconfined key="ssh_config_changes"ARCH=x86_64 SYSCALL=openat AUID="incubacloud" UID="root" GID="root" EUID="root" SUID="root" FSUID="root" EGID="root" SGID="root" FSGID="root"
+type=SYSCALL msg=audit(1794247183.447:596): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffc8a1b5f2e a2=941 a3=1b6 items=2 ppid=1 pid=8672 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm="touch" exe="/usr/bin/touch" subj=unconfined key="ssh_config_changes"ARCH=x86_64 SYSCALL=openat AUID="unset" UID="root" GID="root" EUID="root" SUID="root" FSUID="root" EGID="root" SGID="root" FSGID="root"
+type=PATH msg=audit(1794247183.459:599): item=1 name="/etc/ssh/sshd_config.d/zz-prueba.conf" inode=135742895 dev=08:03 mode=0100644 ouid=0 ogid=0 rdev=00:00 nametype=DELETE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID="root" OGID="root"

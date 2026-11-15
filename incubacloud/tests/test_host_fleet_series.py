@@ -260,12 +260,24 @@ class TestFleetSeries(HttpCase):
             headers={"Content-Type": "application/json"},
         ).json()["result"]
 
+    def _asked(self):
+        """Return how many panels the board asks the central.
+
+        The Security panels only where this panel's servers may send
+        their security logs.
+        """
+        security = self.env["cloud.host"]._security_logs_available()
+        return len([
+            p for p in PANELS["fleet"]
+            if p["needs"] == "fleet" or (security and p["needs"] == "fleet_security")
+        ])
+
     def test_the_central_s_owner_reads_every_account(self):
         with patch(f"{_MODULE}.requests.get", side_effect=_fleet_central()) as get:
             res = self._call(range_key="6h")
         self.assertTrue(res["ok"], res)
         self.assertEqual(res["scope"], "operator")
-        self.assertEqual(get.call_count, len(PANELS["fleet"]))
+        self.assertEqual(get.call_count, self._asked())
         for call in get.call_args_list:
             self.assertTrue(call.args[0].startswith("https://central.test/admin-r/api/v1/"))
             self.assertEqual(call.kwargs["auth"], ("operator", "op3r"))
@@ -284,7 +296,7 @@ class TestFleetSeries(HttpCase):
         self.assertTrue(res["ok"], res)
         self.assertEqual(res["scope"], "account")
         account_calls = [c for c in get.call_args_list if "/r/api/v1/" in c.args[0]]
-        self.assertEqual(len(account_calls), len(PANELS["fleet"]))
+        self.assertEqual(len(account_calls), self._asked())
         for call in account_calls:
             self.assertEqual(call.kwargs["auth"], ("acct_test", "s3cr3t"))
         # Read with the account, every host is this panel's: no account
@@ -316,7 +328,7 @@ class TestFleetSeries(HttpCase):
         with patch(f"{_MODULE}.requests.get", side_effect=_fleet_central()) as get:
             res = self._call()
         self.assertEqual(res["scope"], "account")
-        self.assertEqual(get.call_count, len(PANELS["fleet"]))
+        self.assertEqual(get.call_count, self._asked())
         self.assertTrue(all("/admin-r/" not in c.args[0] for c in get.call_args_list))
 
     def test_a_central_that_is_not_ours_has_no_operator_route(self):
@@ -389,7 +401,8 @@ class TestHostAndFleetPanels(BaseCase):
 
     def test_the_fleet_keeps_the_account_beside_the_host(self):
         """Read by the operator, ``host_id`` repeats across accounts."""
-        values = {"one_off": "x", "window": 120}
+        values = {"one_off": "x", "window": 120, "ssh_threshold": 100.0,
+                  "weblogin_threshold": 50.0}
         for panel in PANELS["fleet"]:
             expression = panel_expression(panel, values, 30)
             self.assertNotIn("host_id=", expression, panel["key"])

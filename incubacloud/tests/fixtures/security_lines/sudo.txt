@@ -1,0 +1,10 @@
+# The lines Loki holds for source="sudo": the journal's MESSAGE alone.
+# Debian 13, F0 of the observability plan (9-nov-2026). Without a terminal
+# there is no TTY=. One line per shape, in this order:
+#   a command of the panel's user
+#   Ansible's become, in the panel's user's name
+#   a refused password: PAM's line, then sudo's, which carries COMMAND= too
+incubacloud : PWD=/home/incubacloud ; USER=root ; COMMAND=/usr/bin/true
+incubacloud : PWD=/home/incubacloud ; USER=root ; COMMAND=/bin/sh -c 'echo BECOME-SUCCESS-abcdefghijklmnop ; true'
+pam_unix(sudo:auth): authentication failure; logname=root uid=1001 euid=0 tty= ruser=probador rhost=  user=probador
+probador : 1 incorrect password attempt ; PWD=/home/probador ; USER=root ; COMMAND=/usr/bin/true

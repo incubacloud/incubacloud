@@ -43,6 +43,7 @@ deployment, kept with that deployment.
 | [RB-39](RB-39-proxy-network-guard.md) | The guard on the proxy network | planned · warning | A host's first Full Setup with 1.0.228, a `shared_guard_open` alert, an instance that cannot reach another one, turning the guard off |
 | [RB-41](RB-41-panel-address-change.md) | The panel's outgoing address changed | critical | A `panel_address_changed` alert, Odoo.sh moving the project's production, a hardened host's jobs failing to connect after the panel moved |
 | [RB-42](RB-42-rebuild-left-unapplied.md) | A rebuild left its work unapplied on the server | warning | Start bringing back the previous build, a Start that started nothing, a restore refused, a move postponed `unapplied` |
+| [RB-43](RB-43-security-alert-on-a-host.md) | A security alert on a server | critical · warning | A `security_*` alert: a sign-in, `sudo` or change the panel did not make, SSH or web-login brute force, bans not holding, security logs not arriving or read late |
 
 ## Conventions
 
