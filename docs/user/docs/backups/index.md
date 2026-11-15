@@ -155,9 +155,11 @@ write in, and set **Folder** to that folder.
 - **Regenerate key** replaces the key pair. Add the new public key to the
   server and keep the old line until every instance on the destination has
   been rebuilt: until then they log in with the old key.
-- **The server's key changed**: backups fail and the panel raises a critical
-  alert, *SFTP server key changed*. Nothing is trusted on its own: check the
-  new key with your provider and trust it again.
+- **The server's key changed**: backups fail, and the daily usage measure
+  and backup listing raise a critical alert that names the key the server
+  presents and the one trusted. **Test** on the destination says the same.
+  Nothing is trusted on its own: check the new key with your provider and
+  trust it again.
 
 Retention works as for S3, except that there is no bucket lifecycle: the
 **Duplicity cron** deletes old backups, or **Nobody** does. The backups are

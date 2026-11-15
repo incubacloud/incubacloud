@@ -338,8 +338,11 @@ invalid. The rest is the panel's assets and the Spanish catalogue.
 - **SFTP backup destinations (#93).** A destination's type is S3
   compatible or SFTP, chosen when it is created. An SFTP one names a
   server, port, user and folder; the panel generates its Ed25519 key pair
-  (the private half readable by the platform only, never sent by a route,
-  the MCP or the assistant) and shows the `authorized_keys` line. Read the
+  (the private half kept encrypted and read by the panel's own code only,
+  never by a user over the ORM, a route, the MCP or the assistant; on a
+  host it sits in the instance's backup service, as the S3 secret and the
+  passphrase do, where a terminal on that service reads it) and shows the
+  `authorized_keys` line. The server is kept in lower case. Read the
   server key shows the fingerprint the server presents with the key
   exchange alone, and Trust this key stores it only if the server still
   presents it; another server or port drops it. Deploy and rebuild ship
@@ -351,8 +354,9 @@ invalid. The rest is the panel's assets and the Spanish catalogue.
   check, the listing's sizes and both purges work over SFTP; the purge
   checks the server's clock before it trusts file times. A server
   presenting another key raises the critical alert
-  `backup_sftp_host_key_changed`. A tenant's panel reaches public servers
-  outside the platform only. Continuous recovery stays on S3.
+  `backup_sftp_host_key_changed`, from the daily usage measure and the
+  daily backup listing. A module installed on top can limit the panel's
+  connections to public addresses. Continuous recovery stays on S3.
 
 ### Changed
 
