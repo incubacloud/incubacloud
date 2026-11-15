@@ -86,6 +86,8 @@ HOOK_HELPERS = {
     "_record_panel_identity": "records the panel's address and uid a "
                               "successful install read on the host",
     "_sync_backup_records": "mirrors the listed backups after success",
+    "_check_backup_freshness": "raises or closes backup_stale after a "
+                               "successful listing",
     "_alert_on_purge_failure": "alerts on a failed teardown",
     "_stamp_core_commit": "stamps the core release a run shipped",
     "_stamp_tenant_module_commit": "stamps the tenant module a run shipped",
