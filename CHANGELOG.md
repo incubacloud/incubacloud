@@ -192,7 +192,13 @@ no data migration.
   summary, a billed failure or an answer of another model that comes once
   the conversation was stopped or deleted is counted in the month's usage
   (and in the conversation, when it is still there); it went uncounted
-  before.
+  before. A cost met by a concurrent change is written again, not lost.
+- **Stop withdraws what was confirmed and not yet run.** A card the person
+  confirmed whose call had not run when Stop was pressed loses its approval:
+  if the assistant repeats the call after Retry, it asks again. A call that
+  was running when its step died is answered *Outcome unknown* instead of
+  *Not run*. The panel keeps the state the bus delivered while Stop was on
+  its way, instead of replacing it with the older answer.
 
 ## [1.0.231] — unreleased
 
