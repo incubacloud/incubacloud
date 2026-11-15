@@ -204,7 +204,7 @@ class TestSftpHostKeyRoutes(TransactionCase):
         self.assertFalse(data["ok"])
 
     def test_twenty_connections_an_hour(self):
-        env = self.env(context=dict(self.env.context, force_rate_limit=True))
+        env = self.env(context=self.env.context | {"force_rate_limit": True})
         for _i in range(20):
             self.assertTrue(self._call(
                 env, "cloud_sftp_backend_read_host_key", self.backend.id,
