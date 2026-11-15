@@ -617,9 +617,9 @@ class TestTheComposeAnswersKeepTheirShape(_BackupDstCase):
         :return: the service, read back as YAML
         :rtype: dict
         """
-        text = jinja2.Environment(autoescape=False).from_string(  # noqa: S701
-            self._TEMPLATE,
-        ).render(**answers)
+        text = jinja2.Environment(  # noqa: S701  # nosec B701 — YAML, never HTML
+            autoescape=False,
+        ).from_string(self._TEMPLATE).render(**answers)
         return yaml.safe_load(text)["services"]["backup"]
 
     def test_a_destination_refuses_an_answer_that_adds_yaml(self):
