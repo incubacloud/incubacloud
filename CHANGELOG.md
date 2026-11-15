@@ -649,7 +649,15 @@ then. The rest is the panel's assets and the Spanish catalogue.
   ends the job done with the reason, and the next pass tries again. On
   the panel's own server the hold is of every queue. A server that does
   not come back within 15 minutes, or comes back with the same boot,
-  fails the job with `host_reboot_failed` (critical). The health probes
+  fails the job with `host_reboot_failed` (critical). Before the order it
+  counts what runs inside each instance where a layer can
+  (`cloud.instance._move_quiet_sql`), keeps the names of the containers
+  running and runs a `CHECKPOINT` in each database; once back, it waits
+  up to 5 minutes for those containers, raises `host_reboot_incomplete`
+  (warning) naming the ones missing, says in its log which database
+  started after a stop that was not clean, and queues the health probe of
+  each instance. A restart pending for 7 days raises `host_reboot_pending`
+  (warning), on a host the panel restarts or not. The health probes
   of the host's instances skip their pass while it runs. New table
   `cloud_host_reboot` and seven columns on hosts; no data migration.
   `docs/architecture.md` («Host maintenance window») and RB-43.

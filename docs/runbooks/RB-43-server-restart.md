@@ -1,7 +1,7 @@
 # RB-43 — The server's restart for its updates
 
-**Severity:** critical · warning · **When:** a `host_reboot_failed` alert, a
-`host_reboot_pending` alert, a job that says «Waiting for the restart of the
+**Severity:** critical · warning · **When:** a `host_reboot_failed`,
+`host_reboot_incomplete` or `host_reboot_pending` alert, a job that says «Waiting for the restart of the
 server (job #N)», a Restart Server job that ended «Not restarted».
 
 ## How it works
@@ -43,6 +43,19 @@ the server is down).
    inside the window tries again.
 
 The alert closes with the next restart that comes back.
+
+## `host_reboot_incomplete` (warning)
+
+The server came back, but Docker is not running, or some containers that
+ran before the restart are not running again after 5 minutes; the alert
+names them. The panel starts nothing by hand.
+
+1. On the server: `systemctl status docker`, then `docker ps -a` for the
+   containers named.
+2. Start each instance named from its page (Start), or Full Setup for the
+   proxy. An instance that stays down also raises its own `instance_down`.
+
+The alert closes with the next restart that comes back complete.
 
 ## `host_reboot_pending` (warning)
 

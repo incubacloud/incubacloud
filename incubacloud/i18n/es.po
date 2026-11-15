@@ -25994,3 +25994,33 @@ msgstr ""
 "actualizaciones. %(why)s Revise el servidor desde la consola de su "
 "proveedor; cuando responda, los trabajos del panel volverán a ejecutarse en "
 "él."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/host_reboot_executor.py:0
+msgid "what came back could not be checked"
+msgstr "no se pudo comprobar lo que volvió"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/host_reboot_executor.py:0
+msgid "Docker is not running"
+msgstr "Docker no está en marcha"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/host_reboot_executor.py:0
+msgid "these containers did not come back: %(names)s"
+msgstr "estos contenedores no volvieron: %(names)s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/host_reboot_executor.py:0
+msgid ""
+"The server %(host)s came back from its restart, but %(what)s. The panel "
+"started nothing by hand: look at the server, then start what is missing from"
+" its instances' pages."
+msgstr ""
+"El servidor %(host)s volvió de su reinicio, pero %(what)s. El panel no "
+"arrancó nada a mano: revise el servidor y después arranque lo que falte "
+"desde las páginas de sus instancias."

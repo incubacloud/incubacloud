@@ -157,3 +157,90 @@ EOF
     run bash "$SCRIPT" nope
     [ "$status" -ne 0 ]
 }
+
+# A docker stub: ``ps`` lists ${TMP}/containers (the db ones from
+# ${TMP}/dbs), ``inspect`` says a container runs when it is in
+# ${TMP}/up, ``logs`` prints ${TMP}/log-<name>, ``exec`` logs its call.
+_stub_docker() {
+    cat > "${STUB_DIR}/docker" <<'EOS'
+#!/usr/bin/env bash
+echo "docker $*" >> "${TMP}/calls"
+case "$1" in
+    ps)
+        if [[ "$*" == *"service=db"* ]]; then cat "${TMP}/dbs" 2>/dev/null
+        else cat "${TMP}/containers" 2>/dev/null; fi ;;
+    inspect)
+        if grep -qxF -- "${!#}" "${TMP}/up" 2>/dev/null; then echo true; else echo false; fi ;;
+    logs) cat "${TMP}/log-${!#}" 2>/dev/null ;;
+    exec) [ -z "${EXEC_FAILS:-}" ] || exit 2 ;;
+esac
+exit 0
+EOS
+    cat > "${STUB_DIR}/systemctl" <<'EOS'
+#!/usr/bin/env bash
+[ -z "${DOCKER_DOWN:-}" ]
+EOS
+    chmod +x "${STUB_DIR}/docker" "${STUB_DIR}/systemctl"
+}
+
+@test "prepare: names the running containers and checkpoints each database" {
+    _stub_docker
+    printf 'proxy\nprod-odoo-1\nprod-db-1\n' > "${TMP}/containers"
+    echo "prod-db-1" > "${TMP}/dbs"
+    run bash "$SCRIPT" prepare
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_CONTAINER=proxy"* ]]
+    [[ "$output" == *"IC_CONTAINER=prod-db-1"* ]]
+    grep -q "docker exec prod-db-1 sh -c" "${TMP}/calls"
+    grep -q "CHECKPOINT" "${TMP}/calls"
+}
+
+@test "prepare: a database that does not answer does not stop the restart" {
+    _stub_docker
+    echo "prod-db-1" > "${TMP}/containers"
+    echo "prod-db-1" > "${TMP}/dbs"
+    export EXEC_FAILS=1
+    run bash "$SCRIPT" prepare
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"CHECKPOINT did not answer in prod-db-1"* ]]
+}
+
+@test "verify: everything back, clean" {
+    _stub_docker
+    printf 'proxy\nprod-db-1\n' > "${TMP}/up"
+    echo "prod-db-1" > "${TMP}/dbs"
+    printf 'LOG:  database system was shut down at 2026-11-15 12:40:18 UTC\nLOG:  ready\n' > "${TMP}/log-prod-db-1"
+    run bash "$SCRIPT" verify proxy prod-db-1
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_REBOOT_REQUIRED=0"* ]]
+    [[ "$output" == *"IC_DOCKER=active"* ]]
+    [[ "$output" != *"IC_MISSING"* ]]
+    [[ "$output" != *"IC_UNCLEAN"* ]]
+}
+
+@test "verify: a container that does not come back, a database stopped unclean" {
+    _stub_docker
+    export IC_VERIFY_WAIT_S=0
+    echo "prod-db-1" > "${TMP}/up"
+    echo "prod-db-1" > "${TMP}/dbs"
+    printf 'LOG:  database system was interrupted; last known up at 2026-11-15\nLOG:  redo starts at 0/1\n' > "${TMP}/log-prod-db-1"
+    : > "${IC_RUN_DIR}/reboot-required"
+    export DOCKER_DOWN=1
+    run bash "$SCRIPT" verify proxy prod-db-1
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_MISSING=proxy"* ]]
+    [[ "$output" != *"IC_MISSING=prod-db-1"* ]]
+    [[ "$output" == *"IC_UNCLEAN=prod-db-1"* ]]
+    [[ "$output" == *"IC_REBOOT_REQUIRED=1"* ]]
+    [[ "$output" == *"IC_DOCKER=inactive"* ]]
+}
+
+@test "verify: waits for a container that comes back late" {
+    _stub_docker
+    export IC_VERIFY_WAIT_S=5 IC_VERIFY_POLL_S=1
+    ( sleep 2; echo proxy >> "${TMP}/up" ) &
+    run bash "$SCRIPT" verify proxy
+    wait
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"IC_MISSING"* ]]
+}

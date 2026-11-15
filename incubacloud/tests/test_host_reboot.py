@@ -20,6 +20,7 @@ from ..models.abstract_executor import JobParked
 from ..models.cloud_host import CloudHost
 from ..models.cloud_host_reboot import (
     REBOOT_FAILED_ALERT,
+    REBOOT_INCOMPLETE_ALERT,
     REBOOT_PENDING_ALERT,
     REBOOT_PENDING_ALERT_DAYS,
     parse_marks,
@@ -42,14 +43,19 @@ _NEW_BOOT = "da1fb0f5-0000-4000-8000-000000000001"
 _PANEL_BOOT = "panel-boot"
 
 
+_CLEAN = f"IC_BOOT_ID={_NEW_BOOT}\nIC_REBOOT_REQUIRED=0\nIC_DOCKER=active\n"
+
+
 def _transport(boot=_BOOT, guard=(0, "IC_VETO=\n"), reboot=(0, "IC_SCHEDULED=1\n"),
-               scheduled=False):
+               scheduled=False, verify=_CLEAN, quiet="0\n"):
     """A transport answering the orders of the restart.
 
     :param str boot: what the server says of its boot
     :param tuple guard: ``(exit, stdout)`` of ``host_reboot.sh guard``
     :param tuple reboot: ``(exit, stdout)`` of ``host_reboot.sh reboot``
     :param bool scheduled: the restart is still scheduled on the server
+    :param str verify: what ``host_reboot.sh verify`` prints
+    :param str quiet: what the count inside an instance prints
     """
     transport = MagicMock(spec=SSHTransport)
 
@@ -57,6 +63,8 @@ def _transport(boot=_BOOT, guard=(0, "IC_VETO=\n"), reboot=(0, "IC_SCHEDULED=1\n
         if "boot_id" in command:
             out = boot + "\n" + ("IC_SCHEDULED=1\n" if scheduled else "")
             return CommandResult(out, 0)
+        if "move_steps.sh quiet" in command:
+            return CommandResult(quiet, 0)
         return CommandResult("", 0)
 
     async def _execute(command, on_stdout, on_stderr, timeout=None):
@@ -64,6 +72,10 @@ def _transport(boot=_BOOT, guard=(0, "IC_VETO=\n"), reboot=(0, "IC_SCHEDULED=1\n
             return CommandResult(guard[1], guard[0])
         if "host_reboot.sh reboot" in command:
             return CommandResult(reboot[1], reboot[0])
+        if "host_reboot.sh prepare" in command:
+            return CommandResult("IC_CONTAINER=proxy\nIC_CONTAINER=queue-inst-db-1\n", 0)
+        if "host_reboot.sh verify" in command:
+            return CommandResult(verify, 0)
         return CommandResult("", 0)
 
     transport.run.side_effect = _run
@@ -381,9 +393,8 @@ class TestRebootHold(_RebootCase):
         self.assertIn("host_reboot_check", self.Job._get_hidden_job_types())
 
 
-@tagged("post_install", "-at_install")
-class TestRebootJob(_RebootCase):
-    """The restart's attempts, against a transport that answers."""
+class _RebootJobCase(_RebootCase):
+    """Runs the restart's attempts against a transport that answers."""
 
     def _run_before(self, job, transport):
         """Run the first attempt's orders; return what it raised."""
@@ -397,6 +408,46 @@ class TestRebootJob(_RebootCase):
     def _row(self, job):
         return self.Reboot.search([("job_id", "=", job.id)])
 
+    @contextlib.contextmanager
+    def _connect(self, transport=None, error=None):
+        """``get_transport`` yields *transport*, or raises *error*."""
+
+        @contextlib.asynccontextmanager
+        async def _open(_host):
+            if error is not None:
+                raise error
+            yield transport
+
+        with patch.object(CloudHost, "get_transport", autospec=True, side_effect=_open):
+            yield
+
+    def _wait(self, job, seconds, transport=None, error=None):
+        """Run a waiting attempt *seconds* after the order; return what it raised."""
+        row = self._hold(job, shutdown_at=self.inside)
+        executor = self._executor(HostRebootExecutor, job)
+        values = executor._row_values()
+        self.assertEqual(values["id"], row.id)
+        now = self.inside + timedelta(seconds=seconds)
+        with self._connect(transport, error), patch.object(
+            fields.Datetime, "now", return_value=now,
+        ):
+            try:
+                asyncio.run(executor._wait_for_return(values))
+            except Exception as exc:  # noqa: BLE001 — the test reads it
+                return executor, exc
+        return executor, None
+
+    def _failed_alert(self):
+        return self.env["cloud.alert"].search([
+            ("code", "=", REBOOT_FAILED_ALERT), ("host_id", "=", self.host.id),
+            ("state", "=", "active"),
+        ])
+
+
+@tagged("post_install", "-at_install")
+class TestRebootJob(_RebootJobCase):
+    """The restart's attempts, against a transport that answers."""
+
     def test_a_free_host_is_held_restarted_and_the_job_parks(self):
         job = self._reboot_job()
         transport = _transport()
@@ -405,6 +456,7 @@ class TestRebootJob(_RebootCase):
         row = self._row(job)
         self.assertTrue(row.shutdown_at)
         self.assertEqual(row.boot_id, _BOOT)
+        self.assertEqual(row._containers(), ["proxy", "queue-inst-db-1"])
         self.assertFalse(row.holds_panel)
         orders = [c.args[0] for c in transport.execute.call_args_list]
         self.assertTrue(any("host_reboot.sh guard" in o for o in orders))
@@ -447,41 +499,6 @@ class TestRebootJob(_RebootCase):
         executor, raised = self._run_before(job, _transport(reboot=(1, "")))
         self.assertIsInstance(raised, RuntimeError)
         self.assertFalse(self._row(job).shutdown_at)
-
-    @contextlib.contextmanager
-    def _connect(self, transport=None, error=None):
-        """``get_transport`` yields *transport*, or raises *error*."""
-
-        @contextlib.asynccontextmanager
-        async def _open(_host):
-            if error is not None:
-                raise error
-            yield transport
-
-        with patch.object(CloudHost, "get_transport", autospec=True, side_effect=_open):
-            yield
-
-    def _wait(self, job, seconds, transport=None, error=None):
-        """Run a waiting attempt *seconds* after the order; return what it raised."""
-        row = self._hold(job, shutdown_at=self.inside)
-        executor = self._executor(HostRebootExecutor, job)
-        values = executor._row_values()
-        self.assertEqual(values["id"], row.id)
-        now = self.inside + timedelta(seconds=seconds)
-        with self._connect(transport, error), patch.object(
-            fields.Datetime, "now", return_value=now,
-        ):
-            try:
-                asyncio.run(executor._wait_for_return(values))
-            except Exception as exc:  # noqa: BLE001 — the test reads it
-                return executor, exc
-        return executor, None
-
-    def _failed_alert(self):
-        return self.env["cloud.alert"].search([
-            ("code", "=", REBOOT_FAILED_ALERT), ("host_id", "=", self.host.id),
-            ("state", "=", "active"),
-        ])
 
     def test_back_with_a_new_boot_ends_the_job(self):
         job = self._reboot_job()
@@ -530,3 +547,72 @@ class TestRebootJob(_RebootCase):
         self.assertEqual(type(raised).__name__, "JobCancelled")
         orders = [c.args[0] for c in transport.execute.call_args_list]
         self.assertFalse(any("host_reboot.sh reboot" in o for o in orders))
+        self.assertFalse(self._row(job).shutdown_at)
+
+
+@tagged("post_install", "-at_install")
+class TestRebootComesBack(_RebootJobCase):
+    """What the restart checks once the server is back (cut 2)."""
+
+    def _incomplete_alert(self):
+        return self.env["cloud.alert"].search([
+            ("code", "=", REBOOT_INCOMPLETE_ALERT), ("host_id", "=", self.host.id),
+            ("state", "=", "active"),
+        ])
+
+    def test_work_inside_an_instance_holds_the_restart(self):
+        job = self._reboot_job()
+        CloudInstance = type(self.env["cloud.instance"])
+        with patch.object(
+            CloudInstance, "_move_quiet_sql", autospec=True, return_value="SELECT 2",
+        ):
+            transport = _transport(quiet="2\n")
+            executor, raised = self._run_before(job, transport)
+        self.assertIsNone(raised)
+        self.assertEqual(executor._verdict[0], "skipped")
+        self.assertIn("queue-inst", executor._verdict[1])
+        orders = [c.args[0] for c in transport.execute.call_args_list]
+        self.assertFalse(any("host_reboot.sh reboot" in o for o in orders))
+
+    def test_a_count_inside_that_cannot_be_read_holds_it_too(self):
+        job = self._reboot_job()
+        CloudInstance = type(self.env["cloud.instance"])
+        with patch.object(
+            CloudInstance, "_move_quiet_sql", autospec=True, return_value="SELECT 1",
+        ):
+            executor, _raised = self._run_before(job, _transport(quiet="ERROR\n"))
+        self.assertEqual(executor._verdict[0], "skipped")
+
+    def test_everything_back_clears_the_pending_restart_and_probes_the_instances(self):
+        self.inst.deployed = True
+        self.host.write({
+            "reboot_required_since": self.inside - timedelta(days=1),
+            "reboot_required_pkgs": "linux-image",
+        })
+        job = self._reboot_job()
+        _executor, raised = self._wait(job, 95, _transport(boot=_NEW_BOOT))
+        self.assertIsNone(raised)
+        self.assertFalse(self.host.reboot_required_since)
+        self.assertFalse(self._incomplete_alert())
+        self.assertTrue(self.Job.search([
+            ("instance_id", "=", self.inst.id),
+            ("job_type_id.code", "=", "instance_health"),
+        ]))
+
+    def test_a_container_that_did_not_come_back_is_named(self):
+        job = self._reboot_job()
+        verify = _CLEAN + "IC_MISSING=proxy\nIC_UNCLEAN=queue-inst-db-1\n"
+        _executor, raised = self._wait(job, 95, _transport(boot=_NEW_BOOT, verify=verify))
+        self.assertIsNone(raised)
+        alert = self._incomplete_alert()
+        self.assertTrue(alert)
+        self.assertEqual(alert.level, "warning")
+        self.assertIn("proxy", alert.message)
+        self.assertFalse(self._failed_alert())
+
+    def test_an_update_still_pending_after_the_restart_stays_recorded(self):
+        self.host.reboot_required_since = self.inside - timedelta(days=1)
+        job = self._reboot_job()
+        verify = _CLEAN.replace("IC_REBOOT_REQUIRED=0", "IC_REBOOT_REQUIRED=1")
+        self._wait(job, 95, _transport(boot=_NEW_BOOT, verify=verify))
+        self.assertTrue(self.host.reboot_required_since)

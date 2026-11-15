@@ -8,8 +8,11 @@ connections at once on the server going down:
 
 1. **Before**, in one connection: the server's ``boot_id``; the hold
    (``_take_hold``: lock, what blocks it, the row), unless something of
-   the panel runs; the server's own veto (``host_reboot.sh guard``); the
-   job's point of no return (``cloud.job.no.return``), after which a stop
+   the panel runs; the server's own veto (``host_reboot.sh guard``), and
+   what runs inside each instance as a layer counts it
+   (``cloud.instance._move_quiet_sql``, the count a move asks too); the
+   containers running, and a ``CHECKPOINT`` in each database
+   (``host_reboot.sh prepare``); the job's point of no return (``cloud.job.no.return``), after which a stop
    is refused; ``shutdown -r +1``, checked in the same connection. From
    that order on the server opens no new SSH session (logind's
    ``/run/nologin``, measured 15-nov-2026), so the job parks
@@ -17,14 +20,20 @@ connections at once on the server going down:
    server has gone down.
 2. **Waiting**: every ``PARK_RETRY_S`` it tries to connect; a transient
    error parks it again, up to ``RETURN_DEADLINE_S`` from the order.
-3. **Back**: a new ``boot_id``. The job ends done, and its end serves the
-   queues its hold kept (``cloud.job._reboot_released_scopes``).
+3. **Back**: a new ``boot_id``. In the same connection, ``host_reboot.sh
+   verify`` waits for the containers that ran before and reads whether a
+   PostgreSQL started after a stop that was not clean. One missing, or
+   Docker down, raises ``host_reboot_incomplete``, naming them; no
+   container is started by hand. The job ends done, queues the health
+   probe of each instance on the host, and its end serves the queues its
+   hold kept (``cloud.job._reboot_released_scopes``).
 
 A veto, or what blocks the hold, ends the job ``done`` with a line saying
 why and no alert: the next pass of the check tries again inside the
 window. A server that does not come back, or comes back with the same
 ``boot_id``, fails the job with ``host_reboot_failed``.
 """
+import json
 import logging
 
 from odoo import fields
@@ -36,6 +45,7 @@ from .abstract_executor import (
 )
 from .cloud_host_reboot import (
     REBOOT_FAILED_ALERT,
+    REBOOT_INCOMPLETE_ALERT,
     REBOOT_LOCK_NS,
     REBOOT_PANEL_KEY,
     first_mark,
@@ -57,6 +67,9 @@ PARK_RETRY_S = 30
 RETURN_DEADLINE_S = 900
 #: Exit status of ``host_reboot.sh guard`` when the server says no.
 EXIT_VETO = 75
+#: Seconds ``host_reboot.sh verify`` may take: the 300 it waits for the
+#: containers to come back, and the reading of the databases' logs.
+VERIFY_TIMEOUT_S = 420
 
 #: The label of the order: the job's point of no return.
 REBOOT_LABEL = "Restart the server"
@@ -166,7 +179,8 @@ class HostRebootExecutor(AbstractSSHExecutor):
     def _row_values(self):
         """Return this job's ``cloud.host.reboot`` row as committed, or None.
 
-        :return: ``{'id', 'boot_id', 'shutdown_at', 'holds_panel'}``
+        :return: ``{'id', 'boot_id', 'shutdown_at', 'holds_panel',
+            'containers'}``
         :rtype: dict | None
         """
         with self._durable_env() as env:
@@ -180,6 +194,7 @@ class HostRebootExecutor(AbstractSSHExecutor):
                 "boot_id": row.boot_id,
                 "shutdown_at": row.shutdown_at,
                 "holds_panel": row.holds_panel,
+                "containers": row._containers(),
             }
 
     def _write_row(self, vals):
@@ -265,6 +280,8 @@ class HostRebootExecutor(AbstractSSHExecutor):
             self._verdict = ("skipped", " ".join(reasons))
             return
         guard = self.run_script("host_reboot.sh", ["guard"])
+        counts = self._inside_counts()
+        prepare = self.run_script("host_reboot.sh", ["prepare"])
         reboot = self.run_script("host_reboot.sh", ["reboot"])
         await self._upload_scripts(transport)
         self._sys("Running: Ask the server")
@@ -275,10 +292,21 @@ class HostRebootExecutor(AbstractSSHExecutor):
             return
         if said.exit_status != 0:
             raise RuntimeError(f"Asking the server failed (exit {said.exit_status}).")
+        busy = await self._busy_inside(transport, counts)
+        if busy:
+            self._verdict = ("skipped", busy)
+            return
+        self._sys("Running: Prepare the restart")
+        prepared = await transport.execute(prepare, self.on_stdout, self.on_stderr)
+        containers = parse_marks(prepared.stdout).get("IC_CONTAINER", [])
+        # A stop asked for until here ends the job, with no restart.
+        self._pass_no_return(REBOOT_LABEL)
         # Before the order, so an attempt that dies right after it waits
         # for the server instead of giving the order again.
-        self._write_row({"shutdown_at": fields.Datetime.now()})
-        self._pass_no_return(REBOOT_LABEL)
+        self._write_row({
+            "shutdown_at": fields.Datetime.now(),
+            "containers": json.dumps(containers),
+        })
         self._sys(f"Running: {REBOOT_LABEL}")
         done = await transport.execute(reboot, self.on_stdout, self.on_stderr)
         if done.exit_status != 0:
@@ -299,6 +327,50 @@ class HostRebootExecutor(AbstractSSHExecutor):
         """No steps of its own: ``before_execute`` gives the orders."""
         return []
 
+    def _inside_counts(self):
+        """Return the count of what runs inside each instance a layer reads.
+
+        For each deployed instance of the host whose
+        ``cloud.instance._move_quiet_sql`` gives a statement: core gives
+        none, a layer whose instances are applications it knows counts
+        their jobs, as before a move. A stack that is parked counts 0
+        (``move_steps.sh quiet``).
+
+        :return: ``[(instance name, command)]``
+        :rtype: list
+        """
+        instances = self.env["cloud.instance"].sudo().search([
+            ("host_id", "=", self._host().id), ("state", "=", "deployed"),
+        ])
+        counts = []
+        for inst in instances:
+            sql = inst._move_quiet_sql()
+            if not sql:
+                continue
+            counts.append((inst.name, self.run_script("move_steps.sh", [
+                "quiet", self._inst_dir(inst),
+                inst.postgres_username or "odoo", inst.postgres_dbname or "prod",
+                sql,
+            ])))
+        return counts
+
+    async def _busy_inside(self, transport, counts):
+        """Say what runs inside an instance, or that it could not be read.
+
+        :param counts: what ``_inside_counts`` returned
+        :return: the reason not to restart, or None
+        :rtype: str | None
+        """
+        for name, command in counts:
+            result = await transport.run(command)
+            lines = [ln.strip() for ln in (result.stdout or "").splitlines() if ln.strip()]
+            count = lines[-1] if lines else ""
+            if result.exit_status != 0 or not count.isdigit():
+                return f"What runs inside {name} could not be counted."
+            if int(count) > 0:
+                return f"{count} job(s) run inside {name}."
+        return None
+
     async def _wait_for_return(self, row):
         """Try to reach the server; park again, or close the job.
 
@@ -318,10 +390,11 @@ class HostRebootExecutor(AbstractSSHExecutor):
                     self._sys(
                         f"The server is back, {int(elapsed)} s after the order."
                     )
-                    await self._dispatch_outcome(
-                        {"Back": {"stdout": read.stdout, "exit_status": 0}},
-                        transport,
-                    )
+                    verified = await self._verify(transport, row["containers"])
+                    await self._dispatch_outcome({
+                        "Back": {"stdout": read.stdout, "exit_status": 0},
+                        "Verify": verified,
+                    }, transport)
                     return
                 if scheduled and not late:
                     raise self._park_again("its restart is still scheduled")
@@ -342,6 +415,27 @@ class HostRebootExecutor(AbstractSSHExecutor):
                 f" order to restart ({type(exc).__name__})."
             ))
         await self._dispatch_outcome({}, None)
+
+    async def _verify(self, transport, containers):
+        """Run ``host_reboot.sh verify`` on what ran before; never raises.
+
+        :param list containers: the names ``prepare`` gave
+        :return: ``{'stdout': str, 'exit_status': int}``
+        """
+        self._sys("Running: Check what came back")
+        try:
+            command = self.run_script("host_reboot.sh", ["verify", *containers])
+            await self._upload_scripts(transport)
+            result = await transport.execute(
+                command, self.on_stdout, self.on_stderr, timeout=VERIFY_TIMEOUT_S,
+            )
+            return {"stdout": result.stdout, "exit_status": result.exit_status}
+        except Exception as exc:  # noqa: BLE001 — the server is back anyway
+            if is_transient_connection_error(exc):
+                raise
+            return {"stdout": "", "exit_status": -1, "error": str(exc)}
+        finally:
+            await self._discard_staging(transport)
 
     def _park_again(self, why):
         """Say once that the job waits for the server; return the park.
@@ -378,14 +472,54 @@ class HostRebootExecutor(AbstractSSHExecutor):
             return
         self._resolve_alert(REBOOT_FAILED_ALERT)
         lines = (results.get("Back", {}).get("stdout") or "").strip().splitlines()
-        host.write({
+        verified = results.get("Verify") or {}
+        marks = parse_marks(verified.get("stdout"))
+        vals = {
             "reboot_boot_id": lines[0].strip() if lines else False,
             "reboot_checked_at": False,
-        })
-        self._sys("✓ Restarted. The next check reads what is still pending.")
+        }
+        if first_mark(marks, "IC_REBOOT_REQUIRED") == "0":
+            vals |= {"reboot_required_since": False, "reboot_required_pkgs": False}
+        host.write(vals)
+        for name in marks.get("IC_UNCLEAN", []):
+            self._sys(
+                f"⚠ The database {name} started after a stop that was not"
+                " clean: it recovered from its log."
+            )
+        missing = marks.get("IC_MISSING", [])
+        problems = []
+        if verified.get("exit_status") != 0:
+            problems.append(self.env._("what came back could not be checked"))
+        if first_mark(marks, "IC_DOCKER") == "inactive":
+            problems.append(self.env._("Docker is not running"))
+        if missing:
+            problems.append(self.env._(
+                "these containers did not come back: %(names)s",
+                names=", ".join(missing),
+            ))
+        if problems:
+            self._alert(
+                REBOOT_INCOMPLETE_ALERT,
+                self.env._(
+                    "The server %(host)s came back from its restart, but %(what)s."
+                    " The panel started nothing by hand: look at the server, then"
+                    " start what is missing from its instances' pages.",
+                    host=host.name, what="; ".join(problems),
+                ),
+                level="warning",
+            )
+            self._sys("⚠ Restarted, incomplete: " + "; ".join(problems) + ".")
+        else:
+            self._resolve_alert(REBOOT_INCOMPLETE_ALERT)
+            self._sys("✓ Restarted: everything that ran is running again.")
+        Job = self.env["cloud.job"].sudo()
+        for inst in self.env["cloud.instance"].sudo().search([
+            ("host_id", "=", host.id), ("deployed", "=", True),
+        ]):
+            Job.enqueue(host.id, inst.id, "instance_health")
         # The check runs at once: whether an update still waits, and the
         # alert of a pending restart closed with it.
-        self.env["cloud.job"].sudo().enqueue(host.id, False, "host_reboot_check")
+        Job.enqueue(host.id, False, "host_reboot_check")
 
     async def on_failure(self, results, errors):
         """Raise ``host_reboot_failed``: the server did not come back."""
