@@ -4,6 +4,10 @@ The daily ``backup_list`` of a production instance mirrors the duplicity
 sets; when the newest is older than ``BACKUP_STALE_HOURS`` it raises the
 alert, and the first listing that sees a fresh set closes it. Nothing else
 told the operator that the copies had stopped (14-nov-2026).
+
+Two listings in a row confirm it (``alert_policy_backup_stale``): an
+instance without sets is measured from its creation, so one whose backups
+started later reads as stale on its first listing (15-nov-2026).
 """
 import asyncio
 from datetime import timedelta
@@ -61,6 +65,11 @@ class TestBackupStaleAlert(TransactionCase):
         )
         self.inst.invalidate_recordset(['create_date'])
 
+    def _check(self, times=2):
+        """Run the freshness check *times*: two listings in a row confirm."""
+        for _i in range(times):
+            self.executor._check_backup_freshness()
+
     def _alert(self):
         """Return the active ``backup_stale`` alert of the instance."""
         return self.env['cloud.alert'].search([
@@ -71,51 +80,77 @@ class TestBackupStaleAlert(TransactionCase):
 
     def test_old_newest_set_raises(self):
         self._set(BACKUP_STALE_HOURS + 1)
-        self.executor._check_backup_freshness()
+        self._check()
         self.assertEqual(len(self._alert()), 1)
 
     def test_fresh_set_closes_it(self):
         self._set(BACKUP_STALE_HOURS + 30)
-        self.executor._check_backup_freshness()
+        self._check()
         self.assertTrue(self._alert())
         self._set(2)
-        self.executor._check_backup_freshness()
+        self._check(times=1)
         self.assertFalse(self._alert())
 
     def test_recent_set_raises_nothing(self):
         self._set(BACKUP_STALE_HOURS - 1)
-        self.executor._check_backup_freshness()
+        self._check()
         self.assertFalse(self._alert())
 
     def test_new_instance_without_sets_waits(self):
-        self.executor._check_backup_freshness()
+        self._check()
         self.assertFalse(self._alert())
 
     def test_old_instance_without_sets_raises(self):
         self._created(BACKUP_STALE_HOURS + 5)
-        self.executor._check_backup_freshness()
+        self._check()
+        self.assertTrue(self._alert())
+
+    def test_old_instance_first_listing_without_sets_waits(self):
+        """Backups that started after the creation (a destination added
+        later, an instance started after days stopped): the first listing is
+        before the first night, and the next one sees a set."""
+        self._created(BACKUP_STALE_HOURS * 3)
+        self._check(times=1)
+        self.assertFalse(self._alert())
+        self._set(2)
+        self._check(times=1)
+        self.assertFalse(self._alert())
+        # The count started over: one more stale listing is not enough.
+        self.env['cloud.instance.backup'].search(
+            [('instance_id', '=', self.inst.id)],
+        ).unlink()
+        self._check(times=1)
+        self.assertFalse(self._alert())
+
+    def test_the_second_listing_in_a_row_raises(self):
+        self._created(BACKUP_STALE_HOURS + 5)
+        self._check(times=1)
+        self.assertFalse(self._alert())
+        self._check(times=1)
         self.assertTrue(self._alert())
 
     def test_a_manual_archive_is_not_a_scheduled_backup(self):
         self._set(BACKUP_STALE_HOURS + 10)
         self._set(1, kind='archive')
-        self.executor._check_backup_freshness()
+        self._check()
         self.assertTrue(self._alert())
 
     def test_listing_runs_the_check(self):
-        """``on_success`` of a production listing raises it."""
+        """``on_success`` of a production listing raises it, the second
+        listing in a row."""
         self._created(BACKUP_STALE_HOURS + 5)
         with patch.object(
             BackupListExecutor, '_populate_sizes_from_s3', autospec=True,
         ):
-            asyncio.run(self.executor.on_success({
-                'List backups': {'stdout': '', 'exit_status': 0},
-            }))
+            for _i in range(2):
+                asyncio.run(self.executor.on_success({
+                    'List backups': {'stdout': '', 'exit_status': 0},
+                }))
         self.assertTrue(self._alert())
 
     def test_cron_closes_it_once_backups_are_no_longer_scheduled(self):
         self._set(BACKUP_STALE_HOURS + 10)
-        self.executor._check_backup_freshness()
+        self._check()
         self.assertTrue(self._alert())
         self.inst.compose_services = 'odoo,db'
         with patch.object(CloudInstance, 'list_backups', autospec=True) as listed:

@@ -91,4 +91,21 @@
         <field name="confirm_window">10800</field>
         <field name="note">Direct connection from the panel every hour; told once two runs in a row got in.</field>
     </record>
+
+    <!-- The daily backup listing (``cron_refresh_backup_list``) found no
+         duplicity set newer than BACKUP_STALE_HOURS. Without a set yet
+         it measures from the instance's creation, not from when backups
+         started: an instance built ahead of time and put to use later,
+         a destination added to an old instance or one started after
+         days stopped reads as stale on its first listing, before its
+         first night. Two listings in a
+         row tell (15-nov-2026): a real stop is told a day later, and the
+         alert is believed. 36 hours, not three ticks, so the next day's
+         listing is the one that confirms. -->
+    <record id="alert_policy_backup_stale" model="cloud.alert.policy">
+        <field name="code">backup_stale</field>
+        <field name="confirm_after">2</field>
+        <field name="confirm_window">129600</field>
+        <field name="note">Listed once a day; a first listing before the first night is not a stop, two days in a row are.</field>
+    </record>
 </odoo>
