@@ -3170,6 +3170,7 @@ msgstr "Cerrar panel"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host_session__state__closed
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_session__state__closed
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_closure__action__closed
+#: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_first_steps_display__hidden
 msgid "Closed"
 msgstr "Cerrado"
 
@@ -3321,6 +3322,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__code
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__code
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_security_event__code
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_step__code
 msgid "Code"
 msgstr "Código"
 
@@ -4231,6 +4233,7 @@ msgstr "Creado"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__create_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_step__create_uid
 msgid "Created by"
 msgstr "Creado por"
 
@@ -4272,6 +4275,7 @@ msgstr "Creado por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__create_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_step__create_date
 msgid "Created on"
 msgstr "Creado el"
 
@@ -5172,6 +5176,8 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_queue_job__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_res_users__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_step__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_steps__display_name
 msgid "Display Name"
 msgstr "Nombre para mostrar"
 
@@ -8702,6 +8708,8 @@ msgstr "Racha de fallos HTTP"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__id
 #: model:ir.model.fields,field_description:incubacloud.field_queue_job__id
 #: model:ir.model.fields,field_description:incubacloud.field_res_users__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_step__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_steps__id
 msgid "ID"
 msgstr "ID"
 
@@ -9876,6 +9884,7 @@ msgstr "Última actividad en el panel el"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__write_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_step__write_uid
 msgid "Last Updated by"
 msgstr "Última actualización por"
 
@@ -9918,6 +9927,7 @@ msgstr "Última actualización por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__write_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_step__write_date
 msgid "Last Updated on"
 msgstr "Última actualización el"
 
@@ -11039,14 +11049,18 @@ msgstr "Nuevo backend de backup"
 
 #. module: incubacloud
 #. odoo-javascript
+#. odoo-python
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+#: code:addons/incubacloud/models/cloud_first_step.py:0
 msgid "New Backup Destination"
 msgstr "Nuevo destino de copia"
 
 #. module: incubacloud
 #. odoo-javascript
+#. odoo-python
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/models/cloud_first_step.py:0
 msgid "New Host"
 msgstr "Nuevo Host"
 
@@ -11083,7 +11097,9 @@ msgstr "Nueva instancia"
 
 #. module: incubacloud
 #. odoo-javascript
+#. odoo-python
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+#: code:addons/incubacloud/models/cloud_first_step.py:0
 msgid "New project"
 msgstr "Nuevo proyecto"
 
@@ -26779,3 +26795,242 @@ msgstr "solo los de este panel"
 #: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
 msgid "No server of this panel has anything to look at."
 msgstr "Ningún servidor de este panel tiene nada que revisar."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Create a project"
+msgstr "Crear un proyecto"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Create the production instance"
+msgstr "Crear la instancia de producción"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "The project's page"
+msgstr "La página del proyecto"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Open the instance"
+msgstr "Abrir la instancia"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "The instance's page"
+msgstr "La página de la instancia"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Get a server"
+msgstr "Consiga un servidor"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Odoo runs on a server of yours, which the panel sets up."
+msgstr "Odoo funciona en un servidor suyo, que el panel prepara."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Connect a server"
+msgstr "Conectar un servidor"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Set up backups"
+msgstr "Configure las copias de seguridad"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Production keeps its backups in a storage destination you choose."
+msgstr ""
+"Producción guarda sus copias en un destino de almacenamiento que usted "
+"elige."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Add a backup destination"
+msgstr "Añadir un destino de copia"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Deploy Odoo"
+msgstr "Despliegue Odoo"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid ""
+"A project holds your instances; its production is the Odoo your team uses."
+msgstr ""
+"Un proyecto agrupa sus instancias; su producción es el Odoo que usa su "
+"equipo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Use your own domain"
+msgstr "Use su propio dominio"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Point a name of yours at production, such as erp.example.com."
+msgstr "Apunte un nombre suyo a producción, como erp.example.com."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Add a domain"
+msgstr "Añadir un dominio"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "The instance's page, Networking tab"
+msgstr "La página de la instancia, pestaña Red"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Send mail from Odoo"
+msgstr "Envíe correo desde Odoo"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Production sends its mail through a mail server of yours."
+msgstr "Producción envía su correo a través de un servidor de correo suyo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "Set up outgoing mail"
+msgstr "Configurar el correo saliente"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "The instance's page, Email tab"
+msgstr "La página de la instancia, pestaña Correo electrónico"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "See what failed"
+msgstr "Ver qué falló"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "The server's page"
+msgstr "La página del servidor"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "The last attempt failed."
+msgstr "El último intento falló."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_first_step.py:0
+msgid "After your first deployment."
+msgstr "Después de su primer despliegue."
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_first_step
+msgid "First step mark"
+msgstr "Marca de primer paso"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_first_steps
+msgid "First steps of the panel"
+msgstr "Primeros pasos del panel"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_step__attempted_at
+msgid "Attempted At"
+msgstr "Intentado el"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_step__achieved_at
+msgid "Achieved At"
+msgstr "Conseguido el"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_step__failed_job_type
+msgid "Failed Job Type"
+msgstr "Tipo del trabajo fallido"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_step__failed_at
+msgid "Failed At"
+msgstr "Falló el"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_first_step__backfilled
+msgid "Backfilled"
+msgstr "Rellenada"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_first_step__failed_job_type
+msgid ""
+"Code of the type of the last job that failed while the mark was not "
+"achieved; kept once it is."
+msgstr ""
+"Código del tipo del último trabajo que falló mientras la marca no estaba "
+"conseguida; se conserva al conseguirla."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_first_step__backfilled
+msgid ""
+"A date of this mark was not seen happen: it was filled with what the "
+"database held when the panel started keeping marks."
+msgstr ""
+"Una fecha de esta marca no se vio ocurrir: se rellenó con lo que había en la"
+" base de datos cuando el panel empezó a guardar marcas."
+
+#. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_first_step_code_uniq
+msgid "One row per first step mark."
+msgstr "Una fila por marca de primer paso."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_first_steps_display
+msgid "First Steps Card"
+msgstr "Tarjeta de primeros pasos"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_res_users__cloud_first_steps_display
+msgid ""
+"Whether the first steps card shows on the home page: by itself while steps "
+"are left, closed by the user, or opened again by the user while anything is "
+"left."
+msgstr ""
+"Si la tarjeta de primeros pasos aparece en la portada: sola mientras queden "
+"pasos, cerrada por el usuario o abierta de nuevo por el usuario mientras "
+"quede algo."
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_first_steps_display__auto
+msgid "While Steps Are Left"
+msgstr "Mientras queden pasos"
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_first_steps_display__shown
+msgid "Opened Again"
+msgstr "Abierta de nuevo"

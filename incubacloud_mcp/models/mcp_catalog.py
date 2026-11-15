@@ -62,6 +62,11 @@ _SESSIONS = (
     "their access (#48)."
 )
 
+_FIRST_STEPS = (
+    "The first steps card of the home page and whether a person closed it; "
+    "the assistant's get_first_steps reads the same steps."
+)
+
 #: Core routes no tool calls, each with why.
 CORE_EXCLUDED = {
     "/cloud": _SPA,
@@ -158,6 +163,8 @@ CORE_EXCLUDED = {
     "/cloud/sessions/get": _SESSIONS,
     "/cloud/sessions/sign_out_everywhere": _SESSIONS,
     "/cloud/sessions/revoke": _SESSIONS,
+    "/cloud/first_steps": _FIRST_STEPS,
+    "/cloud/first_steps/set_hidden": _FIRST_STEPS,
 }
 
 
