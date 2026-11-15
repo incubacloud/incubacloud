@@ -28,15 +28,17 @@ What stays as it is: the person's role and projects, every check the panel makes
 before it would ask (an action it refuses is still refused), secrets (they never
 reach an agent), and the limits on calls.
 
-!!! info "IncubaCloud SaaS"
-    Auto-approval is not available yet on the panels of IncubaCloud SaaS:
-    **Settings → Agents (MCP)** says so, and a grant is refused. Once it is,
-    charges are the exception you choose: the actions that charge money —
-    orders, purchases, plan changes billed to your account — stay out of a
-    rule unless you tick **Include charges** when you grant it. Without it
-    they keep asking, as before; with it they run without asking too. The
-    notice, the list of rules and the agent's list of tools say whether a
-    rule includes them.
+!!! info "Hosted panels"
+    A hosted panel can be set not to allow auto-approval. Then
+    **Settings → Agents (MCP)** says so, the rules already granted stay paused
+    and a new grant is refused.
+
+    On a panel whose agents can run actions that charge money — orders,
+    purchases, plan changes billed to your account — those actions are the
+    exception you choose: they stay out of a rule unless you tick **Include
+    charges** when you grant it. Without it they keep asking, as before; with
+    it they run without asking too. The notice, the list of rules and the
+    agent's list of tools say whether a rule includes them.
 
 ## The risks
 
