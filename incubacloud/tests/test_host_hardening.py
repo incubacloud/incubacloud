@@ -13,7 +13,7 @@ import asyncio
 import importlib.util
 import os
 import re
-
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
@@ -1275,11 +1275,9 @@ class TestHardeningExecutorWiring(TransactionCase):
         for auto in (True, False):
             ev = self._make(auto_security_updates=auto).get_extra_vars()
             self.assertIs(ev["ic_auto_reboot"], False)
-        path = os.path.join(
+        text = Path(
             get_module_path("incubacloud"), "ansible/playbooks/host_hardening.yml",
-        )
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
+        ).read_text(encoding="utf-8")
         self.assertIn(
             "Automatic-Reboot \"{{ 'true' if auto_reboot else 'false' }}\"", text,
         )

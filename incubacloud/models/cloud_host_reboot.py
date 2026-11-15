@@ -429,8 +429,9 @@ class CloudHost(models.Model):
         Job = self.env["cloud.job"].sudo()
         hosts = self._reboot_hosts_of_panel() if holds_panel else self.sudo()
         Instance = self.env["cloud.instance"].sudo().with_context(active_test=False)
-        instances = Instance.search([("host_id", "in", hosts.ids)])
-        instances |= hosts.with_context(active_test=False).incoming_instance_ids
+        instances = Instance.search(
+            [("host_id", "in", hosts.ids)],
+        ) | hosts.with_context(active_test=False).incoming_instance_ids
         reasons = []
         for host in hosts:
             if Job._scope_busy(None, host.id, exclude_job_id=exclude_job_id):
@@ -595,7 +596,7 @@ class CloudJob(models.Model):
         """
         host_ids = sorted({int(h) for h in host_ids if h})
         if lock:
-            for key in [REBOOT_PANEL_KEY, *host_ids]:
+            for key in (REBOOT_PANEL_KEY, *host_ids):
                 self.env.cr.execute(
                     "SELECT pg_advisory_xact_lock_shared(%s, %s)",
                     (REBOOT_LOCK_NS, key),

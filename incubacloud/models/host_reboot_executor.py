@@ -280,8 +280,12 @@ class HostRebootCheckExecutor(AbstractSSHExecutor):
         if blockers:
             self._sys("Not restarted in this pass: " + " ".join(blockers))
             return
+        # Not chained: the restart waits its turn behind what the server's
+        # queue holds, and reads the window, the policy and the pending
+        # restart again as it starts (``HostRebootExecutor``).
         job_id = self.env["cloud.job"].sudo().enqueue(
             host.id, False, "host_reboot", payload={BY_CHECK: True},
+            bypass_running_check=False,
         )
         self._sys(f"Restart queued (job #{job_id}).")
 
@@ -706,10 +710,13 @@ class HostRebootExecutor(AbstractSSHExecutor):
         for inst in self.env["cloud.instance"].sudo().search([
             ("host_id", "=", host.id), ("deployed", "=", True),
         ]):
-            Job.enqueue(host.id, inst.id, "instance_health", payload={"state_only": True})
+            Job.enqueue(
+                host.id, inst.id, "instance_health", payload={"state_only": True},
+                bypass_running_check=True,
+            )
         # The check runs at once: whether an update still waits, and the
         # alert of a pending restart closed with it.
-        Job.enqueue(host.id, False, "host_reboot_check")
+        Job.enqueue(host.id, False, "host_reboot_check", bypass_running_check=True)
 
     async def on_failure(self, results, errors):
         """Raise ``host_reboot_failed``: the server did not come back."""
