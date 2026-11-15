@@ -35,13 +35,16 @@ _ALERT_DEBOUNCE_DAYS = 7
 SFTP_KEY_COMMENT = "incubacloud-backup"
 
 #: Fields only the server writes on an SFTP destination: the key pair it
-#: generates and the server key a person confirmed. Refused to any write
-#: that does not run as the platform, so a manager cannot set a trusted
-#: key over ``call_kw`` without reading it first and being audited.
+#: generates and the server key a person confirmed, with its fingerprint.
+#: Refused to any write that does not run as the platform, so a manager
+#: cannot set a trusted key over ``call_kw`` without reading it first and
+#: being audited, nor a fingerprint the page and the backup listing would
+#: compare against.
 _SFTP_SERVER_FIELDS = (
     "sftp_private_key",
     "sftp_public_key",
     "sftp_known_hosts",
+    "sftp_host_key_fingerprint",
     "sftp_host_key_trusted_at",
     "sftp_host_key_trusted_by",
 )
@@ -848,9 +851,36 @@ class CloudBackupBackend(models.Model):
                     instances=", ".join(pinned.mapped("name")),
                 ))
 
+    @api.model
+    def _normalize_sftp_vals(self, vals):
+        """Write the SFTP server and port of *vals* as they are compared.
+
+        The server in lower case, without the spaces around it: duplicity's
+        paramiko looks the server key up under the URL's host as
+        ``urlparse`` lowers it and compares the labels exactly, so a key
+        trusted under ``Backup.example.com`` would read as an unknown
+        server on every copy and every purge. The port as an integer: the
+        page may send it as text, and ``"22" != 22`` would read as another
+        port, dropping the trusted key or refusing a move that is none.
+
+        :param dict vals: values of a ``create`` or ``write``, changed in
+            place
+        :raise ValidationError: when the port is not a number
+        """
+        if isinstance(vals.get("sftp_host"), str):
+            vals["sftp_host"] = vals["sftp_host"].strip().lower()
+        if isinstance(vals.get("sftp_port"), str):
+            try:
+                vals["sftp_port"] = int(vals["sftp_port"].strip() or 0)
+            except ValueError as exc:
+                raise ValidationError(_(
+                    "The SFTP port goes from 1 to 65535."
+                )) from exc
+
     def write(self, vals):
         self._check_can_manage_settings()
         self._check_server_fields(vals)
+        self._normalize_sftp_vals(vals)
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
                 del vals[field]
@@ -907,13 +937,26 @@ class CloudBackupBackend(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         self._check_can_manage_settings()
+        private_keys = []
         for vals in vals_list:
             self._check_server_fields(vals)
+            self._normalize_sftp_vals(vals)
             if not vals.get("passphrase"):
                 vals["passphrase"] = generate_password()
+            private = None
             if vals.get("backend_type") == "sftp":
-                vals.update(self._sftp_key_pair())
-        return super().create(vals_list)
+                pair = self._sftp_key_pair()
+                private = pair.pop("sftp_private_key")
+                vals.update(pair)
+            private_keys.append(private)
+        records = super().create(vals_list)
+        # The private half is a field of the platform (``base.group_system``),
+        # which Odoo refuses in the values of a manager who is not an Odoo
+        # administrator: the server writes it, as on a regeneration.
+        for rec, private in zip(records, private_keys):
+            if private:
+                rec.sudo().write({"sftp_private_key": private})
+        return records
 
     @api.model
     def _sftp_key_pair(self):

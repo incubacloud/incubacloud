@@ -134,6 +134,43 @@ class TestSftpBackendModel(_SftpBase):
                 with self.env.cr.savepoint():
                     self.backend.write(vals)
 
+    def test_the_server_is_kept_lower_case_without_spaces(self):
+        """duplicity looks the key up under the URL's host, lowered.
+
+        A server typed with capitals or spaces would give a URL with
+        spaces and a trusted line no copy finds: both are written as the
+        URL names the server.
+        """
+        backend = self.env["cloud.backup.backend"].create({
+            "name": "sftp-caps", "backend_type": "sftp",
+            "sftp_host": "  Backup.Example.COM ", "sftp_user": "u1",
+            "sftp_path": "backups",
+        })
+        self.assertEqual(backend.sftp_host, "backup.example.com")
+        self.assertEqual(
+            backend.backup_dst, "sftp://u1@backup.example.com/backups",
+        )
+        key = asyncssh.generate_private_key("ssh-ed25519").convert_to_public()
+        self.assertTrue(
+            backend._sftp_presented_key_line(key).startswith("backup.example.com "),
+        )
+        backend.sudo().write({"sftp_known_hosts": _KNOWN_HOSTS})
+        backend.write({"sftp_host": "BACKUP.example.com "})
+        self.assertEqual(backend.sftp_host, "backup.example.com")
+        # The same server: its trusted key stays.
+        self.assertTrue(backend.sftp_host_key_fingerprint)
+
+    def test_a_port_sent_as_text_is_the_number(self):
+        """The page sends the port as text once it is touched."""
+        self.backend.sudo().write({"sftp_known_hosts": _KNOWN_HOSTS})
+        self.backend.write({"sftp_port": "22"})
+        self.assertTrue(self.backend.sftp_host_key_fingerprint)
+        self.backend.write({"sftp_port": " 23 "})
+        self.assertEqual(self.backend.sftp_port, 23)
+        self.assertFalse(self.backend.sftp_host_key_fingerprint)
+        with self.assertRaises(ValidationError):
+            self.backend.write({"sftp_port": "2x"})
+
     def test_a_user_of_100_characters_is_accepted(self):
         self.backend.write({"sftp_user": "a" * 100})
 
@@ -170,6 +207,20 @@ class TestSftpBackendModel(_SftpBase):
         # The folder is not an identity: it is the DST's to say.
         self.backend.write({"sftp_path": "other"})
 
+    def test_a_manager_who_is_not_an_odoo_admin_creates_one(self):
+        """A panel's manager is no Odoo administrator: the key is the server's."""
+        manager = self._create_user("sftp_mgr_create", "group_cloud_manager")
+        self.assertFalse(manager.has_group("base.group_system"))
+        backend = self.env["cloud.backup.backend"].with_user(manager).create({
+            "name": "by-manager", "backend_type": "sftp",
+            "sftp_host": "h.example.com", "sftp_user": "u1",
+        })
+        self.assertTrue(backend.sftp_public_key)
+        key = asyncssh.import_private_key(backend.sudo().sftp_private_key)
+        self.assertEqual(key.algorithm, b"ssh-ed25519")
+        with self.assertRaises(AccessError):
+            backend.read(["sftp_private_key"])
+
     def test_server_fields_refused_to_a_manager(self):
         manager = self._create_user("sftp_mgr", "group_cloud_manager")
         as_manager = self.backend.with_user(manager)
@@ -177,6 +228,7 @@ class TestSftpBackendModel(_SftpBase):
             ("sftp_known_hosts", _KNOWN_HOSTS),
             ("sftp_public_key", "ssh-ed25519 AAAA x"),
             ("sftp_private_key", "-----BEGIN-----"),
+            ("sftp_host_key_fingerprint", "SHA256:forged"),
         ):
             with self.subTest(field=field), self.assertRaises(UserError):
                 as_manager.write({field: value})
@@ -281,6 +333,22 @@ class TestSftpRoutes(_SftpBase):
         })
         self.assertEqual(self.backend.sftp_path, "other")
         self.assertFalse(self.backend.sudo().sftp_known_hosts)
+
+    def test_a_manager_who_is_not_an_odoo_admin_creates_one_by_the_route(self):
+        manager = self._create_user("sftp_mgr_route", "group_cloud_manager")
+        fake_req = MagicMock(spec=Request)
+        fake_req.env = self.env(user=manager)
+        with patch.object(_routes_backends, "request", fake_req):
+            data = self.controller.cloud_create_backup_backend({
+                "name": "by-route", "backend_type": "sftp",
+                "sftp_host": "H.example.com", "sftp_port": "2222",
+                "sftp_user": "u1", "sftp_path": "backups",
+            })
+        backend = self.env["cloud.backup.backend"].browse(data["id"])
+        self.assertEqual(
+            backend.backup_dst, "sftp://u1@h.example.com:2222/backups",
+        )
+        self.assertTrue(backend.sudo().sftp_private_key)
 
     def test_regenerate_route(self):
         before = self.backend.sftp_public_key
