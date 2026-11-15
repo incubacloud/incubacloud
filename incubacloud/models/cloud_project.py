@@ -521,7 +521,13 @@ class CloudProject(models.Model):
         # not a choice for ``_check_series_may_be_chosen`` to judge.
         vals = _odoo_versions.without_unchanged_series(self, vals)
         changed, old_snap = self._audit_snapshot(vals)
+        # The instances' computed backup paths are under the folder:
+        # moved, they must not land on one another instance holds.
+        folder_moved = self.filtered(lambda p: (
+            'remote_folder' in vals and p.remote_folder != vals['remote_folder']
+        ))
         result = super().write(vals)
+        folder_moved.instance_ids._claim_own_backup_path()
         self._audit_log_changes(changed, old_snap)
         return result
 

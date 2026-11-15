@@ -6,11 +6,7 @@ from datetime import datetime, timedelta
 
 from odoo import fields
 
-import asyncssh
-
-from odoo.exceptions import UserError
-
-from . import sftp_dst
+from ._backup_dst import dst_key
 from .abstract_executor import AbstractSSHExecutor
 from .cloud_backup_backend import _SFTP_OPERATION_TIMEOUT, SftpUnreachable
 
@@ -398,8 +394,8 @@ class BackupListExecutor(AbstractSSHExecutor):
         )
 
     def _populate_sizes_from_s3(self):
-        """List S3 objects under the backend and write per-set bytes
-        onto each ``cloud.instance.backup`` row.
+        """List S3 objects under the instance's backup path and write
+        per-set bytes onto each ``cloud.instance.backup`` row.
 
         Best-effort: a misconfigured backend, network hiccup or missing
         boto3 must NEVER fail the ``backup_list`` job. The duplicity
@@ -431,14 +427,15 @@ class BackupListExecutor(AbstractSSHExecutor):
             )
             return
 
-        project_folder = (
-            (inst.project_id.remote_folder if inst.project_id else '')
-            or 'default'
-        )
-        prefix = (
-            f"{(backend.s3_path or '').strip('/')}/"
-            f"{project_folder}/{inst.name}/"
-        ).lstrip('/')
+        # The path duplicity writes to, as the purges read it: a suffix
+        # (``backup_path_suffix``) or a path of its own included. Rebuilt
+        # from the folder and the name, it listed the path of another
+        # instance of the same name. The final slash keeps ``foo`` from
+        # counting ``foo-42``'s objects.
+        key = dst_key(inst.instance_backup_dst)
+        if not (key and key[1]):
+            return
+        bucket, prefix = key[0], '/'.join(key[1]) + '/'
 
         client_kwargs = {
             'aws_access_key_id': backend.s3_access_key_id,
@@ -454,7 +451,7 @@ class BackupListExecutor(AbstractSSHExecutor):
             total = 0
             capped = False
             for page in paginator.paginate(
-                Bucket=backend.s3_bucket, Prefix=prefix,
+                Bucket=bucket, Prefix=prefix,
             ):
                 for obj in page.get('Contents', []):
                     total += 1

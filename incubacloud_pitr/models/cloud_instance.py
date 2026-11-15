@@ -443,8 +443,9 @@ class CloudInstance(models.Model):
                 "before its recovery prefix was kept, and its backup path "
                 f"({self.custom_backup_dst or 'none'}) does not say where "
                 f"the archive is. Look for a prefix ending in "
-                f"{self.name}-pitr on its backup destination, empty it by "
-                "hand (RB-23 §5), then resolve this alert."
+                f"{self.name}{self.backup_path_suffix or ''}-pitr on its "
+                "backup destination, empty it by hand (RB-23 §5), then "
+                "resolve this alert."
             )
             backend = self.effective_backup_backend
         result = super().delete_archived(payload=payload)
@@ -850,8 +851,9 @@ class CloudInstance(models.Model):
                 f"({ENV_FILE}) when the instance was deleted, and the "
                 "instance had no backup destination by then, so where the "
                 "archive is is unknown. Look for a prefix ending in "
-                f"{self.name}-pitr on the destination it archived to, empty "
-                "it by hand (RB-23 §5), then resolve this alert."
+                f"{self.name}{self.backup_path_suffix or ''}-pitr on the "
+                "destination it archived to, empty it by hand (RB-23 §5), "
+                "then resolve this alert."
             )
         self._pitr_alert_prefix_left(
             message, key, self.effective_backup_backend, job=job,

@@ -960,8 +960,9 @@ class CloudInstance(models.Model):
         destination computes it, the one imports, runbooks and a recovery
         by hand use.
 
-        Called when the computed path moves anyway: on creation, and when
-        the name or the project changes. Not for an instance with a path
+        Called when the computed path moves anyway: on creation, when
+        the name, the project or the project's folder changes, and when a
+        path written by hand is emptied. Not for an instance with a path
         of its own written (``custom_backup_dst``), which the field's
         check holds to the same rule. Of several claimed together, the
         first keeps the path and the later ones take suffixes.
@@ -1814,12 +1815,16 @@ class CloudInstance(models.Model):
             for name in ("smtp_relay_auth", "smtp_relay_host")
         ))
         # A form sends the name back on every save: only a change moves
-        # the computed backup path.
+        # the computed backup path. So does emptying a path written by
+        # hand: the instance goes back to the computed one.
         path_moved = self.filtered(lambda inst: (
             "name" in vals and inst.name != vals["name"]
         ) or (
             "project_id" in vals
             and inst.project_id.id != (vals["project_id"] or False)
+        ) or (
+            "custom_backup_dst" in vals and inst.custom_backup_dst
+            and not vals["custom_backup_dst"]
         ))
         result = super().write(vals)
         relay_moved._forget_relay_state()
@@ -4515,6 +4520,7 @@ class CloudInstance(models.Model):
         Finding out when the operator presses "revive" is too late, so
         this raises an alert as soon as it happens.
         """
+        self._resolve_unshared_backup_paths()
         archived = self.with_context(active_test=False).search([
             ("active", "=", False),
             ("custom_backup_dst", "!=", False),
@@ -4543,6 +4549,41 @@ class CloudInstance(models.Model):
                     instance=inst,
                 )
         return len(archived)
+
+    @api.model
+    def _resolve_unshared_backup_paths(self):
+        """Resolve each ``backup_path_shared`` whose path one record holds now.
+
+        1.0.229's post-migrate raises it once per path that two records or
+        more hold, keyed by the path. Once fewer than two hold it (one of
+        them purged, or given a path of its own) the alert has nothing
+        left to say. Run with the daily check of archived copies, which
+        is where an archived one's purge ends up seen; compared as the
+        purges read a path (``dst_key``).
+
+        :return: the alerts resolved
+        :rtype: int
+        """
+        Alert = self.env["cloud.alert"].sudo()
+        alerts = Alert.search([
+            ("code", "=", "backup_path_shared"), ("state", "=", "active"),
+            ("instance_id", "=", False), ("dedup_key", "!=", False),
+        ])
+        if not alerts:
+            return 0
+        holders = {}
+        for inst in self.sudo().with_context(active_test=False).search([]):
+            for path in inst._backup_paths_held():
+                key = dst_key(path)
+                if key and key[1]:
+                    holders.setdefault(key, set()).add(inst.id)
+        resolved = 0
+        for alert in alerts:
+            if len(holders.get(dst_key(alert.dedup_key), ())) < 2:
+                resolved += len(
+                    Alert.resolve_alert("backup_path_shared", key=alert.dedup_key),
+                )
+        return resolved
 
     def _probe_archived_copy(self):
         """Return ``(state, bytes)`` for this instance's frozen prefix.
