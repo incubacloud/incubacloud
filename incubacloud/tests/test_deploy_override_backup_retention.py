@@ -258,13 +258,13 @@ class TestBackupRetentionSnapshot(_OverrideCase):
 
 
 class TestBackupRetentionMigration(TransactionCase):
-    """1.0.229 writes the stored retentions in the form they must have."""
+    """1.0.232 writes the stored retentions in the form they must have."""
 
     def setUp(self):
         super().setUp()
         spec = importlib.util.spec_from_file_location(
-            "post_backup_retention_1_0_229",
-            file_path("incubacloud/migrations/1.0.229/post-backup-retention.py"),
+            "post_backup_retention_1_0_232",
+            file_path("incubacloud/migrations/1.0.232/post-backup-retention.py"),
         )
         self.migration = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.migration)

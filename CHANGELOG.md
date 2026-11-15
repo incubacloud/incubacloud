@@ -38,6 +38,105 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   and the drop-in covers it. A host stuck there now comes back with
   `systemctl kill cloud-init-hotplugd.service`.
 
+## [1.0.232] — unreleased
+
+A backup destination can be an SFTP server (#93): the panel generates its
+key, you trust the server's key once, and backups, listings, restores and
+purges go there. A backup retention other than three months applies, and
+it must be a count followed by D, W, M or Y. A production instance whose
+scheduled backups stopped raises `backup_stale`. An account notice no
+longer waits for the hourly pass of the mail queue when a pass fails.
+
+The update adds the SFTP columns of backup destinations (`sftp_host`,
+`sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
+`sftp_public_key`, `sftp_known_hosts`, `sftp_host_key_fingerprint`,
+`sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
+destinations there are. Its one data migration, 1.0.232's
+`post-backup-retention`, writes each backup destination's retention in
+the form it must now have (spaces gone, the unit in capitals, an empty
+one as `3M`) and names in the log any it leaves invalid.
+
+### Added
+
+- **SFTP backup destinations (#93).** A destination's type is S3
+  compatible or SFTP, chosen when it is created. An SFTP one names a
+  server, port, user and folder; the panel generates its Ed25519 key pair
+  (the private half kept encrypted and read by the panel's own code only,
+  never by a user over the ORM, a route, the MCP or the assistant; on a
+  host it sits in the instance's backup service, as the S3 secret and the
+  passphrase do, where a terminal on that service reads it) and shows the
+  `authorized_keys` line. The server is kept in lower case. Read the
+  server key shows the fingerprint the server presents with the key
+  exchange alone, and Trust this key stores it only if the server still
+  presents it; another server or port drops it. Deploy and rebuild ship
+  the key, the trusted server key and `~/.ssh/config` to the backup
+  service as files of their own (0600, 0700 directory, mounted read-only
+  over its cache), refuse to build without a trusted key or with a backup
+  path off the destination's server, and remove them when the instance
+  stops backing up to SFTP. Test, the usage measure, the archived copy's
+  check, the listing's sizes and both purges work over SFTP; the purge
+  checks the server's clock before it trusts file times. A server
+  presenting another key raises the critical alert
+  `backup_sftp_host_key_changed`, from the daily usage measure and the
+  daily backup listing. A module installed on top can limit the panel's
+  connections to public addresses. Continuous recovery stays on S3.
+
+- **`backup_stale` alert: scheduled backups that stopped.** The daily
+  backup listing of a production instance raises it when the newest
+  duplicity set is older than 48 hours (one missed night plus the hours
+  until the listing; an instance with no set yet counts from its
+  creation), and closes it on the first listing that sees a fresh set, or
+  once the instance no longer has a backup service. Two listings in a row
+  raise it (`alert_policy_backup_stale`: two sightings, 36 hours apart at
+  most): measured from the creation, an instance whose backups started
+  later (a destination added to an old one, or one started after days
+  stopped) reads as stale on its first listing, before its first night.
+  A real stop is told a day later. Nothing told the operator before that
+  the copies had stopped.
+
+### Fixed
+
+- **A backup retention other than three months applies.** With the
+  duplicity cron owning the retention, the doodba template renders
+  `JOB_800_WHAT` with `3M` in the `backup` service's `environment:`, and
+  Compose gives that precedence over `.docker/backup.env`, where the panel
+  wrote its retention: a 7D or 1Y destination kept three months. The
+  retention now rides the compose override, which wins over the template,
+  on every deploy and rebuild while the cron owns it. With «Nobody» or
+  «Bucket lifecycle» owning the retention, `backup.env` no longer carries
+  a `JOB_800_WHAT` line. The deploy's and the rebuild's log say which
+  retention applies. Instances already deployed take it on their next
+  rebuild, and the first weekly cleanup after it deletes the backup sets
+  older than the retention, which until then were kept for three months.
+  A retention other than `3M` is part of the configuration snapshot, as
+  `backup_retention`, so such an instance shows changes not deployed
+  until it is rebuilt, and so does one whose destination's retention
+  changes later; every other instance hashes as before.
+
+- **A backup retention must be a count followed by D, W, M or Y.** It
+  reaches a shell in the backup container, and only the form checked it:
+  `1m` is one minute to duplicity, which deletes every chain but the
+  active one, and anything after a `;` runs as a command. A backup
+  destination refuses any other value (`^[1-9][0-9]*[DWMY]$`, capitals),
+  and a deploy that finds one stored writes no cleanup for it, leaves the
+  template's `3M` and says so in its log, without failing.
+
+- **duplicity never waits on its input.** The jobs keep a command's input
+  open, and duplicity's SFTP backend asks on it about a server it does
+  not know: every `dup` call of a backup, listing, restore, download or
+  archive copy reads from `/dev/null` and fails at once instead.
+
+- **The quota mail names the destination** (`backup_dst`) instead of the
+  bucket, which an SFTP destination does not have.
+
+- **An account notice no longer waits up to an hour when a pass of the mail
+  queue fails.** The notice of a new country, browser, agent, API key, Git
+  token or invited user is queued and the mail queue woken once; a pass
+  that died on a concurrent write (a `SerializationFailure`) left it for
+  the next hourly pass. The queue is now woken now and again two minutes
+  later (`NOTICE_QUEUE_RETRY`). The notice is still never sent while the
+  request waits.
+
 ## [1.0.231] — unreleased
 
 The panel reads the servers' security logs back from the central and
@@ -296,16 +395,10 @@ with Settings' save bar. Switching a notification channel off deletes its
 bot token or signing secret. Deleting an archived instance for good
 empties its continuous recovery archive too, and a delete that cannot
 empty it says so with an alert. Switching continuous recovery off keeps
-the archive for the backup window, then empties it. A backup destination
-can be an SFTP server (#93): the panel generates its key, you trust the
-server's key once, and backups, listings, restores and purges go there.
+the archive for the backup window, then empties it.
 A new instance is created on one page.
 
-The update adds the SFTP columns of backup destinations (`sftp_host`,
-`sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
-`sftp_public_key`, `sftp_known_hosts`, `sftp_host_key_fingerprint`,
-`sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
-destinations there are, and five columns on instances, `pitr_archived_prefix`,
+The update adds five columns on instances, `pitr_archived_prefix`,
 `pitr_off_at`, `pitr_purge_at`, `pitr_rendered_prefix` and
 `pitr_rendered_backend_id` (`incubacloud_pitr` 1.0.16 comes with them).
 Its data migrations: 1.0.229's post-migrate deletes the Telegram bot
@@ -313,50 +406,7 @@ tokens saved without a chat ID and the webhook secrets left without a
 URL, and `incubacloud_pitr` 1.0.16's end-migrate records where each
 instance archives and dates the purge of the archives switched off
 before it from the update, so each gets the whole backup window from
-then. 1.0.229's `post-backup-retention` writes each backup destination's
-retention in the form it must now have (spaces gone, the unit in
-capitals, an empty one as `3M`) and names in the log any it leaves
-invalid. The rest is the panel's assets and the Spanish catalogue.
-
-### Added
-
-- **`backup_stale` alert: scheduled backups that stopped.** The daily
-  backup listing of a production instance raises it when the newest
-  duplicity set is older than 48 hours (one missed night plus the hours
-  until the listing; an instance with no set yet counts from its
-  creation), and closes it on the first listing that sees a fresh set, or
-  once the instance no longer has a backup service. Two listings in a row
-  raise it (`alert_policy_backup_stale`: two sightings, 36 hours apart at
-  most): measured from the creation, an instance whose backups started
-  later (a destination added to an old one, or one started after days
-  stopped) reads as stale on its first listing, before its first night.
-  A real stop is told a day later. Nothing told the operator before that
-  the copies had stopped.
-
-### Added
-
-- **SFTP backup destinations (#93).** A destination's type is S3
-  compatible or SFTP, chosen when it is created. An SFTP one names a
-  server, port, user and folder; the panel generates its Ed25519 key pair
-  (the private half kept encrypted and read by the panel's own code only,
-  never by a user over the ORM, a route, the MCP or the assistant; on a
-  host it sits in the instance's backup service, as the S3 secret and the
-  passphrase do, where a terminal on that service reads it) and shows the
-  `authorized_keys` line. The server is kept in lower case. Read the
-  server key shows the fingerprint the server presents with the key
-  exchange alone, and Trust this key stores it only if the server still
-  presents it; another server or port drops it. Deploy and rebuild ship
-  the key, the trusted server key and `~/.ssh/config` to the backup
-  service as files of their own (0600, 0700 directory, mounted read-only
-  over its cache), refuse to build without a trusted key or with a backup
-  path off the destination's server, and remove them when the instance
-  stops backing up to SFTP. Test, the usage measure, the archived copy's
-  check, the listing's sizes and both purges work over SFTP; the purge
-  checks the server's clock before it trusts file times. A server
-  presenting another key raises the critical alert
-  `backup_sftp_host_key_changed`, from the daily usage measure and the
-  daily backup listing. A module installed on top can limit the panel's
-  connections to public addresses. Continuous recovery stays on S3.
+then. The rest is the panel's assets and the Spanish catalogue.
 
 ### Changed
 
@@ -570,38 +620,6 @@ invalid. The rest is the panel's assets and the Spanish catalogue.
 
 ### Fixed
 
-- **A backup retention other than three months applies.** With the
-  duplicity cron owning the retention, the doodba template renders
-  `JOB_800_WHAT` with `3M` in the `backup` service's `environment:`, and
-  Compose gives that precedence over `.docker/backup.env`, where the panel
-  wrote its retention: a 7D or 1Y destination kept three months. The
-  retention now rides the compose override, which wins over the template,
-  on every deploy and rebuild while the cron owns it. With «Nobody» or
-  «Bucket lifecycle» owning the retention, `backup.env` no longer carries
-  a `JOB_800_WHAT` line. The deploy's and the rebuild's log say which
-  retention applies. Instances already deployed take it on their next
-  rebuild, and the first weekly cleanup after it deletes the backup sets
-  older than the retention, which until then were kept for three months.
-  A retention other than `3M` is part of the configuration snapshot, as
-  `backup_retention`, so such an instance shows changes not deployed
-  until it is rebuilt, and so does one whose destination's retention
-  changes later; every other instance hashes as before.
-
-- **A backup retention must be a count followed by D, W, M or Y.** It
-  reaches a shell in the backup container, and only the form checked it:
-  `1m` is one minute to duplicity, which deletes every chain but the
-  active one, and anything after a `;` runs as a command. A backup
-  destination refuses any other value (`^[1-9][0-9]*[DWMY]$`, capitals),
-  and a deploy that finds one stored writes no cleanup for it, leaves the
-  template's `3M` and says so in its log, without failing.
-
-- **duplicity never waits on its input.** The jobs keep a command's input
-  open, and duplicity's SFTP backend asks on it about a server it does
-  not know: every `dup` call of a backup, listing, restore, download or
-  archive copy reads from `/dev/null` and fails at once instead.
-- **The quota mail names the destination** (`backup_dst`) instead of the
-  bucket, which an SFTP destination does not have.
-
 - **A backup destination's, a project's and a host's pages after the form
   standard's review (#123).** On a backup destination, saving confirms the
   retention owner at once: «Unconfirmed…» goes and Advanced, no longer
@@ -781,13 +799,6 @@ invalid. The rest is the panel's assets and the Spanish catalogue.
   when an instance is created or renamed (existing ones keep working),
   and `incubacloud_pitr` refuses to switch continuous recovery on for `x`
   while an `x-pitr`, active or archived, is in the same folder.
-- **An account notice no longer waits up to an hour when a pass of the mail
-  queue fails.** The notice of a new country, browser, agent, API key, Git
-  token or invited user is queued and the mail queue woken once; a pass
-  that died on a concurrent write (a `SerializationFailure`) left it for
-  the next hourly pass. The queue is now woken now and again two minutes
-  later (`NOTICE_QUEUE_RETRY`). The notice is still never sent while the
-  request waits.
 
 ### Tests
 
