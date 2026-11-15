@@ -24,6 +24,7 @@ from ..github.client import GitHubAppClient
 from ..net import real_ip
 from ..net.git_reader import GitReader, GitReaderError
 from ..github.http_utils import read_json_limited, safe_urlopen
+from ._backup_retention import TEMPLATE_BACKUP_RETENTION, valid_backup_retention
 from ._git_urls import clone_url_with_credential, parse_provider_repo_url
 from ._odoo_versions import (
     VERSIONS,
@@ -878,13 +879,12 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     def _backup_retention(self):
         """Effective retention string (e.g. '7D', '3M') for the backup job.
 
-        Hook: inheriting executors can override to source the retention
-        from their own logic (e.g. a per-instance policy) instead of
-        the backend's default.
+        Thin delegator to :meth:`cloud.instance._backup_retention`, as
+        :meth:`_backup_enabled` is: a module that sources the retention
+        elsewhere overrides the model, so the deploy, the rebuild and the
+        configuration snapshot read the same value.
         """
-        inst = self._inst()
-        bb = inst.effective_backup_backend
-        return (bb.backup_retention or "3M").strip() if bb else "3M"
+        return self._inst()._backup_retention()
 
     def _backup_env_content(self):
         """Generate .docker/backup.env content, or None if no backup backend."""
@@ -906,7 +906,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         # ``environment:``, which wins over this file. The line stays so
         # the file states the retention the instance runs with.
         job = self._backup_deletion_job()
-        if job and self._backup_retention() != "3M":
+        if job and self._backup_retention() != TEMPLATE_BACKUP_RETENTION:
             lines.append(f"JOB_800_WHAT={job}")
         return "\n".join(lines) + "\n"
 
@@ -923,6 +923,14 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         ``lifecycle`` the bucket deletes and under ``none`` nobody does:
         no command.
 
+        The container's job runner starts the command through a shell, so
+        a retention that is not ``valid_backup_retention`` (``1m``, which
+        duplicity reads as one minute, or ``7D; …``) gives no command
+        either: the template's ``3M`` stays, which keeps more rather than
+        less, and :meth:`_resource_override_content` says so in the log.
+        Never an exception: a rebuild that fails here would hold the
+        rollout of the whole fleet.
+
         :return: the duplicity command, with ``$DST`` as the container
             expands it, or None
         :rtype: str
@@ -931,7 +939,34 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             return None
         if self._inst().effective_backup_backend.retention_owner != "cron":
             return None
-        return f"dup --force remove-older-than {self._backup_retention()} $DST"
+        retention = self._backup_retention()
+        if not valid_backup_retention(retention):
+            return None
+        return f"dup --force remove-older-than {retention} $DST"
+
+    def _log_backup_retention(self, deletion_job):
+        """Say in the job's log which retention the backup cleanup applies.
+
+        The operator reads it here instead of in the override. A retention
+        the cleanup refused (:meth:`_backup_deletion_job`) is a warning,
+        with what applies instead. Silent when the cron does not delete.
+
+        :param str deletion_job: what :meth:`_backup_deletion_job` returned
+        """
+        if not self._backup_enabled():
+            return
+        if self._inst().effective_backup_backend.retention_owner != "cron":
+            return
+        retention = self._backup_retention()
+        if deletion_job:
+            self._sys(f"Backup retention: {retention}, applied by the weekly cleanup.")
+        else:
+            self._sys(
+                f"⚠ Backup retention {retention!r} is not a count followed by"
+                f" D, W, M or Y: not applied, the template's"
+                f" {TEMPLATE_BACKUP_RETENTION} stays. Fix it on the backup"
+                f" destination and rebuild."
+            )
 
     def _copier_template(self):
         """Return ``(template_url, vcs_ref)`` for the copier run.
@@ -2116,6 +2151,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             services.setdefault("backup", {}).setdefault("environment", {})[
                 "JOB_800_WHAT"
             ] = deletion_job.replace("$", "$$")
+        if "backup" in allowed:
+            self._log_backup_retention(deletion_job)
         key, value = PROTECT_LABEL.split("=", 1)
         settings = self.env["cloud.settings"].sudo()._get()
         for svc in allowed:

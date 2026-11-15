@@ -228,7 +228,13 @@ class TestWhatArchives(_PitrCase):
         self.assertEqual(self.inst._pitr_window_days(), 14)
         self.backend.backup_retention = "3M"
         self.assertEqual(self.inst._pitr_window_days(), 90)
-        self.backend.backup_retention = "?"
+        # A destination refuses it now; an older database may hold one.
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_backup_backend SET backup_retention = '?' WHERE id = %s",
+            (self.backend.id,),
+        )
+        self.backend.invalidate_recordset(["backup_retention"])
         self.assertEqual(self.inst._pitr_window_days(), 7)
 
     def test_the_prefix_is_beside_the_duplicity_one_never_under_it(self):
