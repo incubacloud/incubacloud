@@ -595,7 +595,7 @@ class TestRebootComesBack(_RebootJobCase):
         self.assertEqual(executor._verdict[0], "skipped")
 
     def test_everything_back_clears_the_pending_restart_and_probes_the_instances(self):
-        self.inst.deployed = True
+        self.assertTrue(self.inst.deployed)
         self.host.write({
             "reboot_required_since": self.inside - timedelta(days=1),
             "reboot_required_pkgs": "linux-image",
