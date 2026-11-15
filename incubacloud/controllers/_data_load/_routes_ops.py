@@ -18,7 +18,7 @@ import asyncssh
 import yaml
 
 from odoo import _, http
-from odoo.exceptions import AccessError, UserError
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request
 
 from ...models._repo_requirements import canonical_repo_url, resolve_repo_ref
@@ -1089,6 +1089,9 @@ class OpsMixin:
         odoo_version = copier.get("odoo_version", "")
         repos_data = []
         skipped_repos = []
+        # What the answer tells the person besides: values of the host's
+        # files the panel left out.
+        warnings = []
         if repos_raw.strip():
             try:
                 repos_yaml = yaml.safe_load(repos_raw) or {}
@@ -1336,7 +1339,12 @@ class OpsMixin:
                         )
             inst_vals["project_id"] = project.id
             try:
-                instance = request.env["cloud.instance"].create(inst_vals)
+                instance = self._import_create_instance(inst_vals, warnings)
+            except ValidationError as exc:
+                # A value of the host's files the panel does not accept:
+                # its check says which, and nothing is created.
+                savepoint.close()
+                return {"ok": False, "error": exc.args[0]}
             except Exception:
                 _logger.exception("Failed to create instance during import")
                 savepoint.close()
@@ -1348,72 +1356,15 @@ class OpsMixin:
         # Handle backup backend from backup.env + copier backup fields
         if backup_env.get("AWS_ACCESS_KEY_ID"):
             try:
-                # Parse backup_dst: "boto3+s3://bucket/path" → bucket, path
-                s3_bucket = ""
-                s3_path = ""
-                backup_dst = copier.get("backup_dst", "")
-                if "://" in backup_dst:
-                    dst_path = backup_dst.split("://", 1)[1]
-                    parts = dst_path.split("/", 1)
-                    s3_bucket = parts[0]
-                    s3_path = parts[1] if len(parts) > 1 else ""
-
-                backend_name = f"S3 {copier.get('project_name') or 'import'}"
-                backend = request.env["cloud.backup.backend"].search(
-                    [
-                        ("name", "=", backend_name),
-                    ],
-                    limit=1,
-                )
-                if not backend:
-                    backend = request.env["cloud.backup.backend"].create(
-                        {
-                            "name": backend_name,
-                            "s3_bucket": s3_bucket,
-                            "s3_path": s3_path,
-                            "s3_access_key_id": backup_env.get(
-                                "AWS_ACCESS_KEY_ID",
-                                "",
-                            ),
-                            "s3_secret_access_key": backup_env.get(
-                                "AWS_SECRET_ACCESS_KEY",
-                                "",
-                            ),
-                            "s3_endpoint_url": backup_env.get(
-                                "AWS_ENDPOINT_URL",
-                                "",
-                            ),
-                            "passphrase": backup_env.get("PASSPHRASE", ""),
-                            "email_from": copier.get(
-                                "backup_email_from",
-                                "",
-                            ),
-                            "email_to": copier.get("backup_email_to", ""),
-                            "backup_image_version": copier.get(
-                                "backup_image_version",
-                                "latest",
-                            ),
-                            "backup_tz": copier.get("backup_tz", "UTC"),
-                            # An explicit backup_deletion=True in the copier
-                            # answers is unambiguous (cron is on). False/absent
-                            # is ambiguous — we don't know whether the bucket
-                            # has a lifecycle policy — so it's left undeclared
-                            # for the operator to confirm (see P15 #9a).
-                            "retention_owner": (
-                                "cron"
-                                if copier.get("backup_deletion", False)
-                                else "lifecycle"
-                            ),
-                            "retention_owner_declared": bool(
-                                copier.get("backup_deletion", False),
-                            ),
-                            "smtp_report_success": copier.get(
-                                "backup_smtp_report_success",
-                                True,
-                            ),
-                        }
-                    )
-                instance.backup_backend_id = backend.id
+                self._import_backup_backend(instance, copier, backup_env)
+            except ValidationError as exc:
+                # Held to the destination's checks like one saved in the
+                # panel: the instance is imported without it, and told.
+                warnings.append(_(
+                    "The backup destination was not imported: %s Add it "
+                    "on the instance before its next rebuild.",
+                    exc.args[0],
+                ))
             except Exception:
                 _logger.exception(
                     "Could not create backup backend for import",
@@ -1427,7 +1378,121 @@ class OpsMixin:
             "instance_name": instance.name,
             "is_running": is_running,
             "skipped_repos": skipped_repos,
+            "warnings": warnings,
         }
+
+    def _import_create_instance(self, vals, warnings):
+        """Create the imported instance, without its backup path if that is refused.
+
+        The path comes from the host's ``.copier-answers.yml``
+        (``backup_dst``): one outside the grammar of the panel's
+        destinations, or overlapping another instance's
+        (``cloud.instance._check_custom_backup_dst_shape``), is left out
+        rather than failing the import, and the reason goes to
+        *warnings*. Any other value refused raises as it did.
+
+        :param dict vals: the instance's values
+        :param list warnings: what the answer tells the person; appended to
+        :return: the instance
+        :raises ValidationError: for a value refused other than the path
+        """
+        Instance = request.env["cloud.instance"]
+        path = vals.get("custom_backup_dst")
+        if not path:
+            return Instance.create(vals)
+        try:
+            with request.env.cr.savepoint():
+                return Instance.create(vals)
+        except ValidationError as exc:
+            reason = exc.args[0]
+        instance = Instance.create(vals | {"custom_backup_dst": False})
+        warnings.append(_(
+            "The backup path %(path)s was not imported: %(reason)s Set the "
+            "instance's backup path or its backup destination before its "
+            "next rebuild, or it backs up elsewhere.",
+            path=path, reason=reason,
+        ))
+        return instance
+
+    def _import_backup_backend(self, instance, copier, backup_env):
+        """Give the imported instance the backup destination its host's files name.
+
+        Found by name or created from ``backup.env`` and the copier
+        answers, inside a savepoint: a value the destination's checks
+        refuse leaves no row behind.
+
+        :param instance: the imported ``cloud.instance``
+        :param dict copier: the copier answers read
+        :param dict backup_env: ``backup.env`` read
+        :raises ValidationError: for a value a destination may not hold
+        """
+        with request.env.cr.savepoint():
+            # Parse backup_dst: "boto3+s3://bucket/path" → bucket, path
+            s3_bucket = ""
+            s3_path = ""
+            backup_dst = copier.get("backup_dst", "")
+            if "://" in backup_dst:
+                dst_path = backup_dst.split("://", 1)[1]
+                parts = dst_path.split("/", 1)
+                s3_bucket = parts[0]
+                s3_path = parts[1] if len(parts) > 1 else ""
+
+            backend_name = f"S3 {copier.get('project_name') or 'import'}"
+            backend = request.env["cloud.backup.backend"].search(
+                [
+                    ("name", "=", backend_name),
+                ],
+                limit=1,
+            )
+            if not backend:
+                backend = request.env["cloud.backup.backend"].create(
+                    {
+                        "name": backend_name,
+                        "s3_bucket": s3_bucket,
+                        "s3_path": s3_path,
+                        "s3_access_key_id": backup_env.get(
+                            "AWS_ACCESS_KEY_ID",
+                            "",
+                        ),
+                        "s3_secret_access_key": backup_env.get(
+                            "AWS_SECRET_ACCESS_KEY",
+                            "",
+                        ),
+                        "s3_endpoint_url": backup_env.get(
+                            "AWS_ENDPOINT_URL",
+                            "",
+                        ),
+                        "passphrase": backup_env.get("PASSPHRASE", ""),
+                        "email_from": copier.get(
+                            "backup_email_from",
+                            "",
+                        ),
+                        "email_to": copier.get("backup_email_to", ""),
+                        "backup_image_version": copier.get(
+                            "backup_image_version",
+                            "latest",
+                        ),
+                        "backup_tz": copier.get("backup_tz", "UTC"),
+                        # An explicit backup_deletion=True in the copier
+                        # answers is unambiguous (cron is on). False/absent
+                        # is ambiguous — we don't know whether the bucket
+                        # has a lifecycle policy — so it's left undeclared
+                        # for the operator to confirm (see P15 #9a).
+                        "retention_owner": (
+                            "cron"
+                            if copier.get("backup_deletion", False)
+                            else "lifecycle"
+                        ),
+                        "retention_owner_declared": bool(
+                            copier.get("backup_deletion", False),
+                        ),
+                        "smtp_report_success": copier.get(
+                            "backup_smtp_report_success",
+                            True,
+                        ),
+                    }
+                )
+            instance.backup_backend_id = backend.id
 
     # ── Container log streaming ────────────────────────────────────────────────
 

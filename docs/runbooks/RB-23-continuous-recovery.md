@@ -66,7 +66,7 @@ db$ SELECT dedup_key, audience, message, create_date FROM cloud_alert
 | `pitr_prefix_left` (warning, on no server) | *The continuous recovery archive of … was left in the bucket* / *… was left behind* | The instance was deleted while its host had no `.docker/pitr.env`: its archive is still in the bucket, at the prefix named or, with no destination, at one to find. See §5. |
 | `pitr_prefix_left` (warning, on no server) | *… is not emptied with its archived copy* | An instance archived before 1.0.229 whose chain path does not say where its archive is: deleting it empties the chain only. See §5. |
 | `pitr_prefix_changed` (warning) | *… now goes to … what it archived before stays at …* | A rebuild rendered the archive at another prefix or destination (a backend changed, the project's folder renamed, a bucket edited). The old prefix keeps what was archived there and nothing empties it. See §4. |
-| `pitr_purge_failed` (warning) | *… switched off on … could not be emptied* | The purge of an archive switched off (`pitr_purge`) failed: no destination, credentials refused, or the job's log says why. The watch tries again in a day. See §6. |
+| `pitr_purge_failed` (warning) | *… switched off on … could not be emptied* | The purge of an archive switched off (`pitr_purge`) failed: no destination, credentials refused, a prefix that would reach other copies, or the job's log says why. The watch tries again in a day. See §6. |
 
 ## 2. Diagnose on the host
 
@@ -274,7 +274,10 @@ db$ SELECT name, pitr_state, pitr_cluster_id, pitr_off_at, pitr_purge_at,
 `pitr_purge_failed` (to the service provider on a managed destination)
 says why it failed: no backup destination (give it
 one, or empty the prefix by hand as in §5), the storage refused the
-credentials (fix them on the destination), or the job's log. The watch
+credentials (fix them on the destination), a prefix the panel refused
+because it is the destination's path or holds another instance's copies
+(nothing was deleted: correct the instance's backup path or the
+destination, then **Retry**), or the job's log. The watch
 tries again a day after the failure; **Retry** in the jobs drawer runs it
 at once. A run again is harmless: it finds nothing left before the cutoff
 and goes on. A stack configured outside the panel is not purged (its

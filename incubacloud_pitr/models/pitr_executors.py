@@ -29,6 +29,7 @@ from odoo.addons.incubacloud.models._job_server_limits import (
 from odoo.addons.incubacloud.models.abstract_executor import (
     CANCELLED_WHILE_RUNNING,
     AbstractSSHExecutor,
+    JobRefused,
 )
 from odoo.addons.incubacloud.models.purge_archived_executor import (
     PURGE_ARCHIVED_EXIT_ALREADY_EMPTY as PURGE_EMPTY_EXIT,
@@ -762,19 +763,27 @@ class PitrPurgeExecutor(_PitrExecutor):
         and the destination's credentials.
 
         :rtype: str
-        :raises ValueError: when the prefix would not stay on its line
+        :raises ValueError: when a value would not stay on its line
             (``env_line``)
+        :raises JobRefused: when the prefix would reach more than this
+            instance's archive (``cloud.instance._backup_prefix_refusal``)
         """
-        backend, prefix = self._inst()._pitr_purge_target()
+        inst = self._inst()
+        backend, prefix = inst._pitr_purge_target()
+        refusal = inst._backup_prefix_refusal(prefix)
+        if refusal:
+            raise JobRefused(refusal)
         backend = backend.sudo()
         cutoff = fields.Datetime.to_datetime(self._before())
-        lines = [env_line("DST", prefix), f"PURGE_BEFORE={cutoff.isoformat()}"]
+        lines = [env_line("DST", prefix), env_line("PURGE_BEFORE", cutoff.isoformat())]
         if backend.s3_access_key_id:
-            lines.append(f"AWS_ACCESS_KEY_ID={backend.s3_access_key_id}")
+            lines.append(env_line("AWS_ACCESS_KEY_ID", backend.s3_access_key_id))
         if backend.s3_secret_access_key:
-            lines.append(f"AWS_SECRET_ACCESS_KEY={backend.s3_secret_access_key}")
+            lines.append(
+                env_line("AWS_SECRET_ACCESS_KEY", backend.s3_secret_access_key)
+            )
         if backend.s3_endpoint_url:
-            lines.append(f"AWS_ENDPOINT_URL={backend.s3_endpoint_url}")
+            lines.append(env_line("AWS_ENDPOINT_URL", backend.s3_endpoint_url))
         return "\n".join(lines) + "\n"
 
     async def before_execute(self, transport):
@@ -850,8 +859,11 @@ class PitrPurgeExecutor(_PitrExecutor):
         backend, prefix = inst._pitr_purge_target()
         step = results.get(PURGE_STEP_LABEL) or {}
         status = step.get("exit_status")
+        refusal = inst._backup_prefix_refusal(prefix) if prefix else ""
         if not prefix:
             why = "the instance has no backup destination to empty it from"
+        elif refusal:
+            why = refusal
         elif status in PURGE_FAILURES:
             why = PURGE_FAILURES[status]
         elif step and status in (0, PURGE_EMPTY_EXIT):
@@ -869,6 +881,17 @@ class PitrPurgeExecutor(_PitrExecutor):
             f"{why}. The panel tries again in a day (RB-23 §6).",
             audience="provider" if managed else "fleet",
         )
+
+
+    async def on_abort(self, exc):
+        """A purge stopped before its step fails as one that ran did.
+
+        A prefix refused (``_env_content``) or a value that would break
+        its line: said in the job's log, with the alert.
+
+        :param Exception exc: what stopped the run
+        """
+        await self.on_failure({}, [f"{type(exc).__name__}: {exc}"])
 
 
 class PitrBaseBackupExecutor(_PitrExecutor):

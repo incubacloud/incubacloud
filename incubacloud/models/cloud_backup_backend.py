@@ -3,12 +3,19 @@ from datetime import timedelta
 from urllib.parse import urlparse
 
 import boto3
+import pytz
 from botocore.exceptions import BotoCoreError, ClientError
 
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
+from odoo.tools import email_normalize
 
-from ._backup_dst import dst_is_valid
+from ._backup_dst import (
+    breaks_line,
+    dst_is_valid,
+    endpoint_url_is_valid,
+    image_tag_is_valid,
+)
 from ._backup_retention import valid_backup_retention
 from .cloud_instance import _GLOBAL_BACKUP_PARAM
 from .encrypted_char import EncryptedChar
@@ -179,6 +186,88 @@ class CloudBackupBackend(models.Model):
                         name=rec.name,
                     )
                 )
+
+    @api.constrains(
+        "s3_endpoint_url", "s3_access_key_id", "s3_secret_access_key",
+        "passphrase",
+    )
+    def _check_s3_access_shape(self):
+        """Keep the endpoint and the secrets to one line of an environment file.
+
+        Each is written as a line of the backup container's and the purges'
+        environment files (``_backup_dst.env_line``), where a line break
+        starts a variable of its own and the last of two wins: an endpoint
+        could name another ``DST``. The endpoint is an ``http``/``https``
+        URL of a host (``endpoint_url_is_valid``), the keys hold no space
+        or control character, and the passphrase no control character.
+        Checked when they are written; one saved before is refused by the
+        file it would break, before the host is reached.
+
+        :raises ValidationError: for a value outside that shape
+        """
+        for rec in self:
+            # sudo: the secrets are a manager's fields; the check is not.
+            secrets = rec.sudo()
+            url = rec.s3_endpoint_url
+            if url and not endpoint_url_is_valid(url):
+                raise ValidationError(_(
+                    "The endpoint URL of %(name)s must be an http:// or "
+                    "https:// address of a host, with an optional port and "
+                    "path, and no spaces.",
+                    name=rec.name,
+                ))
+            for key in (secrets.s3_access_key_id, secrets.s3_secret_access_key):
+                if key and (breaks_line(key) or " " in key):
+                    raise ValidationError(_(
+                        "The access keys of %(name)s may not hold spaces, "
+                        "line breaks or control characters.",
+                        name=rec.name,
+                    ))
+            if secrets.passphrase and breaks_line(secrets.passphrase):
+                raise ValidationError(_(
+                    "The encryption passphrase of %(name)s may not hold line "
+                    "breaks or control characters.",
+                    name=rec.name,
+                ))
+
+    @api.constrains("backup_image_version", "backup_tz", "email_from", "email_to")
+    def _check_backup_answers_shape(self):
+        """Keep the answers the template renders into the compose file to their shape.
+
+        The image tag is written after ``image: …:`` unquoted, and the time
+        zone and the addresses between double quotes of the backup
+        service's environment (``cloud.instance._render_copier_answers``):
+        a line break would add YAML of its own to the service, such as
+        ``privileged: true``. A docker tag, a time zone ``pytz`` knows and
+        one address each; empty takes the template's default. Checked
+        when they are written, an import's included.
+
+        :raises ValidationError: for a value outside that shape
+        """
+        for rec in self:
+            tag = rec.backup_image_version
+            if tag and not image_tag_is_valid(tag):
+                raise ValidationError(_(
+                    "The image version of %(name)s must be a docker tag: "
+                    "letters, digits, dots, hyphens and underscores, such as "
+                    "latest or 4.0.0.",
+                    name=rec.name,
+                ))
+            if rec.backup_tz and rec.backup_tz not in pytz.all_timezones_set:
+                raise ValidationError(_(
+                    "The timezone of %(name)s must be a timezone name, such "
+                    "as UTC or Europe/Madrid.",
+                    name=rec.name,
+                ))
+            for address in (rec.email_from, rec.email_to):
+                if address and (
+                    breaks_line(address) or not email_normalize(address)
+                ):
+                    raise ValidationError(_(
+                        "The notification addresses of %(name)s must be one "
+                        "email address each.",
+                        name=rec.name,
+                    ))
 
     # ── Deletion guard ──────────────────────────────────────────────────────
 

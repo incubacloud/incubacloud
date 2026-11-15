@@ -24973,3 +24973,107 @@ msgstr ""
 "El bucket y la ruta de %(name)s solo pueden contener letras, dígitos, "
 "puntos, guiones y guiones bajos, con una / entre las partes de la ruta. Sin "
 "'..', espacios ni metacaracteres de shell."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The endpoint URL of %(name)s must be an http:// or https:// address of a "
+"host, with an optional port and path, and no spaces."
+msgstr ""
+"La URL del endpoint de %(name)s debe ser una dirección http:// o https:// de"
+" un host, con puerto y ruta opcionales, y sin espacios."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The access keys of %(name)s may not hold spaces, line breaks or control "
+"characters."
+msgstr ""
+"Las claves de acceso de %(name)s no pueden contener espacios, saltos de "
+"línea ni caracteres de control."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The encryption passphrase of %(name)s may not hold line breaks or control "
+"characters."
+msgstr ""
+"La frase de paso de encriptación de %(name)s no puede contener saltos de "
+"línea ni caracteres de control."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The image version of %(name)s must be a docker tag: letters, digits, dots, "
+"hyphens and underscores, such as latest or 4.0.0."
+msgstr ""
+"La versión de imagen de %(name)s debe ser una etiqueta de Docker: letras, "
+"dígitos, puntos, guiones y guiones bajos, como latest o 4.0.0."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The timezone of %(name)s must be a timezone name, such as UTC or "
+"Europe/Madrid."
+msgstr ""
+"La zona horaria de %(name)s debe ser el nombre de una zona horaria, como UTC"
+" o Europe/Madrid."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "The notification addresses of %(name)s must be one email address each."
+msgstr ""
+"Cada dirección de notificación de %(name)s debe ser una sola dirección de "
+"correo electrónico."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Custom backup path '%(path)s' overlaps the backup path of the instance "
+"%(other)s: deleting either would delete the other's copies. Use a path of "
+"its own."
+msgstr ""
+"La ruta de copia personalizada '%(path)s' se solapa con la ruta de copia de "
+"la instancia %(other)s: borrar cualquiera de las dos borraría las copias de "
+"la otra. Use una ruta propia."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Custom backup path '%(path)s' is the path of a backup destination or above "
+"it, where every instance keeps its copies. Use a path of the instance's own "
+"under it."
+msgstr ""
+"La ruta de copia personalizada '%(path)s' es la ruta de un destino de copia "
+"o está por encima de ella, donde todas las instancias guardan sus copias. "
+"Use una ruta propia de la instancia dentro de ella."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid ""
+"The backup destination was not imported: %s Add it on the instance before "
+"its next rebuild."
+msgstr ""
+"El destino de copia no se ha importado: %s Añádalo en la instancia antes de "
+"su próxima reconstrucción."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid ""
+"The backup path %(path)s was not imported: %(reason)s Set the instance's "
+"backup path or its backup destination before its next rebuild, or it backs "
+"up elsewhere."
+msgstr ""
+"La ruta de copia %(path)s no se ha importado: %(reason)s Indique la ruta de "
+"copia de la instancia o su destino de copia antes de su próxima "
+"reconstrucción; si no, las copias irán a otro lugar."
