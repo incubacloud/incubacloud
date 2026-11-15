@@ -311,3 +311,4 @@ from . import test_panel_address_change
 from . import test_session_cookie_binding
 from . import test_frame_ancestors
 from . import test_host_reboot
+from . import test_host_reboot_queue
