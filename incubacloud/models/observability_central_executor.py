@@ -295,7 +295,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         route.
 
         :param user: the account name, the ``ic_account`` label value and
-            Loki's tenant; the user half of the credential too, but for
+            Loki's ``X-Scope-OrgID``; the user half of the credential too, but for
             the agents' user (``<account>-agent``), which is forced to its
             account's.
         :param bool read: whether the routes include ``/r/`` and ``/lr/``.

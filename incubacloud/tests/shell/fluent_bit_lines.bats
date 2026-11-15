@@ -31,7 +31,7 @@ setup_file() {
             {"instance_id": "42", "traefik_prefix": "acme-19-0-", "traefik_extra": []},
             {"instance_id": "43", "traefik_prefix": "acme-19-0-x-19-0-", "traefik_extra": []},
             {"instance_id": "44", "traefik_prefix": "my.shop-19-0-", "traefik_extra": []},
-            {"instance_id": "45", "traefik_prefix": "", "traefik_extra": ["tenant-svc@file"]}
+            {"instance_id": "45", "traefik_prefix": "", "traefik_extra": ["shop-svc@file"]}
         ]}'
     # The journal's stand-in: the same tag, the journal's field names.
     python3 - "$TMP/etc/fluent-bit.yaml" <<'PY'
