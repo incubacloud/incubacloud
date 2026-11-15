@@ -15,13 +15,16 @@ it must be a count followed by D, W, M or Y. A production instance whose
 scheduled backups stopped raises `backup_stale`. An account notice no
 longer waits for the hourly pass of the mail queue when a pass fails.
 A backup path and the rest of a backup destination reach the servers as
-data, and a purge empties only its own instance's copies.
+data, and a purge empties only its own instance's copies. A server no
+longer restarts by itself for its updates: the panel restarts it inside
+its window.
 
 The update adds the SFTP columns of backup destinations (`sftp_host`,
 `sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
 `sftp_public_key`, `sftp_known_hosts`, `sftp_host_key_fingerprint`,
 `sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
-destinations there are. Its data migration, 1.0.232's post-migrate,
+destinations there are, the table `cloud_host_reboot` and seven columns
+on hosts for their restart. Its data migration, 1.0.232's post-migrate,
 writes each backup destination's retention in the form it must now have
 (spaces gone, the unit in capitals, an empty one as `3M`) and names in
 the log any it leaves invalid, the backup paths outside their new
@@ -111,6 +114,63 @@ paths that their new checks refuse, keeping them.
   the next hourly pass. The queue is now woken now and again two minutes
   later (`NOTICE_QUEUE_RETRY`). The notice is still never sent while the
   request waits.
+
+- **A server no longer restarts by itself for its updates: the panel
+  restarts it.** A hardened host with Auto Security Updates restarted at
+  04:00 UTC whenever an update asked for it (unattended-upgrades'
+  `Automatic-Reboot`), and cut whatever the panel ran there: a rebuild, a
+  backup, a step run apart. Hardening now writes `Automatic-Reboot
+  "false"`, through the playbook's line as it was (the recipe's
+  fingerprint does not change), and a new hidden check
+  (`host_reboot_check`, every 30 minutes, `scripts/host_reboot.sh`) reads
+  whether the server waits for a restart, records it on the host
+  (`reboot_required_since`, `reboot_required_pkgs`) and turns the server's
+  own restart off on the hosts hardened before, with no new hardening run.
+  Inside the host's restart window (`reboot_window_start` 04:00,
+  `reboot_window_hours` 3, `reboot_tz` UTC, per host) and once nothing of
+  the panel runs on the server or on its instances, it queues Restart
+  Server (`host_reboot`). The restart holds the server: no job of it or of
+  its instances is dispatched or starts until it ends
+  (`cloud.host.reboot`, under an advisory lock the dispatcher shares), and
+  its end serves every queue it held. It asks the server for its veto (a
+  step run apart, a copy or a load, an image build, or an executable of
+  `/etc/incubacloud/reboot-guard.d`), gives `shutdown -r +1` as its point
+  of no return, and waits for a new `boot_id`. A veto or a busy server
+  ends the job done with the reason, and the next pass tries again. On
+  the panel's own server the hold is of every queue. A server that does
+  not come back within 15 minutes, or comes back with the same boot,
+  fails the job with `host_reboot_failed` (critical). Before the order it
+  counts what runs inside each instance where a layer can
+  (`cloud.instance._move_quiet_sql`), keeps the names of the containers
+  running and runs a `CHECKPOINT` in each database; once back, it waits
+  up to 5 minutes for those containers, raises `host_reboot_incomplete`
+  (warning) naming the ones missing, says in its log which database
+  started after a stop that was not clean, and queues the health probe of
+  each instance. A restart pending for 7 days raises `host_reboot_pending`
+  (warning), on a host the panel restarts or not. The health probes
+  of the host's instances skip their pass while it runs. New table
+  `cloud_host_reboot` and seven columns on hosts; no data migration.
+  `docs/architecture.md` («Host maintenance window») and RB-44.
+  One restart per host and per opening of its window: a server whose
+  update still asks for a restart once it is back waits for the next
+  night. Inside the window the check asks the server's veto itself and
+  queues no restart the server would refuse, and the restart it queued
+  reads the window, the policy and the pending restart again as it
+  starts, after its wait in the queue. Only the containers whose restart
+  policy brings them back after a boot (`always`, `unless-stopped`) are
+  waited for. A connection lost as the order is given leaves the hold to
+  the server's boot, and an order that answered badly is called off
+  (`shutdown -c`) before the hold goes. `host_reboot_failed` closes once
+  the server answers with another boot, and `host_reboot_incomplete` once
+  Docker and the containers named run, whoever brought them back; neither
+  `host_unreachable` nor a host's metric rule alerts during the 15 minutes
+  after the order. A server the panel has not checked for 24 hours (a
+  panel that sleeps through the window, or one that is gone) restarts by
+  itself again, inside the same window, once per opening and with the
+  same veto, no SSH session open and nothing running inside its
+  instances: every check leaves the panel's mark on the server and
+  installs the timer `incubacloud-reboot-when-away`; once the panel checks
+  it again, the panel decides (owner's decision, 15-nov-2026).
 
 ### Security
 

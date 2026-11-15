@@ -1500,6 +1500,9 @@ class CloudJob(models.Model):
         # Steps of a move only the platform queues: the move shows
         # through its deploy, stops, restore and cutover.
         "move_quiet_check", "move_fingerprint", "move_freeze_source",
+        # Reads whether a server waits for a restart, every 30 minutes;
+        # the restart itself (``host_reboot``) shows.
+        "host_reboot_check",
     ]
 
     # Job types whose failure should raise a critical alert — these
@@ -1601,6 +1604,10 @@ class CloudJob(models.Model):
         "setup_whitelist": "group_cloud_manager",
         "delete_host": "group_cloud_manager",
         "docker_prune": "group_cloud_manager",
+        # Restarts the server, and reads whether it waits for a restart;
+        # only the platform's cron queues them, with ``sudo``.
+        "host_reboot": "group_cloud_manager",
+        "host_reboot_check": "group_cloud_manager",
         # Removes a handoff on a host; only a restore that will not run
         # queues it, with ``sudo``.
         "discard_handoff": "group_cloud_manager",
@@ -1659,10 +1666,13 @@ class CloudJob(models.Model):
         opens after its end, as for the instance's own jobs
         (``_get_health_blocking_job_types``).
 
-        :return: job type codes; none in core
+        Core's: the server's restart (``host_reboot``), which stops every
+        container of the host and their databases.
+
+        :return: job type codes
         :rtype: set
         """
-        return set()
+        return {"host_reboot"}
 
     def _get_hidden_job_types(self):
         """Return job type codes that should not appear in the UI job drawer.
@@ -1891,7 +1901,7 @@ class CloudJob(models.Model):
         return bool(self.env.cr.fetchone()[0])
 
     @api.model
-    def _scope_busy(self, instance_id, host_id):
+    def _scope_busy(self, instance_id, host_id, exclude_job_id=0):
         """Whether a visible job runs on the queue's target now.
 
         Dispatched and not ended: ``pending`` to ``started``. A job
@@ -1916,6 +1926,9 @@ class CloudJob(models.Model):
         the server (``_server_holder``). Hidden background types never
         count on their own.
 
+        :param int exclude_job_id: a job not to count, running or in a
+            chain: the server's restart asking whether anything but itself
+            runs (``cloud.host._reboot_blockers``)
         :rtype: bool
         """
         Job = self.sudo()
@@ -1944,17 +1957,19 @@ class CloudJob(models.Model):
             "SELECT 1 FROM cloud_job j"
             " JOIN cloud_job_type t ON t.id = j.job_type_id"
             f" WHERE {scope_sql.format(j='j')} AND t.code NOT IN %s"
+            " AND j.id != %s"
             f" AND {running_sql.format(j='j')} LIMIT 1",
-            (*params, hidden, running, running),
+            (*params, hidden, exclude_job_id or 0, running, running),
         )
         if self.env.cr.fetchone():
             return True
         self.env.cr.execute(
             "SELECT 1 FROM cloud_job r"
             " JOIN cloud_job s ON s.queue_chain_key = r.queue_chain_key"
-            f" WHERE r.queue_chain_key IS NOT NULL AND {running_sql.format(j='r')}"
+            " WHERE r.queue_chain_key IS NOT NULL AND r.id != %s"
+            f" AND {running_sql.format(j='r')}"
             f" AND {scope_sql.format(j='s')} LIMIT 1",
-            (running, running, *params),
+            (exclude_job_id or 0, running, running, *params),
         )
         if self.env.cr.fetchone():
             return True
@@ -2497,6 +2512,10 @@ class CloudJob(models.Model):
             if verdict == "cancelled":
                 continue
             if verdict == "wait":
+                return self.browse()
+            # A restart of a server the entry touches holds it
+            # (``_reboot_holds_entry``): it waits as for a busy target.
+            if Job._reboot_holds_entry(entry, scope):
                 return self.browse()
             if not Job._channel_admits(entry, lock=channel_lock):
                 if refused is not None:
@@ -3333,6 +3352,10 @@ class CloudJob(models.Model):
                 job._run_after_terminal_after_commit(new_state)
             else:
                 job._run_after_terminal(new_state)
+            if job.job_type_id.code == "host_reboot":
+                # Its hold kept the queues of the host's instances, or of
+                # every target on the panel's own server, besides its own.
+                scopes |= job._reboot_released_scopes()
             if job.job_type_id.code in hidden:
                 continue
             scopes |= self._queue_scopes_of(job)
@@ -6007,6 +6030,11 @@ class CloudJob(models.Model):
         if CONNECTION_RETRY_MARKER not in message:
             return None
         if not cjob.host_id:
+            return None
+        # The panel restarts the server (``cloud.host._reboot_recent``):
+        # its silence is that restart's, which alerts on its own when the
+        # server does not come back (``host_reboot_failed``).
+        if cjob.host_id._reboot_recent():
             return None
         attempts = qjob.retry or qjob.max_retries or 0
         # queue_job wraps our text as "Max. retries (N) reached: <marker>

@@ -809,6 +809,14 @@ class AbstractExecutor(ABC):
     _retry_on_connection_loss = False
     _connection_retry_attempts = 10
 
+    # Whether the job only reads its server and retries a lost connection:
+    # a probe. The hold of a server's restart (``cloud.host.reboot``) does
+    # not stop it, and a probe that runs does not keep the restart from
+    # starting (``cloud.host._reboot_blockers``). Not the same as
+    # ``_retry_on_connection_loss``: a restore and a cutover retry too,
+    # and they are work.
+    _reboot_probe = False
+
     # Whether the job is meant for an archived instance. The queue cancels
     # a waiting job whose instance was archived meanwhile
     # (``cloud.job._entry_verdict``): a deploy or a restart has nothing
@@ -3417,9 +3425,12 @@ class AbstractExecutor(ABC):
     def pre_run_checks(self):
         """Called before connecting. Raises ``JobRefused`` to abort the job.
 
-        Checks pip_dependencies for conflict markers.
-        Subclasses may extend this with additional checks.
+        Defers the job while a restart holds its server
+        (``_defer_while_restarting``), then checks pip_dependencies for
+        conflict markers. Subclasses may extend this with additional
+        checks.
         """
+        self._defer_while_restarting()
         inst = self.job.instance_id
         if not inst:
             return
@@ -3431,6 +3442,37 @@ class AbstractExecutor(ABC):
             )
             self._write_system_direct(msg)
             raise JobRefused(msg)
+
+    def _defer_while_restarting(self):
+        """Put the job back 30 s later while a restart holds its server.
+
+        The dispatcher does not start a job a restart holds, but a job
+        dispatched before the hold, a hidden one or one queued with
+        ``bypass_running_check`` can still reach its run. The hold of the
+        job's host, of its instance's, or of every server when the
+        restarting one is the panel's (``cloud.job._reboot_hold_of``); its
+        shared lock stays with the job's transaction, so a restart that
+        comes after sees this job running. A probe (``_reboot_probe``) and
+        the restart itself are not held. Off the retry budget, said once in
+        the log.
+
+        :raises RetryableJobError: while the server is held
+        """
+        if self._reboot_probe or self._job_type == "host_reboot":
+            return
+        Job = self.env["cloud.job"]
+        hosts = {self.job.host_id.id, self.job.instance_id.host_id.id}
+        holder = Job._reboot_hold_of(hosts)
+        if not holder:
+            return
+        self.job._note_once(self.job.env._(
+            "Waiting for the restart of the server (job #%(job)s): tried"
+            " again every 30 s.", job=holder,
+        ))
+        raise RetryableJobError(
+            f"The server restarts (job #{holder}); deferring.",
+            seconds=30, ignore_retry=True,
+        )
 
     # ===============================
     # ALERT HELPERS

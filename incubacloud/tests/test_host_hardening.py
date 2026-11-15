@@ -1263,8 +1263,26 @@ class TestHardeningExecutorWiring(TransactionCase):
         self.assertEqual(ev["ic_hardened_user"], DEFAULT_HARDENED_USER)
         self.assertTrue(_SSH_PORT_MIN <= ev["ic_ssh_port"] <= _SSH_PORT_MAX)
         self.assertEqual(ev["ic_ssh_allowlist"], "203.0.113.7")
-        self.assertIs(ev["ic_auto_reboot"], True)
+        # The server never restarts by itself: the panel does
+        # (``cloud.host.reboot``), with Auto Security Updates on or off.
+        self.assertIs(ev["ic_auto_reboot"], False)
         self.assertTrue(ex._needs_user_creation)
+
+    def test_the_server_never_restarts_by_itself(self):
+        """``ic_auto_reboot`` is False whatever the host says, through the
+        playbook's line as it was: the recipe's fingerprint does not move,
+        so no hardened host reads as outdated for it."""
+        for auto in (True, False):
+            ev = self._make(auto_security_updates=auto).get_extra_vars()
+            self.assertIs(ev["ic_auto_reboot"], False)
+        path = os.path.join(
+            get_module_path("incubacloud"), "ansible/playbooks/host_hardening.yml",
+        )
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertIn(
+            "Automatic-Reboot \"{{ 'true' if auto_reboot else 'false' }}\"", text,
+        )
 
     def test_extra_vars_byoh_keeps_existing_user_and_port(self):
         """Non-root BYOH: keep the connecting user and the existing port."""

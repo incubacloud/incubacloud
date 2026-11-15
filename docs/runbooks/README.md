@@ -44,6 +44,7 @@ deployment, kept with that deployment.
 | [RB-41](RB-41-panel-address-change.md) | The panel's outgoing address changed | critical | A `panel_address_changed` alert, Odoo.sh moving the project's production, a hardened host's jobs failing to connect after the panel moved |
 | [RB-42](RB-42-rebuild-left-unapplied.md) | A rebuild left its work unapplied on the server | warning | Start bringing back the previous build, a Start that started nothing, a restore refused, a move postponed `unapplied` |
 | [RB-43](RB-43-security-alert-on-a-host.md) | A security alert on a server | critical · warning | A `security_*` alert: a sign-in, `sudo` or change the panel did not make, SSH or web-login brute force, bans not holding, security logs not arriving or read late |
+| [RB-44](RB-44-server-restart.md) | The server's restart for its updates | critical · warning | A `host_reboot_failed`, `host_reboot_incomplete` or `host_reboot_pending` alert, a job waiting for the restart of its server, a server that says no (`reboot-guard.d`) |
 
 ## Conventions
 

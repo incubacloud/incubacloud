@@ -167,3 +167,12 @@ DO $$ BEGIN
     DELETE FROM cloud_job_checkpoint;
 EXCEPTION WHEN undefined_table THEN NULL;
 END $$;
+
+-- 12. The holds of the servers' restarts (1.0.232): a copy restarts no
+-- server of production's. Its hosts are archived above and its jobs
+-- cancelled, which ends every hold already, and Odoo's own neutralization
+-- switches the check's cron off; the rows go too. Newer than older copies.
+DO $$ BEGIN
+    DELETE FROM cloud_host_reboot;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;

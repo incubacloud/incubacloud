@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Every 30 minutes: a host is checked every 6 hours, and on every
+         pass inside its restart window while a restart is pending
+         (cloud.host._reboot_check_due). -->
+    <record id="cron_host_reboot_check" model="ir.cron">
+        <field name="name">Check Servers for a Pending Restart</field>
+        <field name="model_id" ref="model_cloud_host"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_host_reboot_check()</field>
+        <field name="interval_number">30</field>
+        <field name="interval_type">minutes</field>
+    </record>
+</odoo>
