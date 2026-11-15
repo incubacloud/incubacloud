@@ -16,7 +16,6 @@ from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import yaml
-from jinja2 import Environment
 
 from odoo import fields
 from odoo.modules.module import get_module_path
@@ -478,7 +477,7 @@ class TestLokiLimits(TransactionCase):
     def test_max_query_series_is_set(self):
         play = self._central_tasks()
         task = next(t for t in play["tasks"] if t.get("name") == "Write the log store configuration")
-        content = Environment(trim_blocks=True).from_string(
+        content = playbook.environment().from_string(
             task["ansible.builtin.copy"]["content"],
         ).render(
             ic_log_retention_days=30, ic_security_log_retention_days=90,
@@ -631,9 +630,9 @@ class TestThePanelLua(TransactionCase):
         lua = playbook.fluent_bit_files(ic_instances=[
             {"instance_id": "42", "traefik_prefix": "acme-19-0-", "traefik_extra": []},
             {"instance_id": "45", "traefik_prefix": "x-19-0-",
-             "traefik_extra": ["tenant-svc@file"]},
+             "traefik_extra": ["shop-svc@file"]},
         ])["panel.lua"]
         self.assertIn('{id = "42", prefix = "acme-19-0-", extra = {', lua)
-        self.assertIn('["tenant-svc@file"] = true,', lua)
+        self.assertIn('["shop-svc@file"] = true,', lua)
         self.assertIn('host_id = "7",', lua)
         self.assertIn("weblogin_per_minute = 600,", lua)
