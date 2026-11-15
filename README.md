@@ -191,12 +191,11 @@ Running the tests: [CONTRIBUTING.md](CONTRIBUTING.md#running-tests).
 
 ## Roadmap
 
-Highlights (see [docs/roadmap.md](docs/roadmap.md) for the full picture):
+What is in progress, planned and left for later (see [docs/roadmap.md](docs/roadmap.md) for the full picture):
 
-- **Agentless monitoring** — metric history, external HTTP/TLS health checks, configurable alert thresholds, dashboard sparklines
-- **User SSH keys and direct shell access** — per-user keys (manual or imported from GitHub), per-instance grants, full audit
-- **Managed version upgrades** — staging upgrade, smoke tests, approval, cutover with rollback (OpenUpgrade / Enterprise upgrade service)
-- **Data migrations (ETL)** — assisted data onboarding from spreadsheets, other Odoo databases or other ERPs
+- **Server security monitoring** — failed logins and their sources, alert rules and a Security view per server
+- **SFTP backup destinations** — with continuous recovery (restore to any minute) over SFTP
+- **Later** — managed version upgrades (OpenUpgrade / Enterprise upgrade service), data migrations (ETL) and per-instance database metrics
 
 Open a GitHub issue with the `enhancement` label to influence priorities.
 

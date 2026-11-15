@@ -429,6 +429,3 @@ While the instance is stopped or asleep, the page stays blocked.
 
 - [Hosts](../hosts/index.md) — where instances run.
 - [Backups](../backups/index.md) — how to keep their data safe.
-
-!!! note "Reference page is in progress"
-    A full per-screen reference for the Instance detail UI is coming soon.

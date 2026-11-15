@@ -1365,13 +1365,13 @@ check. Its error-log scraping now has a better source in the access logs.
   intact. Verify any change to this rule against a live backend — a
   broken watchdog is indistinguishable from a healthy fleet.
 
-- **Per-instance HTTP is not available in v1.** Traefik reports per
+- **Per-instance HTTP is not available.** Traefik reports per
   service, and the service name is a copier-time literal from each
   customer's own `prod.yaml`; across eight real doodba projects it bore
   no relation to `COMPOSE_PROJECT_NAME`, the key every other rule joins
   on. Guessing a mapping would attribute one customer's traffic to another,
   so the Traefik panels live on the **host** dashboard, grouped by
-  service. Per-instance HTTP arrives with the blackbox probes of v2.
+  service. Per-instance HTTP needs probes from outside, which the monitoring does not include.
 - **`running` comes from cAdvisor**, not from HTTP traffic. An idle but
   healthy instance must keep reading as running; sourcing it from traffic
   would eventually feed the 14-day auto-suspend with false idleness. It
