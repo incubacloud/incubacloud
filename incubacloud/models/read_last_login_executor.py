@@ -39,11 +39,16 @@ class ReadLastLoginExecutor(AbstractSSHExecutor):
     def get_commands(self):
         """Return the single reading command.
 
-        Credentials go through as script arguments rather than baked
-        into the command text, which is what keeps them out of the job
-        log and the command injection-free.
+        The values go through as script arguments rather than baked into
+        the command text, which keeps the command injection-free. The
+        database password goes in a file of the job's directory
+        (``_queue_private_file``): an argument is in the host's process
+        list and in whatever logs the SSH session.
         """
         inst = self._inst()
+        password_file = self._queue_private_file(
+            "db_password", inst.postgres_password or "",
+        )
         return [
             (
                 _LABEL,
@@ -51,7 +56,7 @@ class ReadLastLoginExecutor(AbstractSSHExecutor):
                     self._inst_dir(inst),
                     inst.postgres_dbname or "prod",
                     inst.postgres_username or "odoo",
-                    inst.postgres_password or "",
+                    password_file,
                 ]),
             ),
         ]

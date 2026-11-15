@@ -11,10 +11,18 @@ Adding a new backend (e.g. Kubernetes, GCP) requires only:
 """
 import asyncio
 import contextlib
+import logging
 from abc import ABC, abstractmethod
 from typing import NamedTuple
 
 import asyncssh
+
+# asyncssh logs at INFO every command it opens a session for, in full
+# ("Command: ..."), and Odoo's default level is INFO: whatever a command
+# carried landed in the server's log. Its warnings and errors still
+# reach it. Set here, at import, so it holds whatever level the
+# deployment gives the root logger or asyncssh's own.
+logging.getLogger("asyncssh").setLevel(logging.WARNING)
 
 # Default per-command SSH timeout. Long enough for big deploys and
 # heavy backup restores; short enough that a runaway command (infinite

@@ -132,6 +132,18 @@ columns: Odoo keeps what each holds as its English text.
   on every server. The installs, the reconciliation's revision pass and
   the read credential's rotation decide by the same check.
 
+### Security
+
+- **The SSH library no longer writes the commands the panel runs to its
+  log.** asyncssh's logger is kept at WARNING whatever level the
+  deployment sets, so a command's text stays out of the server's log.
+- **A secret a command needs goes in a file, not on its command line.**
+  Executors queue it as an owner-only file of the job's directory
+  (`_queue_private_file`), uploaded before the first step and removed with
+  the directory; the reading of a staging's last login takes its database
+  password that way, and hands it to the container through the
+  environment.
+
 ### Documentation
 
 - The user guide gains *Security logs* (what leaves a server, the failed

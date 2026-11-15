@@ -3709,7 +3709,14 @@ class AbstractExecutor(ABC):
         ``before_execute`` — where the upload has not happened yet —
         calls ``run_script()`` and then awaits this itself; the second
         call from ``_async_entry`` is then a no-op.
+
+        The files :meth:`_queue_private_file` queued go first, whether
+        or not a script was requested, and only once.
         """
+        queued = self._private_queue
+        if queued:
+            self._private_queue = None
+            await self._upload_private_files(transport, queued)
         if not self._scripts_requested or self._scripts_uploaded:
             return
         root = self._script_root()
@@ -3755,6 +3762,30 @@ class AbstractExecutor(ABC):
         # files before the one that failed, and those must go too.
         self._private_uploads = (*self._private_uploads, *files)
         await transport.upload_text_files(files, mode=0o600)
+
+    #: What :meth:`_queue_private_file` holds until the scripts are
+    #: uploaded, ``{remote_path: text_content}``.
+    _private_queue = None
+
+    def _queue_private_file(self, name, content):
+        """Queue a secret for a command to read from a file, not its arguments.
+
+        A command's text is in the host's process list while it runs and,
+        whole, in whatever logs the SSH session, so a password, a token
+        or a payload holding one goes in a file of the job's directory
+        and the command names the file. Callable from ``get_commands()``:
+        the file is staged owner-only (:meth:`_upload_private_files`) by
+        :meth:`_upload_scripts`, before the first command, and removed
+        with the job's directory when the job ends.
+
+        :param str name: the file's name in the job's directory
+        :param str content: what it holds
+        :return: its path on the host, to pass to the command
+        :rtype: str
+        """
+        path = self._job_path(name)
+        self._private_queue = {**(self._private_queue or {}), path: content}
+        return path
 
     async def _discard_staging(self, transport):
         """Remove the job's directory and the secrets it staged (best effort).
