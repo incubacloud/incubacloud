@@ -666,8 +666,8 @@ class TestTheArchivesAndTheirCredentialsStayInIt(_StagingCase):
         )
         transport = self._transport()
         with patch.object(
-            PurgeArchivedBackupsExecutor, "_env_content", autospec=True,
-            return_value=_BACKUP_ENV,
+            PurgeArchivedBackupsExecutor, "_env_contents", autospec=True,
+            return_value={executor._env_path(): _BACKUP_ENV},
         ):
             asyncio.run(executor.before_execute(transport))
         private, public = self._uploads(transport)
