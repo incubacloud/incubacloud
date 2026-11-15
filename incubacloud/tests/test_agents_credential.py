@@ -479,10 +479,10 @@ class TestLokiLimits(TransactionCase):
         task = next(t for t in play["tasks"] if t.get("name") == "Write the log store configuration")
         content = playbook.environment().from_string(
             task["ansible.builtin.copy"]["content"],
-        ).render(
-            ic_log_retention_days=30, ic_security_log_retention_days=90,
-            ic_loki_max_query_series=play["vars"]["ic_loki_max_query_series"],
-        )
+        ).render(**{
+            **play["vars"],
+            "ic_log_retention_days": 30, "ic_security_log_retention_days": 90,
+        })
         limits = yaml.safe_load(content)["limits_config"]
         self.assertEqual(limits["max_query_series"], play["vars"]["ic_loki_max_query_series"])
         self.assertGreater(limits["max_query_series"], 500)

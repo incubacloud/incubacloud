@@ -163,6 +163,15 @@ columns: Odoo keeps what each holds as its English text.
   credential until the next sync puts the new one there, instead of a 401
   on every server. The installs, the reconciliation's revision pass and
   the read credential's rotation decide by the same check.
+- **The central's Loki splits a query by day and queues 2 048 per account
+  (#84).** As Loki 2.9 comes, it splits every 30 minutes and queues 100
+  subqueries: a week of a server's sign-ins was 336 and answered 429, so
+  the Security view's 7-day tables said the central was busy. The panel
+  also reads the last lines of a long window in tranches of 12 hours,
+  newest first, so those tables answer on a central not yet deployed
+  again. The central's revision is 3: the reconciliation cron deploys it
+  again, which restarts Loki alone, about 20 seconds, the agents keeping
+  their lines.
 
 ### Documentation
 

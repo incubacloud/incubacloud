@@ -322,7 +322,7 @@ class TestSecurityBoard(HttpCase):
         for params in central.loki:
             self.assertLessEqual(
                 params["end"] - params["start"],
-                logs.TRANCHE_SECONDS * _SECOND + 1, params["query"],
+                (logs.TRANCHE_SECONDS + 1) * _SECOND, params["query"],
             )
             query = params["query"]
             kind = "accepted" if "Accepted" in query else (

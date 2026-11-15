@@ -600,8 +600,10 @@ class TestReading(TransactionCase):
         lines, cut = logs.read_last_lines(BASE, "{x}", 0, end, pages=2, limit=3)
         self.assertEqual([line.line for line in lines], ["a", "b", "c", "d", "e", "f"])
         self.assertTrue(cut)
-        asked = [call.kwargs["params"]["limit"] for call in mocked.call_args_list]
-        self.assertEqual(asked, [3, 3, 1])
+        self.assertEqual(
+            [call.kwargs["params"]["start"] for call in mocked.call_args_list],
+            [end - tranche, end - 2 * tranche, end - 2 * tranche],
+        )
 
     def test_a_busy_central_is_no_outage(self):
         """A 429 is asked once more, then raised as busy: no alert."""

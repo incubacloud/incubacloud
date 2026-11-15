@@ -51,7 +51,9 @@ _LOKI_URL = "http://loki:3100/"
 #:    and image it removes.
 #: 2. 14-nov-2026: Loki's ``max_query_series``, and Loki restarted when its
 #:    configuration changes; the agents' write-only users (plan #84, C1).
-CENTRAL_REVISION = 2
+#: 3. 15-nov-2026: Loki splits a query by day and queues 2 048 subqueries
+#:    per account, so a week of security lines is not refused with 429.
+CENTRAL_REVISION = 3
 
 #: Its existence keeps what Grafana left on the central through the
 #: deployments, for an operator who wants it before the update removes it
