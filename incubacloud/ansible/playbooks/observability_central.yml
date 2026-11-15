@@ -113,6 +113,17 @@
     # 13-nov-2026). Provisional: fixed with step M (M-c), measured with
     # thousands of source addresses on the disposable QA server.
     ic_loki_max_query_series: 5000
+    # How Loki splits a log query into subqueries, and how many of them
+    # it queues per account before answering 429. As it comes (2.9),
+    # every 30 minutes and 100: a week of a server's sign-ins, one
+    # request of the Security view, is 336 subqueries and was refused
+    # even alone (QA of 15-nov-2026). The security lines are few, so a
+    # day is one subquery's worth: a week is 7 or 8, and the queue holds
+    # a board's reads and the alerts' with room.
+    # Measured on 2.9.8 with a week of lines: the same board, 6 reads,
+    # 0.1-0.2 s, no refusal.
+    ic_loki_split_queries_by_interval: "24h"
+    ic_loki_max_outstanding_per_tenant: 2048
     # Bound to the Docker bridge gateway, NOT to 127.0.0.1.
     #
     # Everything that consumes this stack is itself a container: the host
@@ -217,11 +228,14 @@
           limits_config:
             allow_structured_metadata: false
             max_query_series: {{ ic_loki_max_query_series | int }}
+            split_queries_by_interval: {{ ic_loki_split_queries_by_interval }}
             retention_period: {{ ic_log_retention_days }}d
             retention_stream:
               - selector: '{log_type="security"}'
                 priority: 1
                 period: {{ ic_security_log_retention_days }}d
+          query_scheduler:
+            max_outstanding_requests_per_tenant: {{ ic_loki_max_outstanding_per_tenant | int }}
           compactor:
             working_directory: /loki/compactor
             retention_enabled: true
