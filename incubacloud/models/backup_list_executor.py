@@ -303,7 +303,12 @@ class BackupListExecutor(AbstractSSHExecutor):
         since = latest or inst.create_date
         limit = timedelta(hours=BACKUP_STALE_HOURS)
         if not since or fields.Datetime.now() - since <= limit:
-            Alert.resolve_alert(BACKUP_STALE_ALERT_CODE, instance=inst)
+            # The host as raise_alert gets it: the suspicion of a first
+            # stale listing is kept per (code, host, instance), and a
+            # resolve without the host would leave it to count.
+            Alert.resolve_alert(
+                BACKUP_STALE_ALERT_CODE, host=inst.host_id or None, instance=inst,
+            )
             return
         if latest:
             last = f"the last one is from {latest:%Y-%m-%d %H:%M}"

@@ -4672,7 +4672,10 @@ class CloudInstance(models.Model):
                 or "backup" not in services
             ):
                 # No backups scheduled any more: nothing can be stale.
-                Alert.resolve_alert(BACKUP_STALE_ALERT_CODE, instance=inst)
+                Alert.resolve_alert(
+                    BACKUP_STALE_ALERT_CODE,
+                    host=inst.host_id or None, instance=inst,
+                )
                 continue
             try:
                 inst.list_backups()
