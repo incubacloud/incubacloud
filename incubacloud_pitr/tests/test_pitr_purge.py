@@ -20,6 +20,9 @@ from odoo.modules.neutralize import neutralize_database
 from odoo.tests.common import tagged
 
 from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+from odoo.addons.incubacloud.models.delete_instance_executor import (
+    DeleteInstanceExecutor,
+)
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
 
 from odoo.addons.incubacloud_pitr.models import pitr_executors as ex
@@ -28,6 +31,8 @@ from odoo.addons.incubacloud_pitr.models._constants import (
     ALERT_PURGE_FAILED,
     ENV_FILE,
 )
+
+from odoo.addons.incubacloud.tests.test_backup_dst_shell import _compose_env
 
 from .test_pitr import _PitrCase
 
@@ -363,6 +368,69 @@ class TestThePurgeEnvironmentKeepsItsLines(_SwitchedOffCase):
         self.env.invalidate_all()
         with self.assertRaises(ValueError):
             self.inst._pitr_env()
+
+    def test_the_agent_s_environment_refuses_what_compose_reads_as_more(self):
+        """The agent's ``env_file``: a quote would add an ``IC_PITR_PREFIX``."""
+        for column, value in (
+            ("s3_secret_access_key", '"SK" IC_PITR_PREFIX=s3://bucket'),
+            ("s3_access_key_id", '"AK"IC_PITR_PREFIX=s3://bucket'),
+            ("s3_access_key_id", "AK$PGHOST"),
+        ):
+            with self.subTest(column=column, value=value):
+                self.env.flush_all()
+                self.env.cr.execute(
+                    f"UPDATE cloud_backup_backend SET {column} = %s WHERE id = %s",  # noqa: S608
+                    (value, self.backend.id),
+                )
+                self.env.invalidate_all()
+                with self.assertRaises(ValueError):
+                    self.inst._pitr_env()
+
+    def test_the_agent_s_environment_reaches_it_as_written(self):
+        content = self.inst._pitr_env()
+        written = dict(line.split("=", 1) for line in content.splitlines())
+        self.assertEqual(_compose_env(content), written)
+        self.assertEqual(written["IC_PITR_PREFIX"], PREFIX)
+
+
+class TestTheDeleteReachesOnlyItsOwnArchive(_PitrCase):
+    """Deleting an instance empties its recovery prefix whole, with no cutoff."""
+
+    def setUp(self):
+        super().setUp()
+        self.inst.pitr_enabled = True
+        # A staging: a project has one production.
+        self.other = self.env["cloud.instance"].create({
+            "name": "pitr-other", "project_id": self.project.id,
+            "environment": "staging", "host_id": self.host.id,
+            "state": "deployed",
+        })
+
+    def test_the_recovery_prefix_is_checked_with_the_chain_s(self):
+        executor = self._executor(DeleteInstanceExecutor, "delete_instance")
+        self.assertIn(PREFIX, executor._purge_prefixes(self.inst))
+        executor._refuse_shared_prefix(self.inst)
+
+    def test_another_s_copy_under_it_refuses_the_delete_before_any_step(self):
+        """Saved before the check: a write of it now is refused."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET custom_backup_dst = %s WHERE id = %s",
+            (f"{PREFIX}/held", self.other.id),
+        )
+        self.env.invalidate_all()
+        executor = self._executor(DeleteInstanceExecutor, "delete_instance")
+        with self.assertRaises(JobRefused) as caught:
+            asyncio.run(executor.before_execute(MagicMock(spec=SSHTransport)))
+        self.assertIn("pitr-other", str(caught.exception))
+        self.assertIn(PREFIX, str(caught.exception))
+        self.assertEqual(self.inst.state, "deployed")
+
+    def test_archiving_it_keeps_the_prefix_and_is_not_refused(self):
+        executor = self._executor(
+            DeleteInstanceExecutor, "delete_instance", payload={"keep_in_panel": True},
+        )
+        self.assertEqual(executor._purge_prefixes(self.inst), [])
 
 
 class TestThePurgeReachesOnlyItsOwnArchive(_SwitchedOffCase):

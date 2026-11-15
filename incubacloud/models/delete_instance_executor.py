@@ -1,7 +1,7 @@
 import logging
 import shlex
 
-from .abstract_executor import AbstractSSHExecutor
+from .abstract_executor import AbstractSSHExecutor, JobRefused
 from .docker_prune_executor import build_cache_prune
 from .host_build_lock import HostBuildLockMixin
 
@@ -84,6 +84,14 @@ ARCHIVE_ALERT_BY_EXIT = {
         "is usually transient: archive again.",
     ),
 }
+
+
+class BackupPrefixRefused(JobRefused):
+    """A delete's purge would empty more than its instance's copies.
+
+    Raised before the first step (``_refuse_shared_prefix``): nothing was
+    deleted, and the instance stays as it was.
+    """
 
 
 class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
@@ -182,9 +190,7 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         the record is not a deletion, so those backups still have an
         instance they belong to and are left alone.
         """
-        if not self._backups_are_ours_to_touch(inst):
-            return ()
-        if self._keeps_the_record():
+        if not self._purges_backups(inst):
             return ()
         return ((
             PURGE_LABEL,
@@ -194,6 +200,52 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
                 "continue_on": (PURGE_EXIT_ALREADY_EMPTY,),
             },
         ),)
+
+    def _purges_backups(self, inst):
+        """Whether this run empties the instance's duplicity prefix (``_purge_step``).
+
+        :param inst: the ``cloud.instance``
+        :rtype: bool
+        """
+        return self._backups_are_ours_to_touch(inst) and not self._keeps_the_record()
+
+    def _purge_prefixes(self, inst):
+        """Every prefix this run empties before the teardown.
+
+        The duplicity chain's, as the panel knows it
+        (``instance_backup_dst``), when ``_purge_step`` runs, and the
+        addons' (``cloud.instance._teardown_purge_prefixes``), only when
+        this run ends the instance's life here, as their steps do.
+
+        :param inst: the ``cloud.instance``, which exists
+        :return: the prefixes
+        :rtype: list
+        """
+        if not self._owns_instance_lifecycle:
+            return []
+        prefixes = []
+        if self._purges_backups(inst) and inst.instance_backup_dst:
+            prefixes.append(inst.instance_backup_dst)
+        prefixes += inst._teardown_purge_prefixes(self._keeps_the_record())
+        return prefixes
+
+    def _refuse_shared_prefix(self, inst):
+        """Refuse a delete whose purge would reach another's copies.
+
+        The delete empties each prefix whole, with no cutoff: one that is
+        a destination's path or holds another instance's copies
+        (``cloud.instance._backup_prefix_conflict``), written before the
+        other instance existed or before the check, would take them with
+        it. Fails closed before the first step; ``on_abort`` raises the
+        alert and the instance stays as it was, to be corrected.
+
+        :param inst: the ``cloud.instance``, which exists
+        :raises BackupPrefixRefused: naming the prefix and what it reaches
+        """
+        for prefix in self._purge_prefixes(inst):
+            refusal = inst._backup_prefix_refusal(prefix)
+            if refusal:
+                raise BackupPrefixRefused(refusal)
 
     def _addon_teardown_steps(self, inst, inst_dir):
         """Return what addons run before the teardown (see the model hook).
@@ -225,10 +277,17 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         ``on_failure`` puts it back to 'deployed' if the teardown fails.
         Skipped when the instance is already 'deleting', so re-running a
         job that died mid-teardown is not rejected by the transition map.
+
+        Refused first, the state untouched, when a purge would reach
+        another's copies (``_refuse_shared_prefix``).
+
+        :raises BackupPrefixRefused: before anything ran
         """
         inst = self._inst()
         if not self._owns_instance_lifecycle or not inst:
             return
+        if inst.exists() and not inst.removal_finalized:
+            self._refuse_shared_prefix(inst)
         with self._durable_env() as env:
             fresh = env["cloud.instance"].browse(inst.id)
             if fresh.exists() and fresh.state == "deployed":
@@ -449,6 +508,10 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         (``on_failure``). The state is read on the hook's durable cursor,
         which sees what ``before_execute`` committed.
 
+        A purge refused (``BackupPrefixRefused``) raises the purge's alert
+        with the reason: the instance stays, and a person has to correct
+        a backup path before it can be deleted.
+
         :param Exception exc: what stopped the run
         """
         error = f"{type(exc).__name__}: {exc}"
@@ -457,6 +520,15 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
             await self.on_failure({}, [error])
         else:
             self._sys(f"✗ {error}")
+        if inst and isinstance(exc, BackupPrefixRefused):
+            self.env["cloud.alert"].sudo().raise_alert(
+                PURGE_ALERT_BY_EXIT[22][0],
+                f"{exc} The instance '{inst.name}' was not deleted.",
+                level="warning",
+                host=self._host(),
+                instance=inst,
+                job=self.job,
+            )
 
     def _alert_on_purge_failure(self, results, inst):
         """Raise the alert that names why the backups could not be cleared.

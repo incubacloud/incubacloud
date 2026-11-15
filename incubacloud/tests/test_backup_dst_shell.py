@@ -12,6 +12,8 @@ import asyncio
 import contextlib
 import importlib.util
 import json
+import re
+import secrets
 import shlex
 import subprocess
 from pathlib import Path
@@ -28,7 +30,12 @@ from odoo.tests.common import TransactionCase, new_test_user, tagged
 from odoo.addons.incubacloud.controllers._data_load import _routes_ops
 from odoo.addons.incubacloud.controllers.data_load import CloudDataLoadController
 from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+from odoo.addons.incubacloud.models._backup_dst import compose_env_breaks
 from odoo.addons.incubacloud.models.backup_list_executor import BackupListExecutor
+from odoo.addons.incubacloud.models.delete_instance_executor import (
+    PURGE_ALERT_BY_EXIT,
+    DeleteInstanceExecutor,
+)
 from odoo.addons.incubacloud.models.deploy_instance_executor import (
     DeployInstanceExecutor,
 )
@@ -96,6 +103,59 @@ def _docker_env(content):
         if line and not line.startswith("#"):
             name, _sep, value = line.partition("=")
             env[name] = value
+    return env
+
+
+#: ``$NAME``, ``${NAME}`` or ``$$`` in a value compose interpolates.
+_COMPOSE_VAR_RE = re.compile(
+    r"\$(?:\$|\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))"
+)
+
+
+def _compose_env(content):
+    """Read an environment file as compose reads a service's ``env_file``.
+
+    A stand-in for compose's own reader (compose-go's ``dotenv``), which
+    the tests cannot run: the rules the panel's files meet, each checked
+    against ``docker compose`` v5.7.0 with the lines these tests use.
+    ``NAME=value``; a value that opens with a quote ends at the closing
+    one, and what follows on the line is read as another ``NAME=value``;
+    an unquoted value ends at `` #`` and loses the spaces around it; in
+    both but a single-quoted one, ``$NAME`` and ``${NAME}`` are replaced
+    by an earlier variable of the file, or by nothing, and ``$$`` is
+    ``$``. Escapes inside double quotes are not read: no value the
+    panel writes holds one.
+
+    :param str content: the file
+    :return: ``{name: value}`` as the container gets it
+    :rtype: dict
+    """
+    env = {}
+
+    def interpolate(value):
+        """Replace the variables of *value* as compose does."""
+        return _COMPOSE_VAR_RE.sub(
+            lambda m: "$" if m.group(0) == "$$"
+            else env.get(m.group(1) or m.group(2), ""),
+            value,
+        )
+
+    rest = content
+    while rest.strip():
+        rest = rest.lstrip()
+        if rest.startswith("#"):
+            rest = rest.partition("\n")[2]
+            continue
+        name, _sep, rest = rest.partition("=")
+        name = name.strip()
+        if rest[:1] in ("'", '"'):
+            quote = rest[0]
+            end = rest.index(quote, 1)
+            value, rest = rest[1:end], rest[end + 1:]
+            env[name] = value if quote == "'" else interpolate(value)
+        else:
+            line, _nl, rest = rest.partition("\n")
+            env[name] = interpolate(line.split(" #", 1)[0].strip())
     return env
 
 
@@ -850,3 +910,204 @@ class TestAnImportWithABackupValueRefused(_BackupDstCase):
         self.assertEqual(answer["warnings"], [])
         instance = self.env["cloud.instance"].browse(answer["instance_id"])
         self.assertEqual(instance.backup_backend_id.s3_bucket, "bd-import")
+
+
+class TestComposeReadsTheEnvironmentFilesAsWritten(_BackupDstCase):
+    """``backup.env`` is the backup service's ``env_file``: compose reads it.
+
+    Compose closes a value that opens with a quote and reads the rest of
+    the line as another variable, interpolates ``$`` and cuts at `` #``:
+    a ``JOB_9xx_WHAT`` the job runner starts in a shell, or a passphrase
+    other than the one saved, which no restore could then read.
+    """
+
+    #: ``(column, value)``: what compose would read as more than the value.
+    _PAYLOADS = (
+        ("passphrase", '"x" JOB_900_WHAT=touch /tmp/bd-injected'),
+        ("s3_access_key_id", '"AKIA"JOB_901_WHAT=id'),
+        ("s3_secret_access_key", "'SK' JOB_902_WHAT=id"),
+        ("passphrase", "pass$HOME"),
+        ("passphrase", "pass #word"),
+        ("passphrase", " padded"),
+        ("passphrase", "back\\slash"),
+        ("passphrase", "back`id`quote"),
+    )
+
+    def test_compose_reads_a_value_that_opens_with_a_quote_as_two(self):
+        """The re-review's two lines, read as compose read them."""
+        self.assertEqual(
+            _compose_env('PASSPHRASE="x" JOB_900_WHAT=touch /tmp/pwned\n'),
+            {"PASSPHRASE": "x", "JOB_900_WHAT": "touch /tmp/pwned"},
+        )
+        self.assertEqual(
+            _compose_env('AWS_ACCESS_KEY_ID="AKIA"JOB_901_WHAT=id\n'),
+            {"AWS_ACCESS_KEY_ID": "AKIA", "JOB_901_WHAT": "id"},
+        )
+        self.assertEqual(_compose_env("PASSPHRASE=pa$X\n"), {"PASSPHRASE": "pa"})
+
+    def test_a_destination_refuses_a_value_compose_would_read_as_more(self):
+        for column, value in self._PAYLOADS:
+            with self.subTest(column=column, value=value), \
+                    self.assertRaises(ValidationError):
+                self.backend.write({column: value})
+
+    def test_the_passphrase_the_panel_generates_and_inner_spaces_are_accepted(self):
+        generated = self.env["cloud.backup.backend"].create({
+            "name": "bd-generated", "backend_type": "s3", "s3_bucket": "bd-gen",
+        })
+        self.assertTrue(generated.sudo().passphrase)
+        self.assertFalse(compose_env_breaks(generated.sudo().passphrase))
+        for _n in range(200):
+            self.assertFalse(compose_env_breaks(secrets.token_urlsafe(20)))
+        self.backend.write({"passphrase": "a passphrase with spaces"})
+
+    def _saved_before(self, column, value):
+        """Store *value* in the destination's *column*, past its checks.
+
+        :param str column: the column
+        :param str value: the value
+        """
+        self.env.flush_all()
+        self.env.cr.execute(
+            f"UPDATE cloud_backup_backend SET {column} = %s WHERE id = %s",  # noqa: S608
+            (value, self.backend.id),
+        )
+        self.env.invalidate_all()
+
+    def _deploy(self):
+        """A deploy executor of ``self.instance``."""
+        job = self.env["cloud.job"].create({
+            "job_type_id": self.env.ref("incubacloud.deploy_instance").id,
+            "instance_id": self.instance.id,
+            "host_id": self.host.id,
+        })
+        return DeployInstanceExecutor(job, self.host)
+
+    def test_a_value_saved_before_stops_backup_env_and_the_answers(self):
+        """Both writers of backup.env: the panel's file and the template's."""
+        executor = self._deploy()
+        for column, value in self._PAYLOADS:
+            with self.subTest(column=column, value=value):
+                self._saved_before(column, value)
+                with self.assertRaises(ValueError):
+                    executor._backup_env_content()
+                with self.assertRaises(ValueError):
+                    executor._check_backup_dst_renders(
+                        self.instance._render_copier_answers(),
+                    )
+                self._saved_before(column, "bd-clean")
+
+    def test_backup_env_reaches_the_container_as_written(self):
+        """Read as compose reads it: each value as saved, and no job added."""
+        self.backend.write({"retention_owner": "cron", "backup_retention": "7D"})
+        content = self._deploy()._backup_env_content()
+        env = _compose_env(content)
+        secret = self.backend.sudo()
+        self.assertEqual(env, {
+            "AWS_ACCESS_KEY_ID": secret.s3_access_key_id,
+            "AWS_SECRET_ACCESS_KEY": secret.s3_secret_access_key,
+            "AWS_ENDPOINT_URL": secret.s3_endpoint_url,
+            "PASSPHRASE": secret.passphrase,
+            "JOB_800_WHAT": "dup --force remove-older-than 7D $DST",
+        })
+
+    def test_the_update_names_a_passphrase_compose_would_read_otherwise(self):
+        """Without its value, and kept."""
+        self._saved_before("passphrase", "pass$word")
+        spec = importlib.util.spec_from_file_location(_MIGRATION_LOGGER, _MIGRATION)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with self.assertLogs(_MIGRATION_LOGGER, "WARNING") as logs:
+            module.migrate(self.env.cr, "19.0.1.0.228")
+        output = "\n".join(logs.output)
+        self.assertIn("passphrase (with a quote, a $", output)
+        self.assertNotIn("pass$word", output)
+        self.assertEqual(self.backend.sudo().passphrase, "pass$word")
+
+
+class TestTheEndpointTakesItsUsualSpellings(_BackupDstCase):
+
+    def test_an_upper_case_scheme_is_stored_in_lower_case(self):
+        self.backend.write({"s3_endpoint_url": "HTTPS://S3.Example.net/Path"})
+        self.assertEqual(self.backend.s3_endpoint_url, "https://S3.Example.net/Path")
+        created = self.env["cloud.backup.backend"].create({
+            "name": "bd-upper", "backend_type": "s3", "s3_bucket": "bd-upper",
+            "s3_endpoint_url": "Http://10.0.0.5:9000",
+        })
+        self.assertEqual(created.s3_endpoint_url, "http://10.0.0.5:9000")
+
+    def test_a_container_s_name_and_a_fully_qualified_name_are_accepted(self):
+        for url in ("http://minio_1:9000", "https://s3.example.net.",
+                    "https://s3.example.net.:443/bucket"):
+            with self.subTest(url=url):
+                self.backend.write({"s3_endpoint_url": url})
+                self.assertEqual(self.backend.s3_endpoint_url, url)
+
+
+class TestDeletingALiveInstanceReachesOnlyItsCopy(_BackupDstCase):
+    """The delete empties its prefix whole, with no cutoff.
+
+    A path written before another instance came to live under it, or
+    saved before the check, would take that one's copies with it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.folder = self.instance.instance_backup_dst.rsplit("/", 1)[0]
+        # Its project's folder, while no other instance is in it.
+        self.instance.sudo().write({"custom_backup_dst": self.folder})
+        # A staging: a project has one production. Its path is computed,
+        # under the folder: no check reads it.
+        self.other = self.env["cloud.instance"].create({
+            "name": "bd-other", "project_id": self.project.id,
+            "environment": "staging", "host_id": self.host.id,
+            "state": "deployed", "backup_backend_id": self.backend.id,
+        })
+
+    def _delete(self, payload=None):
+        """A delete executor of ``self.instance``."""
+        job = self.env["cloud.job"].create({
+            "job_type_id": self.env.ref("incubacloud.delete_instance").id,
+            "instance_id": self.instance.id,
+            "host_id": self.host.id,
+            "payload": payload or {},
+        })
+        return DeleteInstanceExecutor(job, self.host)
+
+    def test_another_s_copy_under_its_path_refuses_it_before_any_step(self):
+        self.assertTrue(
+            self.other.instance_backup_dst.startswith(f"{self.folder}/"),
+        )
+        executor = self._delete()
+        with patch.object(
+            DeleteInstanceExecutor, "_durable_env", autospec=True,
+        ) as durable, self.assertRaises(JobRefused) as caught:
+            asyncio.run(executor.before_execute(MagicMock(spec=SSHTransport)))
+        durable.assert_not_called()
+        self.assertIn("bd-other", str(caught.exception))
+        self.assertEqual(self.instance.state, "deployed")
+        with patch.object(DeleteInstanceExecutor, "_sys", autospec=True):
+            asyncio.run(executor.on_abort(caught.exception))
+        alert = self.env["cloud.alert"].search([
+            ("code", "=", PURGE_ALERT_BY_EXIT[22][0]),
+            ("instance_id", "=", self.instance.id), ("state", "=", "active"),
+        ])
+        self.assertEqual(len(alert), 1)
+        self.assertIn("bd-other", alert.message)
+        self.assertIn("was not deleted", alert.message)
+        self.assertEqual(self.instance.state, "deployed")
+        self.assertTrue(self.instance.exists())
+
+    def test_its_own_path_goes_on(self):
+        self.instance.sudo().write({"custom_backup_dst": False})
+        executor = self._delete()
+        self.assertEqual(
+            executor._purge_prefixes(self.instance),
+            [self.instance.instance_backup_dst],
+        )
+        executor._refuse_shared_prefix(self.instance)
+
+    def test_archiving_it_purges_nothing_and_is_not_refused(self):
+        executor = self._delete({"keep_in_panel": True})
+        self.assertEqual(executor._purge_prefixes(self.instance), [])
+        executor._refuse_shared_prefix(self.instance)

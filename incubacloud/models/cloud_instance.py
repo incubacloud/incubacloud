@@ -959,7 +959,14 @@ class CloudInstance(models.Model):
                 other.effective_backup_backend == backend for other in others
             ):
                 # Its own destination's path, which no other instance
-                # uses: what an import names after the path it read.
+                # uses: what an import names after the path it read. Kept
+                # rather than having the import name its destination after
+                # the parent path: the imports made so far would be
+                # refused every purge. Its limit: a purge of it also
+                # reaches what the panel does not record under that path
+                # (another tool's objects, a recovery prefix a delete left
+                # behind), which only an administrator, or an import he
+                # starts, can have written there.
                 continue
             return backend, None
         for other in others:
@@ -2099,6 +2106,21 @@ class CloudInstance(models.Model):
         :param str inst_dir: the instance directory on the host
         :param bool keep_in_panel: the record stays as an archived draft
         :return: ``(label, command[, opts])`` tuples; none in core
+        :rtype: list
+        """
+        self.ensure_one()
+        return []
+
+    def _teardown_purge_prefixes(self, keep_in_panel):
+        """The prefixes the addon steps of a delete empty (``_teardown_pre_steps``).
+
+        Each is checked before the delete's first step, as the duplicity
+        chain's is (``DeleteInstanceExecutor._refuse_shared_prefix``): a
+        prefix that holds another instance's copies refuses the delete.
+
+        :param bool keep_in_panel: the record stays as an archived draft
+        :return: one ``boto3+s3://`` or ``s3://bucket/path`` per prefix;
+            none in core
         :rtype: list
         """
         self.ensure_one()
