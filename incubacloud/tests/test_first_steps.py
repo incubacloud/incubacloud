@@ -110,14 +110,13 @@ class TestFirstStepMarks(_FirstStepsBase):
         self.assertTrue(self._row("server").attempted_at)
 
     def test_the_first_date_wins(self):
-        first = self._host()
-        self._age("cloud_host", T0, first.ids)
-        self.Steps._reconcile()
-        self.assertEqual(self._row("server").attempted_at, T0)
+        self._host()
+        first = self._row("server").attempted_at
+        self.assertTrue(first, "written by the creation itself")
         second = self._host(name="fs-host-2", ip_address="10.0.12.2")
         self._age("cloud_host", T0 - timedelta(days=5), second.ids)
         self.Steps._reconcile()
-        self.assertEqual(self._row("server").attempted_at, T0)
+        self.assertEqual(self._row("server").attempted_at, first)
 
     def test_the_server_is_achieved_by_a_full_setup_done(self):
         host = self._host()
@@ -172,7 +171,7 @@ class TestFirstStepMarks(_FirstStepsBase):
 
     def test_push_needs_a_push_and_the_boot_test(self):
         host = self._host()
-        instance = self._instance(host)
+        instance = self._instance(host, boot_test=False)
         self._job("rebuild_instance", host, instance)
         self.Steps._reconcile()
         self.assertFalse(self._row("push"))

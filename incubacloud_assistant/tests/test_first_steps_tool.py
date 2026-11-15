@@ -69,6 +69,7 @@ class TestFirstStepsTool(McpUsersMixin, TransactionCase):
         host = self.env["cloud.host"].create({
             "name": "asis-fs-secret-host", "ip_address": "10.0.13.1", "port": 22,
             "user": "root", "login_type": "ssh_key",
+            "wildcard_domain": "asis-fs.example.com",
         })
         backend = self.env["cloud.backup.backend"].create({
             "name": "asis-fs-secret-backend", "backend_type": "s3",

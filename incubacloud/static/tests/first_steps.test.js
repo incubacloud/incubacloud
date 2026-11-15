@@ -96,7 +96,7 @@ describe("FirstSteps — the card", () => {
         expect(".rl-btn-primary").toHaveText("Connect a server");
         expect(queryAll(".ic-fs-step--done .ic-fs-action")).toHaveLength(0);
         expect(".ic-fs-guide").toHaveCount(2);
-        expect(queryOne(".ic-fs-guide")).toHaveAttribute("target", "_blank");
+        expect(queryAll(".ic-fs-guide")[0]).toHaveAttribute("target", "_blank");
     });
 
     test("no button of the card says New Project: the page's header keeps it", () => {
@@ -134,7 +134,7 @@ describe("FirstSteps — the card", () => {
     test("with the required steps done it is one line that unfolds", async () => {
         await mountCard(stateOf({ collapsed: true, done: 3, next: "domain" }));
         expect("ol.ic-fs-steps").toHaveCount(0);
-        expect("button.ic-fs-fold").toHaveText("▸ First steps · 3 of 3 done · 2 optional left");
+        expect("button.ic-fs-fold [aria-live]").toHaveText("First steps · 3 of 3 done · 2 optional left");
         expect("button.ic-fs-fold").toHaveAttribute("aria-expanded", "false");
         await click("button.ic-fs-fold");
         await animationFrame();
@@ -144,7 +144,7 @@ describe("FirstSteps — the card", () => {
 
     test("one optional step left is said in the singular", async () => {
         await mountCard(stateOf({ collapsed: true, done: 3, optional_left: 1 }));
-        expect("button.ic-fs-fold").toHaveText("▸ First steps · 3 of 3 done · 1 optional left");
+        expect("button.ic-fs-fold [aria-live]").toHaveText("First steps · 3 of 3 done · 1 optional left");
     });
 
     test("nothing is drawn when it is off or does not show", async () => {
