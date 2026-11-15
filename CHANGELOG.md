@@ -168,8 +168,8 @@ the account's credential by hand loses it.
 - **The agents' own user on the central, handed out by state (#84).**
   Each account has a second vmauth user, `<account>-agent`, that reaches
   `/w/` and `/lw/` alone and is forced to the account's label and Loki
-  tenant (`cloud.settings.metrics_agent_token`). The agents write with it
-  only once the central's list carries it, with the account's credential
+  `X-Scope-OrgID` (`cloud.settings.metrics_agent_token`). The agents write
+  with it only once the central's list carries it, with the account's credential
   until then, and every server is applied again the moment it comes into
   force; a module that hands a panel its credentials hands this one only
   once its central knows it (`_metrics_credentials_injected`). Each server

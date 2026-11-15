@@ -122,7 +122,7 @@ credential and not from the payload.
 **Three credentials, and they are not interchangeable.** Each account has
 its own, scoped to itself, which the panel reads with, and an *agents'
 user*, `<account>-agent`, which only writes (`/w/` and `/lw/`), forced to
-the same account's label and Loki tenant: the agents write with it, so
+the same account's label and Loki `X-Scope-OrgID`: the agents write with it, so
 root on one server can no longer read the logs and metrics of the
 account's other servers. The *operator* credential reads across every
 account (`/admin-r/`), deletes series (`/admin-d/`) and is never written
