@@ -267,6 +267,11 @@ s a search; a path with `..`, a link out of the folder or a binary file is refus
 test compares the list with `git ls-files`. These tools are the assistant's own and are
 not in the MCP's catalog: an external agent has its own means of reading public code.
 
+`get_first_steps`, also the assistant's own, answers the home page's first steps from
+`cloud.first.steps._state_for_assistant()`: the same steps as the card, in English, with
+the buttons' labels and screens and no name or id of a record. It is read-only, for
+every role, and absent while `cloud.first.steps._enabled()` is false.
+
 ## Extending
 
 - **A provider** is a class with `@register` in `connectors/` that gives

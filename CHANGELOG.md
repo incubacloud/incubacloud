@@ -57,6 +57,12 @@ marked as backfilled.
   (`registerFirstStepAction`) and a header over the steps
   (`registerFirstStepsHeader`). An instance's address takes `?tab=`, which
   opens that tab.
+- **The assistant's `get_first_steps`.** A read of its own, for every role:
+  the same steps as the card, in English whatever the person's language,
+  with each button's label and the screen it is on, the guide and the next
+  step, and no name or id of a server, project or instance. Absent where a
+  layer turns the steps off. The prompt tells the model to call it when the
+  person asks what to do next or how to start.
 
 ### Documentation
 
