@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { patchTranslations } from "@web/../tests/web_test_helpers";
 import { Chrome } from "@incubacloud/app/app";
 
 /**
@@ -42,7 +42,7 @@ function escape() {
 
 describe("A failed job's notice", () => {
     beforeEach(() => {
-        allowTranslations();
+        patchTranslations();
     });
 
     test("it says what failed, on what and why", () => {

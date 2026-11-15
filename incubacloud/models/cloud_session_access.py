@@ -691,19 +691,19 @@ class ResUsers(models.Model):
         Odoo's trace calls a session revoked when it is revoked from the
         trace, or once its vacuum finds the stored file gone, a week of
         idleness later; it never sees a token stop matching. Each OAuth
-        sign-in writes a new access token, part of Odoo 19's session
-        token, and Sign out everywhere moves a counter that is part of it
-        too: every earlier session is refused, its file still stored. A
+        sign-in writes a new access token, part of Odoo's session token,
+        and Sign out everywhere moves a counter that is part of it too:
+        every earlier session is refused, its file still stored. A
         session the guard closes has its files deleted and its trace left
-        as it was. So the stored sessions are read as ``check_session``
-        reads them: one lives when a file of its identifier (the one it
-        was rotated to, or the one it was rotated from until Odoo deletes
-        it) is of this database and this user, is not past its deletion
-        time and holds the token this user's fields give now; and, while
-        the guard closes idle sessions, has not been idle past the limit
-        pinned in it, past which its next request closes it. Only the
-        files this user's trace names are read, and nothing of them
-        leaves this method.
+        as it was. So the stored sessions are read as Odoo 18's
+        ``check_session`` reads them: one lives when a file of its
+        identifier is of this database and this user and holds the token
+        this user's fields give now; and, while the guard closes idle
+        sessions, has not been idle past the limit pinned in it, past
+        which its next request closes it. Odoo 18 has no legacy token to
+        fall back on, and deletes the file of a session it rotates at
+        once, with no deletion time. Only the files this user's trace
+        names are read, and nothing of them leaves this method.
 
         :param identifiers: ``session_identifier`` values of this user's
             trace
@@ -751,17 +751,12 @@ class ResUsers(models.Model):
         """
         if session.uid != self.id or session.db != self.env.cr.dbname:
             return False
-        deletion = session.get("deletion_time")
-        if deletion and deletion <= now:
-            return False
         token = session.session_token
         if not isinstance(token, str) or not token:
             return False
         expected = self._compute_session_token(session.sid)
         if not (expected and consteq(expected, token)):
-            legacy = self._legacy_session_token_hash_compute(session.sid)
-            if not (legacy and consteq(legacy, token)):
-                return False
+            return False
         pin = session.get(PIN_KEY)
         if closing and isinstance(pin, dict) and pin.get("uid") == self.id:
             limit = pin.get("limit") or 0

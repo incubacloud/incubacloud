@@ -316,7 +316,7 @@ class TestSessionsPage(_GuardedRequests, HttpCase):
         self.assertFalse(self._check(other, visitor=None))
 
     def test_a_later_oauth_sign_in_ends_the_session_before_it(self):
-        """Odoo 19's session token holds the OAuth access token, and each
+        """Odoo's session token holds the OAuth access token, and each
         OAuth sign-in writes a new one: the session before it is refused
         with its file still stored."""
         if "oauth_access_token" not in self.user._fields:
