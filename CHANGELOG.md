@@ -72,6 +72,28 @@ paths that their new checks refuse, keeping them.
 
 ### Fixed
 
+- **A Full Setup no longer hangs installing the host tools on Ubuntu.**
+  After every apt run, needrestart restarts the services still on files
+  that run replaced, and one of them can be cloud-init's hotplug hook
+  (`cloud-init-hotplugd`, on Hetzner's Ubuntu 22.04 and 24.04 images):
+  an interface Docker creates starts it when its MAC begins with `86:`,
+  as Hetzner's private networks' do, and it spends seconds to minutes
+  asking the metadata service. The unit is a oneshot fed by a FIFO, so
+  restarted by hand it waits on the FIFO for good, and the apt run with
+  it: a Full Setup on Ubuntu 24.04 stopped at «Install host tools» until
+  its hour ran out. Every apt run of the Full Setup, Docker's installer,
+  the hardening, the observability agents' install and the log rotation
+  of instances and proxy now has needrestart only list what needs
+  restarting (`NEEDRESTART_MODE=l`), and the Full Setup tells needrestart
+  to leave that unit alone in any other apt run on the host, the
+  unattended upgrades included
+  (`/etc/needrestart/conf.d/50-incubacloud-hotplug.conf`, only where
+  needrestart is installed). cloud-init's hotplug itself is untouched.
+  The hardening recipe changes, so hardened servers show their hardening
+  as outdated until it is applied again; a server already set up gets
+  the needrestart setting with its next Full Setup. A host stuck there
+  now comes back with `systemctl kill cloud-init-hotplugd.service`.
+
 - **A backup retention other than three months applies.** With the
   duplicity cron owning the retention, the doodba template renders
   `JOB_800_WHAT` with `3M` in the `backup` service's `environment:`, and

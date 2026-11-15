@@ -1903,3 +1903,53 @@ class TestTheMovedPortOutlivesTheFailedJob(JobEndAssertions, TransactionCase):
             self.stored(self.host, "known_hosts_key"),
             "[192.0.2.77]:22345 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMovedPortKey",
         )
+
+
+class TestAptLeavesTheServicesAlone(TransactionCase):
+    """Every apt task of the host playbooks has needrestart only list.
+
+    Restarted by hand, cloud-init's hotplug hook (a oneshot unit fed by a
+    FIFO) waits on the FIFO for good, and the apt run that restarted it
+    waits with it: a Full Setup on Ubuntu 24.04 hung there until its
+    3600 s (QA, 15-nov-2026). See ``scripts/full_setup_install.sh``.
+    """
+
+    def _apt_tasks(self, playbook):
+        """Return the ``ansible.builtin.apt`` tasks of *playbook*, blocks included.
+
+        :param str playbook: the file name under ``ansible/playbooks``
+        :rtype: list
+        """
+        import yaml
+
+        path = os.path.join(
+            get_module_path("incubacloud"), "ansible", "playbooks", playbook,
+        )
+        with open(path, encoding="utf-8") as fh:
+            plays = yaml.safe_load(fh)
+        found = []
+
+        def walk(tasks):
+            for task in tasks or []:
+                if "ansible.builtin.apt" in task:
+                    found.append(task)
+                for key in ("block", "rescue", "always"):
+                    walk(task.get(key))
+
+        for play in plays:
+            for key in ("pre_tasks", "tasks", "post_tasks", "handlers"):
+                walk(play.get(key))
+        return found
+
+    def test_every_apt_task_has_needrestart_only_list(self):
+        """Hardening and the agents' install, the playbooks that install packages."""
+        for playbook, count in (
+            ("host_hardening.yml", 1), ("host_observability.yml", 2),
+        ):
+            tasks = self._apt_tasks(playbook)
+            self.assertEqual(len(tasks), count, playbook)
+            for task in tasks:
+                with self.subTest(playbook=playbook, task=task.get("name")):
+                    self.assertEqual(
+                        (task.get("environment") or {}).get("NEEDRESTART_MODE"), "l",
+                    )

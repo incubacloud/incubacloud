@@ -101,6 +101,26 @@ teardown() {
     grep -q "apt-get" "$CALLS"
 }
 
+# needrestart only lists what needs restarting: restarted by hand,
+# cloud-init's hotplug hook waits on its FIFO for good, and the apt run with
+# it (full_setup_install.sh, 15-nov-2026).
+@test "installing logrotate leaves needrestart only listing what needs restarting" {
+    MIN="$TMP/min"
+    mkdir -p "$MIN"
+    for tool in bash dirname id mkdir stat chmod mktemp cat rm cp grep env; do
+        ln -sf "$(command -v "$tool")" "$MIN/$tool"
+    done
+    ln -sf "$TMP/bin/sudo" "$MIN/sudo"
+    cat > "$MIN/apt-get" <<'STUB'
+#!/usr/bin/env bash
+echo "apt-get NEEDRESTART_MODE=${NEEDRESTART_MODE:-unset} $*" >> "$CALLS"
+STUB
+    chmod +x "$MIN/apt-get"
+    PATH="$MIN" run bash "$SCRIPT" install "$HOME/project/inst" inst 60
+    [ "$status" -eq 0 ]
+    grep -q "apt-get NEEDRESTART_MODE=l install -y -qq logrotate" "$CALLS"
+}
+
 @test "a failing chown warns but does not fail the deploy" {
     # Report the directory as owned by root so the script tries the
     # chown at all (the user running these tests may well be uid 1000),
