@@ -33,7 +33,6 @@ from ._repo_requirements import (
     detect_addon_conflicts,
     detect_pip_conflicts,
 )
-from .backup_list_executor import BACKUP_STALE_ALERT_CODE
 from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
@@ -4747,6 +4746,10 @@ class CloudInstance(models.Model):
             ]
             + self._periodic_maintenance_domain()
         )
+        # Here, not at the top: backup_list_executor imports
+        # cloud_backup_backend, which imports this module.
+        from .backup_list_executor import BACKUP_STALE_ALERT_CODE
+
         Alert = self.env["cloud.alert"].sudo()
         for inst in instances:
             services = {
