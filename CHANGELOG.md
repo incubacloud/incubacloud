@@ -540,7 +540,8 @@ invalid. The rest is the panel's assets and the Spanish catalogue.
   compute (an archived instance of the same name whose project's folder
   the new one took, or two instances of a name without a project), the
   new one's path ends in `-<id>` (`backup_path_suffix`, set by the panel
-  on creation and when the name or the project changes), and so does its
+  on creation, when the name, the project or the project's folder
+  changes, and when a backup path written by hand is emptied), and so does its
   continuous recovery prefix: its first copy is a full of its own and no
   purge of the other reaches it. Without such a record the path is the
   one the destination computes, as before. A backup path written by hand
@@ -548,6 +549,10 @@ invalid. The rest is the panel's assets and the Spanish catalogue.
   included. 1.0.229's post-migrate names in the log the records that
   already share a path and raises one `backup_path_shared` alert per
   path; their paths are kept, and their purges go by the dates above.
+  The alert resolves itself at the daily check of archived copies once
+  one record holds the path (RB-05). The backup listing's sizes are read
+  from the instance's own path, its suffix included, and the alerts of a
+  recovery archive left behind name the prefix with it.
   Spanish translation included.
 - **An import with a backup value the panel refuses goes on without it.**
   A backup path or destination from the host's files that the checks

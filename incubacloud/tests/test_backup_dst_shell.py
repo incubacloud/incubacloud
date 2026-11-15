@@ -515,6 +515,35 @@ class TestTheUpdateNamesThePathsSavedBefore(_BackupDstCase):
         self.assertEqual(live.instance_backup_dst, path)
         self.assertFalse(live.backup_path_suffix)
 
+    def test_the_alert_resolves_once_one_record_holds_the_path(self):
+        """At the daily check of archived copies, compared as a purge reads it."""
+        self.instance._finalize_removal(keep_in_panel=True)
+        path = self.instance.custom_backup_dst
+        live = self.env["cloud.instance"].create({
+            "name": "bd-inst",
+            "project_id": self.env["cloud.project"].create({"name": "bd-proj-2"}).id,
+            "environment": "production", "host_id": self.host.id,
+            "state": "deployed", "backup_backend_id": self.backend.id,
+        })
+        self._saved_before(path, live)
+        with self.assertLogs(_MIGRATION_LOGGER, "WARNING"):
+            self._migrate()
+        Instance = self.env["cloud.instance"]
+        alert = self.env["cloud.alert"].search([
+            ("code", "=", "backup_path_shared"), ("state", "=", "active"),
+        ])
+        self.assertEqual(Instance._resolve_unshared_backup_paths(), 0)
+        self.assertEqual(alert.state, "active")
+        self._saved_before(f"{path}/", live)
+        self.assertEqual(Instance._resolve_unshared_backup_paths(), 0)
+        self._saved_before(f"{path}-{live.id}", live)
+        with patch.object(
+            type(Instance), "_probe_archived_copy", autospec=True,
+            return_value=("present", 0.0),
+        ):
+            Instance._cron_verify_archived_copies()
+        self.assertEqual(alert.state, "dismissed")
+
 
 class TestTheEnvironmentFilesKeepEveryLine(_BackupDstCase):
     """Every line of the purges' and the backup container's files, not just DST.
@@ -1567,6 +1596,27 @@ class TestASuccessorGetsABackupPathOfItsOwn(_BackupDstCase):
     def test_an_instance_with_a_path_of_its_own_gets_no_suffix(self):
         own = self._create(custom_backup_dst="boto3+s3://bd-bucket/imported/bd-inst")
         self.assertFalse(own.backup_path_suffix)
+
+    def test_emptying_its_own_path_claims_the_computed_one(self):
+        own = self._create(custom_backup_dst="boto3+s3://bd-bucket/imported/bd-inst")
+        own.write({"custom_backup_dst": False})
+        self.assertEqual(own.backup_path_suffix, f"-{own.id}")
+        self.assertEqual(
+            own.instance_backup_dst, f"{self.archived_path}-{own.id}",
+        )
+
+    def test_moving_the_project_s_folder_claims_its_instances_paths(self):
+        moved = self.env["cloud.project"].create({
+            "name": "bd-proj-moved", "remote_folder": "bd-proj-moved",
+        })
+        inst = self._create(project_id=moved.id)
+        self.assertFalse(inst.backup_path_suffix)
+        self.again.remote_folder = "bd-proj-again"
+        moved.remote_folder = "bd-proj"
+        self.assertEqual(inst.backup_path_suffix, f"-{inst.id}")
+        self.assertEqual(
+            inst.instance_backup_dst, f"{self.archived_path}-{inst.id}",
+        )
 
     def test_archiving_the_successor_freezes_its_own_path(self):
         successor = self._create()

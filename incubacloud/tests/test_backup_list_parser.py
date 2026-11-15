@@ -315,6 +315,19 @@ class TestBackupSetSizes(TransactionCase):
         self.assertEqual(self.full.size, 2 * self.GIB + 6000)
         self.assertEqual(self.inc.size, 1000)
 
+    def test_an_instance_with_a_suffix_lists_its_own_path(self):
+        """The path duplicity writes to, suffix included: rebuilt from the
+        folder and the name, the pass listed another instance's copies."""
+        self.inst.sudo().write({'backup_path_suffix': '-7'})
+        client = self._listing([])
+        with patch.object(boto3, 'client', return_value=client):
+            self.executor._populate_sizes_from_s3()
+        path = self.inst.effective_backup_backend.s3_path.strip('/')
+        folder = self.inst.project_id.remote_folder
+        client.get_paginator.return_value.paginate.assert_called_once_with(
+            Bucket='bucket', Prefix=f'{path}/{folder}/bk-size-7/',
+        )
+
     def test_the_size_is_a_bigint(self):
         """The column holds 64 bits."""
         self.env.cr.execute("""
