@@ -58,6 +58,13 @@ DO $$ BEGIN
         metrics_read_token_next = NULL, metrics_credentials_deployed = NULL;
 EXCEPTION WHEN undefined_column THEN NULL;
 END $$;
+-- An SFTP backup destination's private key (1.0.232): the destination's
+-- server accepts it, so a copy holding it could read and delete the
+-- backups there. Its public half and the trusted server key stay.
+DO $$ BEGIN
+    UPDATE cloud_backup_backend SET sftp_private_key = NULL;
+EXCEPTION WHEN undefined_column THEN NULL;
+END $$;
 
 -- 2. Clear known_hosts fingerprints (prod-specific)
 UPDATE cloud_host SET known_hosts_key = NULL;
