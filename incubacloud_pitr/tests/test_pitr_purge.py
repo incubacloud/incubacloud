@@ -527,8 +527,8 @@ class TestThePurgeReachesOnlyItsOwnArchive(_SwitchedOffCase):
         return self.env["cloud.instance"].create({
             "name": name, "project_id": project.id,
             "environment": "production", "host_id": self.host.id,
-            "state": "deployed", "pitr_enabled": True, **vals,
-        })
+            "state": "deployed", "pitr_enabled": True,
+        } | vals)
 
     def test_another_instance_s_archive_is_not_emptied(self):
         before = self._switched_off(15)
