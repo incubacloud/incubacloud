@@ -17,7 +17,7 @@ from unittest.mock import create_autospec, patch
 
 from odoo.tests.common import HttpCase, TransactionCase, tagged
 
-from ..models import geoip, metrics_security
+from ..models import geoip, logs, metrics_security
 from ..models.metrics_charts import PANELS
 from ..models.logs import LogLine
 from ..models.metrics_diagnosis import diagnose_host_security
@@ -311,15 +311,26 @@ class TestSecurityBoard(HttpCase):
                 self.assertEqual(res["attribution"], attribution)
 
     def test_seven_days_of_an_aggregation_are_cut_to_24_hours(self):
-        """The failed SSH sample reaches 24 h; the sign-ins, filtered, 7 days."""
+        """The failed SSH sample reaches 24 h; the sign-ins, filtered, 7 days.
+
+        Read in tranches: no request asks Loki for more than one, so a
+        central on Loki's own limits answers a week too (QA of
+        15-nov-2026, 429 on every 7-day table).
+        """
         _res, central = self._board("secb-mgr", range_key="7d")
-        spans = {}
+        reach = {}
         for params in central.loki:
+            self.assertLessEqual(
+                params["end"] - params["start"],
+                logs.TRANCHE_SECONDS * _SECOND + 1, params["query"],
+            )
             query = params["query"]
             kind = "accepted" if "Accepted" in query else (
                 "failed" if 'source="sshd"' in query else None)
             if kind:
-                spans[kind] = (params["end"] - params["start"]) / _SECOND
+                first, last = reach.get(kind, (params["start"], params["end"]))
+                reach[kind] = (min(first, params["start"]), max(last, params["end"]))
+        spans = {kind: (last - first) / _SECOND for kind, (first, last) in reach.items()}
         self.assertLessEqual(spans["failed"], 24 * 3600 + 1)
         self.assertGreater(spans["accepted"], 6 * 24 * 3600)
 

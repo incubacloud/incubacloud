@@ -487,6 +487,22 @@ class TestLokiLimits(TransactionCase):
         self.assertEqual(limits["max_query_series"], play["vars"]["ic_loki_max_query_series"])
         self.assertGreater(limits["max_query_series"], 500)
 
+    def test_a_week_is_split_by_day_with_room_in_the_queue(self):
+        """A 7-day read is a few subqueries, and the queue holds a board's.
+
+        Loki 2.9 splits a query every 30 minutes and queues 100 of them
+        per account: one 7-day read alone was refused with 429 (QA of
+        15-nov-2026).
+        """
+        play = self._central_tasks()
+        task = next(t for t in play["tasks"] if t.get("name") == "Write the log store configuration")
+        content = yaml.safe_load(playbook.environment().from_string(
+            task["ansible.builtin.copy"]["content"],
+        ).render(**play["vars"]))
+        self.assertEqual(content["limits_config"]["split_queries_by_interval"], "24h")
+        queued = content["query_scheduler"]["max_outstanding_requests_per_tenant"]
+        self.assertGreaterEqual(queued, 2048)
+
     def test_a_new_configuration_restarts_loki(self):
         play = self._central_tasks()
         names = [t.get("name") for t in play["tasks"]]
@@ -498,7 +514,7 @@ class TestLokiLimits(TransactionCase):
         )
 
     def test_the_central_is_deployed_again(self):
-        self.assertEqual(CENTRAL_REVISION, 2)
+        self.assertEqual(CENTRAL_REVISION, 3)
 
 
 class TestThePanelsAddresses(AgentsCase):
