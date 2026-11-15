@@ -261,6 +261,25 @@ marked as backfilled.
   asks or opens it again (`res.users.cloud_first_steps_display`). It shows
   by itself while a required step is left, or optional ones are and the
   first deploy was not backfilled.
+- **The first steps card on Projects.** Under the page's title, in the place
+  of «No projects yet» or over the projects: First steps with its sentence,
+  the steps in a list (Get a server, Set up backups, Deploy Odoo, and Use your
+  own domain and Send mail from Odoo, optional), each with its state in an
+  icon and words, one help line, its buttons and its guide; only the next
+  step's first button is primary, a failed attempt says so and leads to the
+  page of the job, the optional ones wait for the first deployment. Folded to
+  one line once the required steps are done; `×` closes it for the user, and
+  First steps beside the number of projects or in the user menu opens it
+  again. The page loads as before when the card's call fails, and its header
+  keeps New Project and Import from GitHub. A layer adds actions of its own
+  (`registerFirstStepAction`) and a header over the steps
+  (`registerFirstStepsHeader`). An instance's address takes `?tab=`, which
+  opens that tab.
+
+### Documentation
+
+- *Get started* explains the first steps list: who sees it, folding, closing
+  and bringing it back.
 
 ### Migration
 

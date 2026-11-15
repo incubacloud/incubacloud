@@ -289,6 +289,16 @@ class TestFirstStepsState(_FirstStepsBase):
         )
         self.assertEqual(state["header"], {})
 
+    def test_no_button_says_new_project(self):
+        """The page's header keeps «New Project», found by its name in QA."""
+        labels = [
+            action["label"]
+            for step in self.Steps.with_user(self.manager)._steps()
+            for action in step["actions"]
+        ]
+        self.assertTrue(labels)
+        self.assertFalse([label for label in labels if "new project" in label.lower()])
+
     def test_the_deploy_action_follows_what_exists(self):
         state = self._state()
         self.assertEqual(self._step(state, "deploy")["actions"][0]["code"], "new_project")

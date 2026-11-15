@@ -137,6 +137,7 @@
                             instance_id="state.params.instance_id"
                             project_id="state.params.project_id"
                             pipFocus="state.params.pip_focus"
+                            tab="state.params.tab"
                             embedded="true"/>
                     </t>
 <t t-if="state.route === 'monitoring' and env.permissions?.can_view_metrics">

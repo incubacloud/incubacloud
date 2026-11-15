@@ -5900,6 +5900,7 @@ msgstr "Dominios"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/utils/job_queue.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__done
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.js:0
 msgid "Done"
 msgstr "Hecho"
 
@@ -16092,7 +16093,9 @@ msgid "Start instance"
 msgstr "Iniciar instancia"
 
 #. module: incubacloud
+#. odoo-javascript
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__started
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.js:0
 msgid "Started"
 msgstr "Iniciado"
 
@@ -26309,3 +26312,71 @@ msgstr "Mientras queden pasos"
 #: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_first_steps_display__shown
 msgid "Opened Again"
 msgstr "Abierta de nuevo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.xml:0
+#: code:addons/incubacloud/static/src/components/project_dashboard/project_dashboard.xml:0
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "First steps"
+msgstr "Primeros pasos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.xml:0
+msgid "What it takes to run Odoo here, in order."
+msgstr "Lo que hace falta para tener Odoo en marcha aquí, en orden."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.xml:0
+msgid "Hide first steps"
+msgstr "Ocultar los primeros pasos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.xml:0
+msgid "Show less"
+msgstr "Mostrar menos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.xml:0
+msgid "Guide"
+msgstr "Guía"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.js:0
+msgid "To do"
+msgstr "Por hacer"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.js:0
+msgid "%(done)s of %(required)s done"
+msgstr "%(done)s de %(required)s hechos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.js:0
+msgid "1 optional left"
+msgstr "queda 1 opcional"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.js:0
+msgid "%(left)s optional left"
+msgstr "quedan %(left)s opcionales"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.js:0
+msgid "First steps · %(count)s · %(optional)s"
+msgstr "Primeros pasos · %(count)s · %(optional)s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/first_steps/first_steps.js:0
+msgid "· optional"
+msgstr "· opcional"
