@@ -51,8 +51,9 @@ and commands for whoever manages servers. The country of an address is
 looked up on the panel; by default the panel downloads DB-IP's free
 country database once a month.
 
-The update adds two tables and columns, and no data migration. The new
-cron starts reading from the moment it first runs: nothing earlier is
+The update adds two tables and columns. Its one data migration, 1.0.231's
+post-migrate, has the two new crons run as the cron bot. The
+events' cron starts reading from the moment it first runs: nothing earlier is
 alerted on. The name and message of the metric rules become translatable
 columns: Odoo keeps what each holds as its English text.
 
