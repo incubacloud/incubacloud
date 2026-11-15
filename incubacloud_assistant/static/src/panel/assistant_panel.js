@@ -38,6 +38,9 @@ export class AssistantPanel extends Component {
 
     /** Load the conversations; follow the open one live. */
     setup() {
+        // State events of the open conversation seen so far: an answer to a
+        // call that started before the latest one is older than it.
+        this.stateEvents = 0;
         this.state = useState({
             view: "list",
             conversations: [],
@@ -250,10 +253,12 @@ export class AssistantPanel extends Component {
 
     /** Call a route of the open conversation and keep its new state. */
     async _call(route) {
-        const result = await this._safely(() =>
-            rpc(route, { conversation_id: this.state.conversation.id })
-        );
-        if (result?.conversation) {
+        const id = this.state.conversation.id;
+        const seen = this.stateEvents;
+        const result = await this._safely(() => rpc(route, { conversation_id: id }));
+        // A state the bus delivered while the call was on its way is newer
+        // than the answer (an action that ends in milliseconds): it stays.
+        if (result?.conversation && this.stateEvents === seen && this.state.conversation?.id === id) {
             this.state.conversation = result.conversation;
         }
     }
@@ -300,6 +305,7 @@ export class AssistantPanel extends Component {
         }
         if (this.state.conversation && event.kind === "state") {
             this.state.conversation.stopping = merged.stopping;
+            this.stateEvents += 1;
         }
     }
 

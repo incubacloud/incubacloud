@@ -36,7 +36,7 @@ from .. import pricing
 from ..connectors import connector_for
 from ..connectors.base import ChatRequest, ProviderError, ToolCall, Turn, same_model
 from ..request_scope import call_context, tool_request
-from .assistant_conversation import STOPPED_CALL
+from .assistant_conversation import STOPPED_CALL, UNKNOWN_CALL
 from .assistant_prompt import SUMMARY_PROMPT, SUMMARY_SYSTEM, system_prompt
 from .assistant_tools import THIRD_PARTY_READS
 from .mcp_auto_approval import ASSISTANT_CREDENTIAL
@@ -289,8 +289,10 @@ class AssistantEngine(models.AbstractModel):
             except ProviderError as error:
                 if error.usage:
                     # A failure the provider still billed: it counts.
-                    self._record_cost(
-                        conversation_id, config, error.billed(model), model
+                    self._retried(
+                        lambda: self._record_cost(
+                            conversation_id, config, error.billed(model), model
+                        )
                     )
                 if error.retryable and attempt < len(RETRY_DELAYS):
                     pause = error.retry_after
@@ -554,7 +556,9 @@ class AssistantEngine(models.AbstractModel):
             model,
         )
         # Priced at the model that answered: *model* only names what was asked.
-        self._record_cost(conversation_id, config, response, model)
+        self._retried(
+            lambda: self._record_cost(conversation_id, config, response, model)
+        )
         with self._durable() as env:
             conv = self._conversation_in(env, conversation_id)
             if not conv:
@@ -724,11 +728,7 @@ class AssistantEngine(models.AbstractModel):
         if started == "gone":
             return "gone"
         if started == "unknown":
-            outcome = {
-                "text": "Outcome unknown: the panel stopped while this ran. Read the "
-                "state again before trying once more.",
-                "is_error": True,
-            }
+            outcome = {"text": UNKNOWN_CALL, "is_error": True}
             return self._retried(
                 lambda: self._record_call(conversation_id, call, outcome)
             )
@@ -1050,7 +1050,9 @@ class AssistantEngine(models.AbstractModel):
             response = connector.chat(request)
         except ProviderError:
             return False
-        self._record_cost(conversation_id, config, response, model)
+        self._retried(
+            lambda: self._record_cost(conversation_id, config, response, model)
+        )
         if not same_model(model, response.model):
             _logger.warning(
                 "assistant: %s summarized conversation %s with model %r instead of %r",
