@@ -8,6 +8,10 @@ raises the alert only when the instance runs with the trusted key.
 """
 import asyncio
 import contextlib
+import os
+import shlex
+import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
@@ -20,6 +24,9 @@ from odoo.addons.incubacloud.controllers._data_load import _routes_backends
 from odoo.addons.incubacloud.models import ssh_host_keys
 from odoo.addons.incubacloud.models.backup_list_executor import BackupListExecutor
 from odoo.addons.incubacloud.models.cloud_backup_backend import SftpUnreachable
+from odoo.addons.incubacloud.models.transport import SSHTransport
+
+from .test_detached_step import _local_execute
 
 _PRESENTED = "odoo.addons.incubacloud.models.ssh_host_keys.presented_host_key"
 
@@ -255,17 +262,60 @@ class TestSftpBackupList(_SftpUseCase):
             asyncio.run(self.executor._populate_sizes())
         self.assertEqual(row.size, 312)
 
-    def _refused(self, applied_host_key, presented):
+    #: What duplicity prints, on its error output, when the server key is
+    #: not the trusted one.
+    _DOES_NOT_MATCH = (
+        "ssh connection to u1@backup.example.com:22 failed: Host key for "
+        "server 'backup.example.com' does not match"
+    )
+    #: What duplicity's paramiko asks, on the output, of an unknown server.
+    _UNKNOWN = (
+        "The authenticity of host 'backup.example.com' can't be established."
+    )
+
+    def _refused(self, applied_host_key, presented, text=None, stream="stderr"):
+        """Run the listing's own command here, with ``docker`` printing *text*.
+
+        The command goes through ``bash`` as on the host, so what reaches
+        ``on_failure`` is what the step's redirections let through. The
+        server key is read for real from the job's running loop, down to
+        ``asyncssh.get_server_host_key``, the only thing answered here.
+
+        :param str applied_host_key: the fingerprint the instance runs with
+        :param presented: the key the server presents now
+        :param str text: what duplicity prints (``_DOES_NOT_MATCH``)
+        :param str stream: ``stderr`` or ``stdout``, where it prints it
+        :return: the active changed-key alerts
+        """
         self.instance.sudo().write({
             "applied_config_snapshot": {"backup_sftp": {"host_key": applied_host_key}},
         })
-        results = {"List backups": {
-            "exit_status": 1,
-            "stdout": "ssh connection to u1@backup.example.com failed: Host key "
-                      "for server 'backup.example.com' does not match",
-        }}
-        with patch(_PRESENTED, return_value=presented):
-            asyncio.run(self.executor.on_failure(results, ["failed"]))
+        text = text or self._DOES_NOT_MATCH
+        with tempfile.TemporaryDirectory() as tmp:
+            docker = Path(tmp, "docker")
+            redirect = " >&2" if stream == "stderr" else ""
+            docker.write_text(
+                f"#!/bin/sh\necho {shlex.quote(text)}{redirect}\nexit 23\n",
+            )
+            docker.chmod(0o755)
+            transport = MagicMock(spec=SSHTransport)
+            transport.execute.side_effect = _local_execute
+
+            async def _run():
+                results, _skipped = await self.executor._run_steps(
+                    transport, self.executor.get_commands(),
+                )
+                errors = self.executor.parse_results(results)
+                self.assertTrue(errors)
+                await self.executor.on_failure(results, errors)
+
+            with patch.object(BackupListExecutor, "_inst_dir", return_value=tmp), \
+                    patch.dict(os.environ, {"PATH": f"{tmp}:{os.environ['PATH']}"}), \
+                    patch.object(
+                        ssh_host_keys.asyncssh, "get_server_host_key",
+                        AsyncMock(return_value=presented),
+                    ):
+                asyncio.run(_run())
         return self.env["cloud.alert"].search([
             ("code", "=", "backup_sftp_host_key_changed"), ("state", "=", "active"),
         ])
@@ -275,7 +325,42 @@ class TestSftpBackupList(_SftpUseCase):
         self.assertFalse(self._refused("SHA256:older", other))
 
     def test_an_instance_on_the_trusted_key_raises_the_alert(self):
+        """duplicity's «does not match» comes on its error output."""
         other = asyncssh.generate_private_key("ssh-ed25519").convert_to_public()
         self.assertTrue(
             self._refused(self.backend.sftp_host_key_fingerprint, other),
         )
+
+    def test_an_unknown_server_raises_the_alert_too(self):
+        """The question about an unknown server comes on the output."""
+        other = asyncssh.generate_private_key("ssh-ed25519").convert_to_public()
+        self.assertTrue(self._refused(
+            self.backend.sftp_host_key_fingerprint, other,
+            text=self._UNKNOWN, stream="stdout",
+        ))
+
+    def test_the_trusted_key_presented_raises_nothing(self):
+        self.assertFalse(self._refused(
+            self.backend.sftp_host_key_fingerprint, self.server_key,
+        ))
+
+    def test_sizes_never_fail_the_job(self):
+        """An SFTP error halfway, or a server that stops answering."""
+        self.env["cloud.instance.backup"].create({
+            "instance_id": self.instance.id, "kind": "chain",
+            "backup_type": "Full", "backup_time": "2026-11-01 02:00:00",
+        })
+        with self._server() as sftp:
+            sftp.readdir = AsyncMock(side_effect=asyncssh.SFTPFailure("halfway"))
+            asyncio.run(self.executor._populate_sizes())
+
+        async def _never(*_args):
+            await asyncio.sleep(5)
+            raise AssertionError("the size pass has no time limit")
+
+        with self._server() as sftp, patch(
+            "odoo.addons.incubacloud.models.backup_list_executor."
+            "_SFTP_OPERATION_TIMEOUT", 0.05,
+        ):
+            sftp.readdir = _never
+            asyncio.run(self.executor._populate_sizes())
