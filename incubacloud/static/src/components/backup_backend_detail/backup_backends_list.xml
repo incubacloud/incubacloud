@@ -34,7 +34,7 @@
                 <div class="rl-stub">
                     <span class="rl-si"><t t-out="env.icon('shield', 46)"/></span>
                     <h3>No backup destinations configured</h3>
-                    <p>Set up an S3-compatible destination to enable automated backups for your instances.</p>
+                    <p>Set up an S3-compatible or SFTP destination to enable automated backups for your instances.</p>
                 </div>
             </t>
 
@@ -50,7 +50,7 @@
                                 <span class="rl-rname" t-esc="b.name"/>
                                 <span class="rl-rspacer"/>
                                 <span class="rl-sb active">
-                                    <span class="rl-d"/><t t-esc="b.backend_type"/>
+                                    <span class="rl-d"/><t t-esc="b.backend_type === 'sftp' ? 'SFTP' : 'S3'"/>
                                 </span>
                             </div>
 

@@ -8,7 +8,7 @@ import {restoreForm, SaveBar, unsavedCount} from "../settings_form/save_bar";
 import {SettingAdvanced} from "../settings_form/settings_form";
 import {useNavGuard} from "../../utils/use_nav_guard";
 import {useFormValidation} from "../../utils/use_form_validation";
-import {required, email, retention} from "../../utils/validators";
+import {required, email, retention, hostname, portRange, when} from "../../utils/validators";
 import {confirmVia} from "../../utils/use_confirm";
 
 const EMPTY_FORM = () => ({
@@ -19,6 +19,10 @@ const EMPTY_FORM = () => ({
   s3_endpoint_url: "",
   s3_access_key_id: "",
   s3_secret_access_key: "",
+  sftp_host: "",
+  sftp_port: 22,
+  sftp_user: "",
+  sftp_path: "backups",
   passphrase: "",
   backup_image_version: "latest",
   email_from: "",
@@ -36,6 +40,11 @@ const EMPTY_FORM = () => ({
 // every destination (form standard §4). The template hands the same list to
 // the fold, through ``advancedFields``.
 const ADVANCED_FIELDS = ["backup_retention", "backup_tz", "retention_owner"];
+
+/** @returns {boolean} whether the form is an S3 destination's */
+const isS3 = (form) => (form.backend_type || "s3") === "s3";
+/** @returns {boolean} whether the form is an SFTP destination's */
+const isSftp = (form) => form.backend_type === "sftp";
 
 export class BackupBackendDetail extends Component {
   static props = {backend_id: {type: Number, optional: true}};
@@ -63,13 +72,25 @@ export class BackupBackendDetail extends Component {
       last_measured_gb: 0,
       last_measured_at: "",
       confirmDialog: null,
+      // SFTP: the public key, the trusted server key, and the one the
+      // server presents while the person compares it.
+      sftp: {public_key: "", fingerprint: "", trusted_at: "", trusted_by: ""},
+      presented: null,
+      readingKey: false,
+      trustingKey: false,
     });
 
     this._savedForm = null;
 
     this.validator = useFormValidation(() => ({
       name: [required(_t("Backend name is required"))],
-      s3_bucket: [required(_t("Bucket is required"))],
+      s3_bucket: [when(isS3, required(_t("Bucket is required")))],
+      sftp_host: [
+        when(isSftp, required(_t("Server is required"))),
+        when(isSftp, hostname(_t("Enter a host name or an IPv4 address"))),
+      ],
+      sftp_port: [when(isSftp, portRange(_t("Port must be between 1 and 65535")))],
+      sftp_user: [when(isSftp, required(_t("User is required")))],
       email_from: [email(_t("Sender email is invalid"))],
       email_to: [email(_t("Recipient email is invalid"))],
       backup_retention: [retention(_t("Use N + D/M/Y (e.g. 30D, 3M, 1Y)"))],
@@ -151,6 +172,7 @@ export class BackupBackendDetail extends Component {
       this.state.last_measured_gb = b.last_measured_gb || 0;
       this.state.last_measured_at = b.last_measured_at || "";
       this.state.retention_owner_declared = b.retention_owner_declared !== false;
+      this._setSftp(b);
       this.state.form = {
         name: b.name || "",
         backend_type: b.backend_type || "s3",
@@ -159,6 +181,10 @@ export class BackupBackendDetail extends Component {
         s3_endpoint_url: b.s3_endpoint_url || "",
         s3_access_key_id: b.s3_access_key_id || "",
         s3_secret_access_key: "",
+        sftp_host: b.sftp_host || "",
+        sftp_port: b.sftp_port || 22,
+        sftp_user: b.sftp_user || "",
+        sftp_path: b.sftp_path || "",
         passphrase: "",
         backup_image_version: b.backup_image_version || "latest",
         email_from: b.email_from || "",
@@ -275,12 +301,180 @@ export class BackupBackendDetail extends Component {
     this.state.tab = tab;
   }
 
+  /**
+   * Keep what the server says of an SFTP destination's keys.
+   *
+   * @param {object} b the destination as a route returns it
+   */
+  _setSftp(b) {
+    this.state.sftp = {
+      public_key: b.sftp_public_key || "",
+      fingerprint: b.sftp_host_key_fingerprint || "",
+      trusted_at: b.sftp_host_key_trusted_at || "",
+      trusted_by: b.sftp_host_key_trusted_by || "",
+    };
+    this.state.presented = null;
+  }
+
+  /** @returns {boolean} whether the form is an SFTP destination's */
+  get isSftp() {
+    return isSftp(this.state.form);
+  }
+
+  /** @returns {Array} the retention owners this type of destination has */
+  get retentionOwnerOptions() {
+    const options = [
+      {value: "cron", label: _t("Duplicity cron")},
+      {value: "lifecycle", label: _t("Bucket lifecycle")},
+      {value: "none", label: _t("Nobody — infinite archive")},
+    ];
+    return this.isSftp ? options.filter((o) => o.value !== "lifecycle") : options;
+  }
+
+  /**
+   * Pick the type of a new destination; a saved one keeps its type.
+   *
+   * @param {string} type "s3" or "sftp"
+   */
+  setType(type) {
+    if (!this.isNew) return;
+    this.state.form.backend_type = type;
+    if (type === "sftp" && this.state.form.retention_owner === "lifecycle") {
+      this.state.form.retention_owner = "cron";
+    }
+  }
+
+  /** @returns {Array} the types a destination can have */
+  get typeOptions() {
+    return [
+      {value: "s3", label: _t("S3 Compatible")},
+      {value: "sftp", label: _t("SFTP")},
+    ];
+  }
+
+  /** @returns {boolean} whether the type is fixed: once created, or managed */
+  get typeLocked() {
+    return !this.isNew || Boolean(this.state.backend?.managed_reservation_id);
+  }
+
+  /** @returns {string} the line for the server's authorized_keys */
+  get authorizedKeysLine() {
+    return this.state.sftp.public_key ? `restrict ${this.state.sftp.public_key}` : "";
+  }
+
+  /**
+   * Whether this save moves an SFTP destination with a trusted key to
+   * another server or port, which drops that key.
+   *
+   * @returns {boolean}
+   */
+  get _movesTrustedEndpoint() {
+    if (this.isNew || !this.isSftp || !this.state.sftp?.fingerprint || !this._savedForm) {
+      return false;
+    }
+    const saved = JSON.parse(this._savedForm);
+    return saved.sftp_host !== this.state.form.sftp_host
+      || Number(saved.sftp_port) !== Number(this.state.form.sftp_port);
+  }
+
+  /** Copy *text* to the clipboard and say so. */
+  async copy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      this.env.toast?.success(_t("Copied."));
+    } catch {
+      this.env.toast?.error(_t("Could not copy: select the text and copy it."));
+    }
+  }
+
+  /** Read the key the SFTP server presents, trusting nothing. */
+  async readHostKey() {
+    if (this.state.readingKey) return;
+    this.state.readingKey = true;
+    try {
+      const result = await rpc("/cloud/sftp_backend_read_host_key", {
+        backend_id: this.props.backend_id,
+      });
+      if (result.ok) {
+        this.state.presented = {fingerprint: result.fingerprint, key_type: result.key_type};
+      } else {
+        this.env.toast?.error(result.error || _t("Could not read the server's key."));
+      }
+    } catch {
+      this.env.toast?.error(_t("Could not read the server's key."));
+    } finally {
+      this.state.readingKey = false;
+    }
+  }
+
+  /** Trust the key the person just compared, if the server still presents it. */
+  async trustHostKey() {
+    if (this.state.trustingKey || !this.state.presented) return;
+    this.state.trustingKey = true;
+    try {
+      const result = await rpc("/cloud/sftp_backend_trust_host_key", {
+        backend_id: this.props.backend_id,
+        expected_fingerprint: this.state.presented.fingerprint,
+      });
+      if (result.ok) {
+        this.state.sftp.fingerprint = result.sftp_host_key_fingerprint;
+        this.state.sftp.trusted_at = result.sftp_host_key_trusted_at || "";
+        this.state.sftp.trusted_by = result.sftp_host_key_trusted_by || "";
+        this.state.presented = null;
+        this.env.toast?.success(_t("Server key trusted."));
+      } else {
+        this.state.presented = null;
+        this.env.toast?.error(result.error || _t("The key was not trusted."));
+      }
+    } catch {
+      this.env.toast?.error(_t("The key was not trusted."));
+    } finally {
+      this.state.trustingKey = false;
+    }
+  }
+
+  /** Replace the destination's key pair, once confirmed. */
+  async regenerateKey() {
+    const confirmed = await this._confirm({
+      title: _t("Regenerate the SFTP key"),
+      message: _t(
+        "A new key pair replaces this one. Add the new public key to the server's authorized_keys and keep the old line until every instance on this destination has been rebuilt: until then they log in with the old key."
+      ),
+      confirmLabel: _t("Regenerate"),
+      isDanger: true,
+    });
+    if (!confirmed) return;
+    try {
+      const result = await rpc("/cloud/sftp_backend_regenerate_key", {
+        backend_id: this.props.backend_id,
+      });
+      if (result.ok) {
+        this.state.sftp.public_key = result.sftp_public_key;
+        this.env.toast?.success(_t("New key generated: add it to the server."));
+      } else {
+        this.env.toast?.error(result.error || _t("Could not regenerate the key."));
+      }
+    } catch {
+      this.env.toast?.error(_t("Could not regenerate the key."));
+    }
+  }
+
   async save() {
     if (this.state.saving) return;
     const {isValid, firstError} = this.validator.validate(this.state.form);
     if (!isValid) {
       this.env.toast?.error(firstError);
       return;
+    }
+    if (this._movesTrustedEndpoint) {
+      const confirmed = await this._confirm({
+        title: _t("Change the SFTP server"),
+        message: _t(
+          "Another server or port drops the trusted server key. Read and trust the new one before the next deploy or rebuild of the instances on this destination: until then they are refused."
+        ),
+        confirmLabel: _t("Change"),
+      });
+      if (!confirmed) return;
     }
     this.state.saving = true;
     try {
@@ -305,6 +499,11 @@ export class BackupBackendDetail extends Component {
           this.state.retention_owner_declared = result.retention_owner_declared;
         }
         this._savedForm = sent;
+        if (this.isSftp) {
+          // The server drops the trusted key with a new endpoint, and
+          // recomputes the path.
+          await this.loadBackend();
+        }
         this.env.toast?.success(_t("Changes saved"));
       }
     } catch (e) {
@@ -323,7 +522,16 @@ export class BackupBackendDetail extends Component {
       const result = await rpc("/cloud/test_backup_backend", {
         backend_id: this.props.backend_id,
       });
-      if (result.ok) {
+      if (result.ok && this.isSftp) {
+        const free = result.free_bytes;
+        this.env.toast?.success(
+          free === null || free === undefined
+            ? _t("Connection successful — the folder is writable.")
+            : _t("Connection successful — the folder is writable, %(free)s GB free.", {
+                free: (free / 1024 ** 3).toFixed(1),
+              })
+        );
+      } else if (result.ok) {
         this.env.toast?.success(_t("Connection successful — bucket is accessible."));
       } else {
         this.env.toast?.error(result.error || _t("Connection failed."));
@@ -374,6 +582,10 @@ export class BackupBackendDetail extends Component {
 
   get backupDst() {
     const f = this.state.form;
+    if (isSftp(f)) {
+      // The server's own reading of the path, as saved.
+      return this.state.backend?.backup_dst || "";
+    }
     if (!f.s3_bucket) return "";
     const path = (f.s3_path || "").replace(/^\/|\/$/g, "");
     return path ? `boto3+s3://${f.s3_bucket}/${path}` : `boto3+s3://${f.s3_bucket}`;

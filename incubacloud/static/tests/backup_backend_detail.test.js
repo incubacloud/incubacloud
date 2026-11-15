@@ -327,3 +327,75 @@ describe("BackupBackendDetail — Advanced", () => {
     expect(comp.advancedNeedsLook).toBe(false);
   });
 });
+
+describe("BackupBackendDetail — SFTP", () => {
+  /**
+   * An SFTP destination as loaded, or a new one.
+   *
+   * @param {object} [extra] state to set over the defaults
+   * @param {boolean} [isNew] whether it is being created
+   * @returns {BackupBackendDetail}
+   */
+  function sftp(extra = {}, isNew = false) {
+    const comp = Object.create(BackupBackendDetail.prototype);
+    comp.isNew = isNew;
+    comp.props = {backend_id: isNew ? undefined : 7};
+    comp.state = {
+      form: {backend_type: "sftp", sftp_host: "h.example.com", sftp_port: 22, retention_owner: "cron"},
+      backend: {backup_dst: "sftp://u1@h.example.com/backups"},
+      sftp: {public_key: "ssh-ed25519 AAAA incubacloud-backup", fingerprint: "SHA256:old"},
+      presented: null,
+      ...extra,
+    };
+    comp._snapshotForm();
+    return comp;
+  }
+
+  test("offers no bucket lifecycle to own the retention", () => {
+    expect(sftp().retentionOwnerOptions.map((o) => o.value)).toEqual(["cron", "none"]);
+  });
+
+  test("the type is chosen when creating, and a lifecycle owner falls back to the cron", () => {
+    const comp = sftp({form: {backend_type: "s3", retention_owner: "lifecycle"}}, true);
+    comp.setType("sftp");
+    expect(comp.state.form.backend_type).toBe("sftp");
+    expect(comp.state.form.retention_owner).toBe("cron");
+    const saved = sftp();
+    expect(saved.typeLocked).toBe(true);
+    saved.setType("s3");
+    expect(saved.state.form.backend_type).toBe("sftp");
+  });
+
+  test("the authorized_keys line is restricted and the path is the server's", () => {
+    const comp = sftp();
+    expect(comp.authorizedKeysLine).toBe("restrict ssh-ed25519 AAAA incubacloud-backup");
+    expect(comp.backupDst).toBe("sftp://u1@h.example.com/backups");
+  });
+
+  test("moving a trusted server or port asks first", () => {
+    const comp = sftp();
+    expect(comp._movesTrustedEndpoint).toBe(false);
+    comp.state.form.sftp_port = 23;
+    expect(comp._movesTrustedEndpoint).toBe(true);
+    const untrusted = sftp({sftp: {public_key: "", fingerprint: ""}});
+    untrusted.state.form.sftp_host = "other.example.com";
+    expect(untrusted._movesTrustedEndpoint).toBe(false);
+  });
+
+  test("trusts exactly the fingerprint the person saw", async () => {
+    const sent = [];
+    patchWithCleanup(rpc, {
+      _rpc: async (route, params) => {
+        sent.push([route, params]);
+        return {ok: true, sftp_host_key_fingerprint: "SHA256:new", sftp_host_key_trusted_by: "Admin"};
+      },
+    });
+    const comp = sftp({presented: {fingerprint: "SHA256:new", key_type: "ssh-ed25519"}, trustingKey: false});
+    comp.env = {toast: {success: () => expect.step("trusted")}};
+    await comp.trustHostKey();
+    expect.verifySteps(["trusted"]);
+    expect(sent[0][1]).toEqual({backend_id: 7, expected_fingerprint: "SHA256:new"});
+    expect(comp.state.sftp.fingerprint).toBe("SHA256:new");
+    expect(comp.state.presented).toBe(null);
+  });
+});

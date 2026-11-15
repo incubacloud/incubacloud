@@ -103,3 +103,33 @@
         cursor: not-allowed;
     }
 }
+
+// SFTP: the key's buttons, and the server key a person compares before
+// trusting it.
+.ic-sftp-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.ic-sftp-label {
+    font-weight: 600;
+}
+
+.ic-sftp-presented {
+    margin-top: 8px;
+    padding: 12px;
+    border: 1px solid var(--rl-line);
+    border-radius: 6px;
+    overflow-wrap: anywhere;
+
+    p {
+        margin: 0 0 6px;
+    }
+}
+
+.ic-backup-dst,
+.ic-sftp-presented .rl-mono {
+    overflow-wrap: anywhere;
+}
