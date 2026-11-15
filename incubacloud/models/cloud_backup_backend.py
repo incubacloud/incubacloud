@@ -315,17 +315,62 @@ class CloudBackupBackend(models.Model):
             key, or a key type paramiko does not read
         """
         self.ensure_one()
-        if self.backend_type != "sftp":
-            raise UserError(_("Only an SFTP destination has a server key."))
-        address = self._sftp_address()
+        address = self._sftp_key_address()
         try:
             key = ssh_host_keys.presented_host_key(address, self.sftp_port)
         except (asyncssh.Error, OSError, TimeoutError) as exc:
-            raise UserError(_(
-                "Could not read the key of %(host)s:%(port)s: %(error)s",
-                host=self.sftp_host, port=self.sftp_port,
-                error=str(exc) or type(exc).__name__,
-            )) from exc
+            raise self._sftp_key_read_error(exc) from exc
+        return self._sftp_presented_key_line(key)
+
+    async def _sftp_presented_line_async(self):
+        """:meth:`_sftp_presented_line` for a caller inside an event loop.
+
+        The ``backup_list`` job reads the key from its own running loop,
+        where the synchronous form cannot start another one.
+
+        :return: the ``known_hosts`` line
+        :rtype: str
+        :raise UserError: as :meth:`_sftp_presented_line`
+        """
+        self.ensure_one()
+        address = self._sftp_key_address()
+        try:
+            key = await ssh_host_keys.presented_host_key_async(
+                address, self.sftp_port,
+            )
+        except (asyncssh.Error, OSError, TimeoutError) as exc:
+            raise self._sftp_key_read_error(exc) from exc
+        return self._sftp_presented_key_line(key)
+
+    def _sftp_key_address(self):
+        """Return the address the server key is read at, SFTP only.
+
+        :rtype: str
+        :raise UserError: on another type, or a server the policy refuses
+        """
+        if self.backend_type != "sftp":
+            raise UserError(_("Only an SFTP destination has a server key."))
+        return self._sftp_address()
+
+    def _sftp_key_read_error(self, exc):
+        """Return the error a failed reading of the server key is told by.
+
+        :param Exception exc: what the connection raised
+        :rtype: UserError
+        """
+        return UserError(_(
+            "Could not read the key of %(host)s:%(port)s: %(error)s",
+            host=self.sftp_host, port=self.sftp_port,
+            error=str(exc) or type(exc).__name__,
+        ))
+
+    def _sftp_presented_key_line(self, key):
+        """Return the ``known_hosts`` line of the key the server presented.
+
+        :param key: the ``asyncssh`` key, or None when none was presented
+        :rtype: str
+        :raise UserError: without a key, or with a type paramiko does not read
+        """
         if not key:
             raise UserError(_("The server presented no key."))
         line = ssh_host_keys.known_hosts_line(
@@ -531,6 +576,11 @@ class CloudBackupBackend(models.Model):
                     found.append((full, entry.attrs.size or 0))
                     if len(found) >= cap:
                         break
+        if len(found) >= cap:
+            _logger.warning(
+                "[sftp] %s: stopped at %d files; sizes and usage under it "
+                "count those only", path or ".", cap,
+            )
         return found
 
     def _sftp_scan(self, path):
@@ -601,15 +651,41 @@ class CloudBackupBackend(models.Model):
         :rtype: str
         """
         self.ensure_one()
-        trusted = self.sftp_host_key_fingerprint or ""
-        if not trusted:
+        if not self.sftp_host_key_fingerprint:
             return ""
         try:
-            presented = ssh_host_keys.fingerprint(self._sftp_presented_line())
+            line = self._sftp_presented_line()
         except UserError:
             # Not reachable now: nothing to compare, nothing to say.
             return ""
-        if presented == trusted:
+        return self._sftp_alert_on_other_key(line)
+
+    async def _sftp_check_presented_key_async(self):
+        """:meth:`_sftp_check_presented_key` inside a running event loop.
+
+        :return: the fingerprint presented when it differs, else ``''``
+        :rtype: str
+        """
+        self.ensure_one()
+        if not self.sftp_host_key_fingerprint:
+            return ""
+        try:
+            line = await self._sftp_presented_line_async()
+        except UserError:
+            return ""
+        return self._sftp_alert_on_other_key(line)
+
+    def _sftp_alert_on_other_key(self, line):
+        """Raise the changed-key alert when *line* is not the trusted key.
+
+        :param str line: the ``known_hosts`` line the server presents now
+        :return: its fingerprint when it differs from the trusted one,
+            else ``''``
+        :rtype: str
+        """
+        trusted = self.sftp_host_key_fingerprint or ""
+        presented = ssh_host_keys.fingerprint(line)
+        if not trusted or presented == trusted:
             return ""
         self.env["cloud.alert"].sudo().raise_alert(
             self._SFTP_HOST_KEY_ALERT_CODE,

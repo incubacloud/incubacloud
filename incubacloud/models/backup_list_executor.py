@@ -1,14 +1,17 @@
+import asyncio
 import logging
 import re
 from datetime import datetime, timedelta
 
 from odoo import fields
 
+import asyncssh
+
 from odoo.exceptions import UserError
 
 from . import sftp_dst
 from .abstract_executor import AbstractSSHExecutor
-from .cloud_backup_backend import SftpUnreachable
+from .cloud_backup_backend import _SFTP_OPERATION_TIMEOUT, SftpUnreachable
 
 _logger = logging.getLogger(__name__)
 
@@ -45,8 +48,10 @@ _INC_FILE_RE = re.compile(
 
 
 #: What duplicity's paramiko prints when the SFTP server's key is not the
-#: trusted one (``does not match``) or not one it knows (it then asks on
-#: its input, which the command closes).
+#: trusted one (``does not match``, on the error output, as duplicity's
+#: fatal errors are) or not one it knows (it then asks on its input, which
+#: the command closes). The listing joins its error output to its output
+#: so both reach ``on_failure``.
 _SFTP_HOST_KEY_REFUSED = ("does not match", "authenticity of host")
 
 
@@ -202,7 +207,7 @@ class BackupListExecutor(AbstractSSHExecutor):
             (
                 "List backups",
                 f"cd {d} && docker compose exec -T backup"
-                f" dup collection-status \"{dst}\" </dev/null",
+                f" dup collection-status \"{dst}\" </dev/null 2>&1",
             ),
         ]
 
@@ -267,9 +272,16 @@ class BackupListExecutor(AbstractSSHExecutor):
                 inst.instance_backup_dst,
             )
             kwargs = backend._sftp_connect_kwargs()
-            async with backend._sftp_client(kwargs) as sftp:
-                files = await backend._sftp_walk(sftp, path)
-        except (SftpUnreachable, sftp_dst.DstError, UserError, OSError) as exc:
+
+            async def _walk():
+                async with backend._sftp_client(kwargs) as sftp:
+                    return await backend._sftp_walk(sftp, path)
+
+            files = await asyncio.wait_for(_walk(), _SFTP_OPERATION_TIMEOUT)
+        except (
+            SftpUnreachable, sftp_dst.DstError, UserError, OSError,
+            asyncssh.Error, TimeoutError,
+        ) as exc:
             _logger.warning(
                 "SFTP listing failed for %s: %s", inst.name, type(exc).__name__,
             )
@@ -474,9 +486,9 @@ class BackupListExecutor(AbstractSSHExecutor):
             self._sys(f"✗ {err}")
         stdout = (results.get('List backups') or {}).get('stdout', '')
         if any(text in stdout for text in _SFTP_HOST_KEY_REFUSED):
-            self._sftp_host_key_refused()
+            await self._sftp_host_key_refused()
 
-    def _sftp_host_key_refused(self):
+    async def _sftp_host_key_refused(self):
         """Raise the changed-key alert, or say the instance needs a build.
 
         Only when the instance runs with the server key trusted now: one
@@ -484,7 +496,8 @@ class BackupListExecutor(AbstractSSHExecutor):
         what it needs is its changes applied, not an alert that would be
         raised again the day after it was resolved. And even then only
         when the server presents another key than the trusted one, read
-        without credentials (``_sftp_check_presented_key``).
+        without credentials (``_sftp_check_presented_key_async``: this runs
+        in the job's own loop).
         """
         inst = self._inst()
         backend = inst.effective_backup_backend.sudo()
@@ -500,7 +513,7 @@ class BackupListExecutor(AbstractSSHExecutor):
                 "(rebuild) so it gets the trusted key."
             )
             return
-        presented = backend._sftp_check_presented_key()
+        presented = await backend._sftp_check_presented_key_async()
         if presented:
             self._sys(
                 f"The SFTP server presents the key {presented}, not the "
