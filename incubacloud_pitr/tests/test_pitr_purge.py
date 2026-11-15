@@ -305,6 +305,26 @@ class TestThePurge(_SwitchedOffCase):
         self.assertTrue(self.inst.pitr_purge_at)
 
 
+class TestThePurgeEnvironmentKeepsItsLines(_SwitchedOffCase):
+
+    def test_a_prefix_that_breaks_its_line_fails_the_job_before_the_host(self):
+        """Its environment file would read the rest as variables of its own."""
+        before = self._switched_off(15)
+        self.inst._pitr_record_rendered()
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET pitr_rendered_prefix = %s WHERE id = %s",
+            (f"{PREFIX}\nAWS_ENDPOINT_URL=https://elsewhere.example", self.inst.id),
+        )
+        self.env.invalidate_all()
+        executor = self._purge(before)
+        upload = AsyncMock()
+        with patch.object(ex.PitrPurgeExecutor, "_upload_private_files", upload), \
+                self.assertRaises(ValueError):
+            asyncio.run(executor.before_execute(MagicMock(spec=SSHTransport)))
+        upload.assert_not_awaited()
+
+
 class TestSwitchingOnBeforeTheDate(_SwitchedOffCase):
 
     def test_switching_on_cancels_the_purge_waiting_in_the_queue(self):

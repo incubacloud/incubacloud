@@ -25,6 +25,7 @@ from . import (
     test_cron_bot,
     test_chained_enqueue_invariant,
     test_cloud_backup,
+    test_backup_dst_shell,
     test_backup_backend_conn,
     test_backup_backend_delete_guard,
     test_general_settings,

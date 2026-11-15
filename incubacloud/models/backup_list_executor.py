@@ -1,5 +1,6 @@
 import logging
 import re
+import shlex
 from datetime import datetime, timedelta
 
 from odoo import fields
@@ -192,7 +193,7 @@ class BackupListExecutor(AbstractSSHExecutor):
             (
                 "List backups",
                 f"cd {d} && docker compose exec -T backup"
-                f" dup collection-status \"{dst}\"",
+                f" dup collection-status {shlex.quote(dst)}",
             ),
         ]
 
