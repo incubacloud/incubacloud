@@ -37,10 +37,11 @@
 # get the unconditional purge.
 #
 # ``PURGE_SINCE`` (optional, ISO-8601 UTC) is the other side: only
-# objects stored at or after that instant are in scope. The deletion of
-# that successor sets it to the instant the successor was created, so
-# what the archived instance of the same name keeps in the prefix,
-# stored before, stays for that instance's own purge.
+# objects stored at or after that instant are in scope. The purges of
+# that successor (its deletion, the purge of its archived copy, of its
+# recovery archive switched off) set it to the instant the successor was
+# created, so what the archived instance of the same name keeps in the
+# prefix, stored before, stays for that instance's own purge.
 #
 # With ``PURGE_BEFORE``, an object it keeps may still need one it would
 # delete: duplicity names an incremental set, and its signatures, after

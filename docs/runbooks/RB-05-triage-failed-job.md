@@ -102,6 +102,13 @@ in the job log names the first such object). The record stays. It only
 happens to a pair that shared its path before instances that take an
 archived one's name got a path of their own.
 
+The purge has two bounds. It deletes what was stored before the
+delete's cutoff (`purge_cutoff_at`, or the creation of the instance that
+took the name when earlier: `PURGE_BEFORE`). When the archived instance
+had itself taken the name of an earlier one that holds the same path,
+it deletes only what was stored since its own creation (`PURGE_SINCE`),
+and the earlier one's copy stays for that one's purge.
+
 1. Wait for, or take, a full backup of the live instance: the weekly
    full opens a chain of its own, and so does a backup once duplicity
    finds the archived full too old.

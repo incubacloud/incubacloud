@@ -162,9 +162,15 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         leaves its copies. Should it have continued this chain, the
         program deletes nothing and exits 23.
 
+        Nor, when this one took the name of an instance created before it
+        that holds the same path, archived as well, what that one stored
+        there: ``PURGE_SINCE`` is this one's creation
+        (``cloud.instance._backup_purge_since``), and the purge keeps
+        what is older for the other's own.
+
         A further prefix of the copy (*dst*) gets the same environment
         with its own ``DST``: the same destination's credentials, and the
-        same cutoff, for the same reason.
+        same bounds, for the same reason.
 
         :param str dst: a further prefix (``_extra_prefixes``), or None
             for the chain's frozen one
@@ -179,6 +185,9 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         if inst.purge_cutoff_at:
             before = inst._backup_purge_before(dst, inst.purge_cutoff_at)
             lines.append(env_line("PURGE_BEFORE", before.isoformat()))
+        since = inst._backup_purge_since(dst)
+        if since:
+            lines.append(env_line("PURGE_SINCE", since))
         if backend.s3_access_key_id:
             lines.append(env_line("AWS_ACCESS_KEY_ID", backend.s3_access_key_id))
         if backend.s3_secret_access_key:

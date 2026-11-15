@@ -1156,18 +1156,28 @@ class CloudInstance(models.Model):
         return min([cutoff, *later])
 
     def _backup_purge_since(self, prefix):
-        """Where a delete's purge of *prefix* starts, or ``""`` to empty it whole.
+        """Where a purge of this instance's *prefix* starts, or ``""`` to empty it whole.
 
-        Another instance of the same name that holds the same path, the
-        archived one whose name this one took (``_backup_prefix_conflict``
-        lets it through), keeps there what was stored before this one was
-        created: the delete's purge is bounded to what came after
-        (``PURGE_SINCE``, ``lib/purge_prefix.sh``), the archived one's own
-        purge to what came before (``PURGE_BEFORE``).
+        Another instance of the same name that holds the same path and
+        was created before this one, the archived one whose name this one
+        took (``_backup_prefix_conflict`` lets it through), keeps there
+        what was stored before this one was created: this one's purges
+        are bounded to what came after (``PURGE_SINCE``,
+        ``lib/purge_prefix.sh``), the delete of this one live and, once
+        it is archived in turn or its recovery archive switched off, the
+        purge of that copy. The earlier one's own purge is bounded to what
+        came before (``PURGE_BEFORE``, ``_backup_purge_before``).
 
-        :param str prefix: the duplicity or wal-g prefix the delete empties
+        Only one created before: one created after is this one's
+        successor, which ``_backup_prefix_conflict`` refuses to a live
+        instance's delete, and whose creation already ends this one's
+        archived purge. Counted, it would leave behind, with the record
+        gone, what an imported instance's path held from before its
+        record was created.
+
+        :param str prefix: the duplicity or wal-g prefix the purge empties
         :return: this instance's creation as ISO-8601 UTC, to the second
-            and rounded down, or ``""`` when no other instance holds it
+            and rounded down, or ``""`` when no earlier instance holds it
         :rtype: str
         """
         self.ensure_one()
@@ -1176,7 +1186,10 @@ class CloudInstance(models.Model):
             return ""
         namesakes = self.env["cloud.instance"].sudo().with_context(
             active_test=False,
-        ).search([("id", "!=", self.id), ("name", "=", self.name)])
+        ).search([
+            ("id", "!=", self.id), ("name", "=", self.name),
+            ("create_date", "<", self.create_date),
+        ])
         if not any(
             dst_key(path) == key
             for other in namesakes for path in other._backup_paths_held()

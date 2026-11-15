@@ -18,16 +18,23 @@
 # host may have to pull the image again.
 #
 # The environment comes from a file the panel uploads (destination,
-# credentials, endpoint), never from arguments: an argument would be
-# visible in ``ps`` to every account on the host for as long as the
+# credentials, endpoint, bounds), never from arguments: an argument would
+# be visible in ``ps`` to every account on the host for as long as the
 # container runs. The file is removed on the way out, including when
 # this script fails.
+#
+# Two bounds, read by ``lib/purge_prefix.sh``: ``PURGE_BEFORE``, the
+# instant the delete was decided, or the creation of an instance that
+# took the name since when earlier, so what that one stores stays; and
+# ``PURGE_SINCE``, set when this instance took the name of an earlier one
+# that holds the same path: its own creation, so what the earlier one
+# stored stays for that one's purge.
 #
 # Each further file is one more prefix of the same copy, emptied the
 # same way in a container of its own: an addon that keeps part of an
 # instance's copy beside the duplicity prefix (continuous recovery's
 # ``<name>-pitr``) hands it here, with its own ``DST`` and the same
-# ``PURGE_BEFORE``. They run in order and the first that fails stops the
+# bounds. They run in order and the first that fails stops the
 # others, with its exit code: the record stays, and the next run finds
 # the ones before it empty. The result is 0 when any of them removed
 # something, 10 when every one was already empty. All of them must have
