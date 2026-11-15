@@ -86,14 +86,17 @@ export const url = (msg = "Invalid URL") =>
     };
 
 /**
- * Retention string in duplicity format: ``<count><unit>`` where unit
- * is ``D`` (days), ``M`` (months), or ``Y`` (years).
+ * Retention string in duplicity format: ``<count><unit>``, a count of
+ * at least one and a unit ``D`` (days), ``W`` (weeks), ``M`` (months)
+ * or ``Y`` (years) in capitals. The same rule as the server's
+ * ``BACKUP_RETENTION_RE`` (``models/_backup_retention.py``), surrounding
+ * spaces ignored, so the form passes exactly what a save accepts.
  */
 export const retention = (
-    msg = "Use N + D/M/Y (e.g. 30D, 3M, 1Y)",
+    msg = "Use N + D/W/M/Y (e.g. 30D, 2W, 3M, 1Y)",
 ) => (v) => {
     if (v == null || String(v).trim() === "") return null;
-    return /^\d+[DMY]$/.test(String(v).trim()) ? null : msg;
+    return /^[1-9][0-9]*[DWMY]$/.test(String(v).trim()) ? null : msg;
 };
 
 export const minLength = (n, msg = null) =>
