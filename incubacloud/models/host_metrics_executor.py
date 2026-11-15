@@ -20,6 +20,8 @@ class HostMetricsExecutor(AbstractSSHExecutor):
     # than failing on the first blip; only alert if the host is still
     # unreachable after the last attempt. See AbstractExecutor.
     _retry_on_connection_loss = True
+    # A probe: a server's restart neither holds it nor waits for it.
+    _reboot_probe = True
 
     # Seconds after which a metrics-derived reading is considered stale
     # and the SSH fallback runs anyway. Comfortably above the 5-minute

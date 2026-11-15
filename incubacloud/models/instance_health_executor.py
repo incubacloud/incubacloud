@@ -322,6 +322,10 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     # than failing on the first blip; only alert if the host is still
     # unreachable after the last attempt. See AbstractExecutor.
     _retry_on_connection_loss = True
+    # A probe: a server's restart neither holds it nor waits for it; it
+    # skips its pass while the restart runs (``host_reboot`` is one of
+    # ``cloud.job._get_health_blocking_host_job_types``).
+    _reboot_probe = True
 
     # Class attribute so layered modules can extend the blocking set
     # with their own intrusive job types (e.g. their own deploy and

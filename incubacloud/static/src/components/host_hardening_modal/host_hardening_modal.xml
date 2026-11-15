@@ -46,8 +46,10 @@
                             Hardening installs an in-host security recipe: a
                             non-root operator user, SSH on a rotated port with root
                             login disabled at the end, nftables, fail2ban, sysctl,
-                            unattended-upgrades, a hardened Docker daemon, journald
-                            limits and auditd. It needs Ubuntu 22.04+ or Debian 12+
+                            unattended-upgrades (security patches; when one needs a
+                            restart, the panel restarts the server inside its restart
+                            window, once nothing of the panel runs there), a hardened
+                            Docker daemon, journald limits and auditd. It needs Ubuntu 22.04+ or Debian 12+
                             with root or passwordless sudo. Re-runs are idempotent
                             and skip steps that already match.
                         </p>

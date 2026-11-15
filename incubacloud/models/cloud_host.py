@@ -452,9 +452,12 @@ class CloudHost(models.Model):
     auto_security_updates = fields.Boolean(
         string="Auto Security Updates",
         default=True,
-        help="Enable unattended-upgrades for OS security patches with an "
-             "automatic reboot at 04:00 when a kernel update lands. Disable "
-             "for hosts whose downtime windows must be controlled manually.",
+        help="Install the operating system's security patches by"
+             " themselves. When an update needs a restart, the panel"
+             " restarts the server inside its restart window, once nothing"
+             " of the panel runs there, and checks that it comes back."
+             " Disable for a server you restart yourself: the pending"
+             " restart is still shown.",
     )
     allowed_ssh_ips = fields.Char(
         string="Allowed SSH IPs",
