@@ -33,7 +33,7 @@ OFFLINE_READS = (
     "list_backups",
 )
 #: Read tools of this group that reach a server or GitHub: answered by a canned route.
-NETWORK_READS = ("github_repo_info", "read_access_log")
+NETWORK_READS = ("github_repo_info", "read_access_log", "read_metrics")
 #: What Claude Code takes from one tool's answer by default, in tokens; a
 #: token stands for at least one byte.
 CLAUDE_CODE_TOKENS = 25_000
@@ -101,6 +101,7 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
                 "what": "branches",
             },
             "read_access_log": {"instance_id": self.production.id},
+            "read_metrics": {"instance_id": self.production.id},
         }.get(name, {})
 
     def test_alerts_that_quote_logs_come_as_untrusted_data(self):
@@ -639,7 +640,18 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         """No read tool of this group lets a fixture secret through."""
 
         def canned(_self, path, params):
-            """Answer the network routes with text that holds a secret."""
+            """Answer the network routes with text that holds a secret.
+
+            The metrics' route holds numbers and names of services only.
+            """
+            if path == "/cloud/instance/metrics_summary":
+                return {
+                    "ok": True,
+                    "hours": [{"hour": "2026-11-16T09:00:00+00:00"}],
+                    "peaks": {},
+                    "limits": {},
+                    "unanswered": {},
+                }
             return {
                 "ok": True,
                 "lines": [f"connected with {PG_PASSWORD}"],

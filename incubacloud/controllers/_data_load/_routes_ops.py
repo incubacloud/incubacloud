@@ -402,7 +402,7 @@ class OpsMixin:
 
     @http.route(["/cloud/instance/metrics_summary"], type="jsonrpc",
                 auth="user")
-    def cloud_instance_metrics_summary(self, instance_id, hours=24):
+    def cloud_instance_metrics_summary(self, instance_id, hours=24, end=None):
         """Return this instance's metrics by the hour, with their peaks.
 
         What an agent reads instead of the charts (``read_metrics`` of the
@@ -411,13 +411,15 @@ class OpsMixin:
 
         :param int instance_id: the instance to summarise.
         :param int hours: the window up to now, 1 to 168.
+        :param str end: where the window ends, ISO 8601, as an earlier
+            answer gave it; now when omitted.
         """
         began = time.monotonic()
         instance = self._metrics_instance(instance_id)
         if not instance:
             return {"ok": False, "error": _("Instance not found")}
         return self._board_answer(
-            began, lambda: instance._metrics_summary(hours),
+            began, lambda: instance._metrics_summary(hours, end),
         )
 
     def _board_answer(self, began, read):

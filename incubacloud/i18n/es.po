@@ -7738,6 +7738,12 @@ msgstr "El intervalo del gráfico no es válido."
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/metrics_charts.py:0
+msgid "The database collector has no reading in this window."
+msgstr "El colector de la base de datos no tiene lecturas en esta ventana."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_instance_db_activity.py:0
 msgid "The database of this instance could not be read."
 msgstr "No se pudo leer la base de datos de esta instancia."
@@ -22134,6 +22140,12 @@ msgstr "Inicie antes la instancia: su relé está detenido."
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid "The instance is asleep: wake it first."
 msgstr "La instancia está dormida: despiértela antes."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_charts.py:0
+msgid "The instance is on no server, so its database is not read."
+msgstr "La instancia no está en ningún servidor, así que no se lee su base de datos."
 
 #. module: incubacloud
 #. odoo-python

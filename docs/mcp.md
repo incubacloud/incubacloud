@@ -207,14 +207,27 @@ role and the record rules on the instance) and the same budget, twenty
 board reads a minute per user, shared with the tabs. It asks five queries,
 the tab's latency, requests, CPU and memory panels as they are
 (`PANELS["instance_summary"]` in `models/metrics_charts.py`) and the
-database's connections. Each hour (UTC) gives each metric's `avg` and `max`:
-CPU (percent of one core) and memory (bytes) of the instance's services
-added up, requests and 5xx per second, p50 and p95 in seconds, connections.
+database's connections, at a `step` that divides an hour (300 s for 24
+hours, 1800 s for 168), so that every hour has the same number of points.
+Each hour (UTC) gives each metric's `avg` and `max`: CPU (percent of one
+core) and memory (bytes) of the instance's services added up, requests and
+5xx per second, p50 and p95 in seconds, connections. Each point is the
+mean (or, for memory and connections, the highest value) of `step`
+seconds, and `max` is the highest of the hour's points: a spike shorter
+than `step` is smoothed in CPU, requests and latency.
 `peaks` gives each metric's highest point of the window, how many times the
-window's average it is (`times_average`) and, with a limit that covers all
-of it, its `share_of_limit`; an hour where it is at least twice the average
-lists it in `peak`. `limits` gives the limits (CPU and memory per service).
-The hours come in pages, under `items`. Observability off or without a
+window's average it is (`times_average`) and its `share_of_limit`; for CPU
+and memory it is the largest share of any service against its own limit,
+named in `limit_service` (a service at its limit is not hidden by another
+at rest). An hour where the peak is at least twice the average lists it in
+`peak`. `limits` gives the limits (CPU and memory per service).
+The hours come in pages, under `items`; the window ends at `end`, which
+the next pages take as their `end` parameter so that they all read the
+same window (each page asks the central again). `silence`, why the server
+may have sent nothing, is given only when no hour has readings or the
+server or instance is not reporting. A metric with no reading is named
+under `unanswered` with the reason, also when the instance has no server or
+its collector has not reported. Observability off or without a
 central answers the tab's `reason` (`disabled`, `unconfigured`); a central
 that refuses, does not answer or is busy for every query, `credential`,
 `central` or `busy`; a query that fails alone leaves its metrics under
