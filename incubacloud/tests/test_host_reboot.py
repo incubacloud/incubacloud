@@ -431,6 +431,9 @@ class _RebootJobCase(_RebootCase):
     def _wait(self, job, seconds, transport=None, error=None):
         """Run a waiting attempt *seconds* after the order; return what it raised."""
         row = self._hold(job, shutdown_at=self.inside)
+        # The hooks write on a cursor of their own: what the test wrote
+        # goes first, as a commit would have it.
+        self.env.flush_all()
         executor = self._executor(HostRebootExecutor, job)
         values = executor._row_values()
         self.assertEqual(values["id"], row.id)
