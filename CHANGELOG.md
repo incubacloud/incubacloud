@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.233] — unreleased
+
+Agents read an instance's metrics by the hour. The update adds no column
+and no data migration.
+
+### Added
+
+- **`read_metrics` in the MCP.** An instance's metrics by the hour over the
+  last 24 hours, or up to 168: CPU and memory of its services together,
+  requests and 5xx per second, the p50 and p95 of request time and the
+  database's connections, each hour with its average and highest point,
+  and each metric's peak of the window with how many times the average it
+  is and its share of the limit; an hour with a peak at least twice the
+  average says so. It is read from the metrics central with the instance's
+  Metrics tab's own panels (`PANELS["instance_summary"]`), through the new
+  route `/cloud/instance/metrics_summary`, for whoever sees that tab (the
+  `developer` role and the instance), and counts in the tab's twenty chart
+  reads a minute per user. Observability off, no central, or a central
+  that does not answer are said as the tab says them.
+
 ## [1.0.231] — unreleased
 
 The panel reads the servers' security logs back from the central and

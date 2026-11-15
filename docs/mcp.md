@@ -169,7 +169,7 @@ N+1 starts where page N ended.
 | `freeze_repos` | consultant | | pinning or releasing the commit of a production's line |
 | `delete_instance` | consultant (production: manager) | yes | always |
 | `create_project`, `import_project` | project manager | | |
-| `get_monitoring`, `list_backups`, `read_access_log`, `read_logs`, `staging_mailbox` | developer | | |
+| `get_monitoring`, `list_backups`, `read_access_log`, `read_logs`, `read_metrics`, `staging_mailbox` | developer | | |
 | `revive_instance`, `clone_to_staging`, `create_backup`, `clear_staging_mailbox` | developer | | |
 | `run_command` | developer | | on production, each command |
 | `repo_read` | developer | | |
@@ -190,7 +190,7 @@ N+1 starts where page N ended.
 | `trust_host_key`, `run_host_command` | manager | | always |
 | `delete_project`, `delete_archived_instance`, `delete_host`, `delete_backup_backend`, `move_instance`, `rollback_move`, `reset_github_app`, `purge_audit_logs`, `pitr_restore` (bridge) | manager | yes | always |
 
-Seventy-three tools with the bridge's three. Security settings of
+Seventy-four tools with the bridge's three. Security settings of
 `update_settings` (D2): the audit retention, the trusted proxy ranges, every
 rate limit (the agents' included), the agents' issuer and the MCP address,
 and whatever `get_config` hides on that panel (observability, on a panel whose
@@ -198,6 +198,27 @@ settings another panel pushes).
 The approval says each value before and after; a value equal to the one held
 once normalised asks nothing. A setting the section does not have is refused
 before anyone is asked.
+
+**Metrics.** `read_metrics` (developer) reads an instance's metrics by the
+hour from the metrics central, over the last `hours` (24 by default, 168 at
+most, the widest range of the Metrics tab), through
+`/cloud/instance/metrics_summary`: the same gate as the tab (the `developer`
+role and the record rules on the instance) and the same budget, twenty
+board reads a minute per user, shared with the tabs. It asks five queries,
+the tab's latency, requests, CPU and memory panels as they are
+(`PANELS["instance_summary"]` in `models/metrics_charts.py`) and the
+database's connections. Each hour (UTC) gives each metric's `avg` and `max`:
+CPU (percent of one core) and memory (bytes) of the instance's services
+added up, requests and 5xx per second, p50 and p95 in seconds, connections.
+`peaks` gives each metric's highest point of the window, how many times the
+window's average it is (`times_average`) and, with a limit that covers all
+of it, its `share_of_limit`; an hour where it is at least twice the average
+lists it in `peak`. `limits` gives the limits (CPU and memory per service).
+The hours come in pages, under `items`. Observability off or without a
+central answers the tab's `reason` (`disabled`, `unconfigured`); a central
+that refuses, does not answer or is busy for every query, `credential`,
+`central` or `busy`; a query that fails alone leaves its metrics under
+`unanswered` and the others answered.
 
 **Code.** The six `repo_*` / `project_connect_repo` tools (developer) work on the
 project's GitHub repository, in `incubacloud.mcp.tools` (`mcp_tools_code.py`) and
@@ -356,6 +377,7 @@ route without a policy.
 | `/cloud/log/<id>`, `/cloud/log/<id>/download` | A page and a file for a browser; `get_job` replaces them. |
 | `/cloud/instance/<id>/logs`, `/cloud/instance/<id>/log_archive/<name>` | A page and a file for a browser; `read_logs` replaces them. |
 | `/cloud/get_user_preferences`, `/cloud/save_user_preferences`, `/cloud/telegram_detect_chat_id`, `/cloud/telegram_send_test` | The user's own notification preferences, not the operation. |
+| `/cloud/instance/resource_series`, `/cloud/host/resource_series`, `/cloud/fleet/resource_series`, `/cloud/host/security_board`, `/cloud/instance/db_activity`, `/cloud/instance/slow_routes` | The charts and readings on demand of the Metrics tabs and Monitoring, drawn by the panel; `read_metrics` reads an instance's by the hour. |
 | `/cloud/ping`, `/cloud/get_langs`, `/cloud/get_users`, `/cloud/host_defaults`, `/cloud/fetch_odoojs_submodules` | Serve the panel's own forms only. |
 | `/cloud/github/setup`, `/cloud/github/callback` | Install the GitHub App in a browser. |
 | `/cloud/github/webhook`, `/cloud/health` | Public endpoints, not an action of the user. |
