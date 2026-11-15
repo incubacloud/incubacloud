@@ -764,7 +764,11 @@ class PitrPurgeExecutor(_PitrExecutor):
         or the creation of an instance of the same name that took this
         one's prefix since, when earlier
         (``cloud.instance._backup_purge_before``): what that one archived
-        there stays.
+        there stays. When this one took the name of an archived instance
+        that keeps its archive in the same prefix, the purge starts at
+        this one's creation (``PURGE_SINCE``,
+        ``cloud.instance._backup_purge_since``): what that one archived
+        before stays for its own purge.
 
         :rtype: str
         :raises ValueError: when a value would not stay on its line
@@ -782,6 +786,9 @@ class PitrPurgeExecutor(_PitrExecutor):
             prefix, fields.Datetime.to_datetime(self._before()),
         )
         lines = [env_line("DST", prefix), env_line("PURGE_BEFORE", cutoff.isoformat())]
+        since = inst._backup_purge_since(prefix)
+        if since:
+            lines.append(env_line("PURGE_SINCE", since))
         if backend.s3_access_key_id:
             lines.append(env_line("AWS_ACCESS_KEY_ID", backend.s3_access_key_id))
         if backend.s3_secret_access_key:

@@ -918,6 +918,10 @@ then. The rest is the panel's assets and the Spanish catalogue.
   the successor have continued the archived chain (its first backup an
   incremental on the archived full), the purge deletes nothing, exits 23
   and raises `archived_purge_chain_continued`; the record stays (RB-05).
+  A successor archived in turn, or whose recovery archive is switched
+  off, has the purge of that copy start at its own creation
+  (`PURGE_SINCE`), as its delete does: the predecessor's copy in the
+  same path stays for the predecessor's purge.
   A backup path an Administrator or an
   import writes is held to the same check, naming the instance it would
   overlap; 1.0.229's post-migrate names those saved before. A layer that

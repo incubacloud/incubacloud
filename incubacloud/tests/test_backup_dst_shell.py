@@ -1417,6 +1417,70 @@ class TestTheArchivedPurgeEndsWhereTheSuccessorBegan(_BackupDstCase):
         self.assertTrue(self.instance.exists())
 
 
+class TestAnArchivedSuccessorsPurgeStartsAtItsCreation(_BackupDstCase):
+    """The purge of a successor archived in turn keeps its predecessor's copy.
+
+    Both archived in one path: the successor's purge carries
+    ``PURGE_SINCE``, its own creation, so what the predecessor stored
+    before stays for that one's purge; the predecessor's carries none
+    (``_backup_purge_since`` counts only namesakes created before).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.now = fields.Datetime.now()
+        self.instance._finalize_removal(keep_in_panel=True)
+        self.path = self.instance.custom_backup_dst
+        self._dated(
+            self.instance, create_date=self.now - timedelta(days=30),
+            archived_at=self.now - timedelta(days=20),
+        )
+        self.successor = self.env["cloud.instance"].create({
+            "name": "bd-inst",
+            "project_id": self.env["cloud.project"].create({"name": "bd-proj-2"}).id,
+            "environment": "production", "host_id": self.host.id,
+            "state": "deployed", "backup_backend_id": self.backend.id,
+        })
+        self.born = self.now - timedelta(days=19)
+        self._dated(self.successor, create_date=self.born)
+        self.successor.with_context(ic_archive_instance=True).write({"active": False})
+        self._saved_before(self.path, self.successor)
+        self._dated(self.successor, archived_at=self.now - timedelta(days=5))
+
+    def _purge_env(self, instance):
+        """The environment of the purge of archived *instance*'s copy.
+
+        :param instance: an archived ``cloud.instance``
+        :return: ``{name: value}``
+        :rtype: dict
+        """
+        job = self.env["cloud.job"].browse(instance.delete_archived()[0])
+        executor = PurgeArchivedBackupsExecutor(job, self.host)
+        executor._refuse_shared_prefix()
+        (content,) = executor._env_contents().values()
+        return _docker_env(content)
+
+    def test_the_successor_s_purge_starts_at_its_creation(self):
+        env = self._purge_env(self.successor)
+        self.assertEqual(env["DST"], self.path)
+        self.assertEqual(
+            env["PURGE_SINCE"], self.born.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+        )
+        self.assertEqual(
+            env["PURGE_BEFORE"], self.successor.purge_cutoff_at.isoformat(),
+        )
+
+    def test_the_predecessor_s_purge_has_no_start(self):
+        env = self._purge_env(self.instance)
+        self.assertNotIn("PURGE_SINCE", env)
+        self.assertEqual(env["PURGE_BEFORE"], self.born.isoformat())
+        self.assertEqual(self.instance._backup_purge_since(self.path), "")
+
+    def test_without_a_namesake_in_its_path_the_line_is_not_there(self):
+        self._saved_before("boto3+s3://bd-bucket/backups/elsewhere/bd-inst")
+        self.assertNotIn("PURGE_SINCE", self._purge_env(self.successor))
+
+
 @tagged("post_install", "-at_install")
 class TestASuccessorGetsABackupPathOfItsOwn(_BackupDstCase):
     """An instance that takes another's name computes a path no record holds.

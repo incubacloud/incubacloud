@@ -593,6 +593,38 @@ class TestThePurgeReachesOnlyItsOwnArchive(_SwitchedOffCase):
                     self._purge(before)._env_content(),
                 )
 
+    def test_a_successor_s_purge_starts_at_its_creation(self):
+        """This one took the name of one archived that keeps its archive in
+        the prefix: what that one archived before stays (``PURGE_SINCE``)."""
+        before = self._switched_off(15)
+        self.inst._pitr_record_rendered()
+        predecessor = self._elsewhere("pitr-inst", pitr_rendered_prefix=PREFIX)
+        now = fields.Datetime.now()
+        born = now - timedelta(days=19)
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET active = false, archived_at = %s,"
+            " create_date = %s WHERE id = %s",
+            (now - timedelta(days=20), now - timedelta(days=30), predecessor.id),
+        )
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET create_date = %s WHERE id = %s",
+            (born, self.inst.id),
+        )
+        self.env.invalidate_all()
+        content = self._purge(before)._env_content()
+        self.assertIn(
+            f"PURGE_SINCE={born.strftime('%Y-%m-%dT%H:%M:%S+00:00')}\n", content,
+        )
+        self.assertIn(
+            f"PURGE_BEFORE={fields.Datetime.to_datetime(before).isoformat()}\n",
+            content,
+        )
+
+    def test_without_one_of_its_name_in_the_prefix_it_has_no_start(self):
+        before = self._switched_off(15)
+        self.inst._pitr_record_rendered()
+        self.assertNotIn("PURGE_SINCE", self._purge(before)._env_content())
 
 class TestSwitchingOnBeforeTheDate(_SwitchedOffCase):
 

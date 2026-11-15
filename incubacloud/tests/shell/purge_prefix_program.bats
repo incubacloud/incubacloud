@@ -328,3 +328,23 @@ _S="signature-backup.inst.example-duplicity"
     [[ "$output" == *"removed 1 object(s)"* ]]
     [[ "$(_remaining)" != *window* ]]
 }
+
+@test "an archived successor's purge takes its incrementals and leaves the chain before it" {
+    # Both instances of the name archived in one path, the successor's
+    # first backup an incremental on the predecessor's full. The
+    # successor's purge: since its creation, before its own cutoff.
+    _seed \
+        "backups/proj/inst/$_A-full.20260101T000000Z.vol1.difftar.gpg=2026-01-01T00:00:00+00:00" \
+        "backups/proj/inst/$_A-inc.20260101T000000Z.to.20260102T000000Z.vol1.difftar.gpg=2026-01-02T00:00:00+00:00" \
+        "backups/proj/inst/$_A-inc.20260102T000000Z.to.20260202T000000Z.vol1.difftar.gpg=2026-02-02T00:00:00+00:00" \
+        "backups/proj/inst/$_S-new-signatures.20260102T000000Z.to.20260202T000000Z.sigtar.gpg=2026-02-02T00:00:00+00:00" \
+        "backups/proj/inst/$_A-inc.20260202T000000Z.to.20260203T000000Z.vol1.difftar.gpg=2026-02-03T00:00:00+00:00"
+    export PURGE_SINCE="2026-02-01T00:00:00+00:00"
+    export PURGE_BEFORE="2026-03-01T00:00:00+00:00"
+    run _run_program
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"removed 3 object(s)"* ]]
+    [ "$(_remaining)" = "$(printf '%s\n' \
+        "backups/proj/inst/$_A-full.20260101T000000Z.vol1.difftar.gpg" \
+        "backups/proj/inst/$_A-inc.20260101T000000Z.to.20260102T000000Z.vol1.difftar.gpg")" ]
+}
