@@ -46,6 +46,9 @@
 #   20  the environment file (or an SFTP copy's key files) is missing
 #   21  the provider rejected the credentials
 #   22  the container could not start, or any other failure
+#   23  an object stored since the cutoff continues a chain the purge
+#       would delete (``lib/purge_prefix.sh``): nothing deleted under
+#       that prefix
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
@@ -116,6 +119,7 @@ case "$rc" in
     10) ic_log "archived backup prefix was already empty." ;;
     21) ic_warn "storage rejected the credentials." ;;
     20) ic_warn "environment unavailable." ;;
+    23) ic_warn "the instance that took the name continued this chain: nothing deleted." ;;
     *)  ic_warn "archived backup purge failed (exit $rc)."
         # Anything the inner program did not classify — most often the
         # image failing to pull or to start at all — lands here as 22.

@@ -183,6 +183,15 @@ _PLATFORM_FIELDS = frozenset({
 #: the platform alone, and cleared by a revive.
 _PLATFORM_STAMPS = frozenset({"archived_at", "purge_cutoff_at"})
 
+#: The least time between an archive and the creation of the instance of
+#: the same name that holds its backup path, for the two to be taken for a
+#: succession (``_backup_succession``). Asked of the gap, not added to the
+#: purges' bounds: what one side would gain the other would lose. The panel's
+#: clock and the storage's, both on NTP, are seconds apart; a minute leaves
+#: room and is far below the time between an archive and a new instance.
+#: Decided on 15-nov-2026.
+_SUCCESSION_MARGIN = timedelta(seconds=60)
+
 #: Where an instance lives on its host and where its copy is kept: the
 #: directory a teardown removes and the place a purge empties. An
 #: administrator's to set, as an import does.
@@ -919,8 +928,12 @@ class CloudInstance(models.Model):
         destination's path and no other instance uses that destination
         (an import names one after the path it read); and one that is or
         holds the path of another instance, archived included. One that is
-        the same path as another instance of the same name is not: that is
-        a successor, which the cutoff protects. Compared bucket and parts as the purge
+        the same path as another instance of the same name is not when the
+        dates prove a succession (``_backup_succession``): one of the two
+        archived, and the other created at least a minute after: the
+        purges' bounds keep each one's objects apart. Two live ones, two
+        that lived at the same time or one archived without its date are
+        refused. Compared bucket and parts as the purge
         reads them (``_backup_dst.dst_key``), whatever the endpoint: two
         destinations naming one bucket are taken for one, which refuses
         more, never less.
@@ -972,7 +985,10 @@ class CloudInstance(models.Model):
         for other in others:
             for path in other._backup_paths_held():
                 theirs = dst_key(path)
-                if theirs == key and other.name == self.name:
+                if (
+                    theirs == key and other.name == self.name
+                    and self._backup_succession(other)
+                ):
                     continue
                 if dst_covers(key, theirs) or (held and dst_covers(theirs, key)):
                     return None, other
@@ -1001,6 +1017,65 @@ class CloudInstance(models.Model):
             "where every instance keeps its copies: refused, nothing "
             "deleted. Correct the instance's backup path."
         )
+
+    def _backup_succession(self, other):
+        """Whether one of the two took the other's name once it was archived.
+
+        One is archived (inactive, with ``archived_at``) and the other was
+        created at least ``_SUCCESSION_MARGIN`` after: what each one stored
+        in a path they share is then told apart by the storage's dates,
+        the archived one's before the other's creation. Anything else (two
+        live ones, two that lived at the same time, an archive without its
+        date) proves nothing.
+
+        :param other: another ``cloud.instance``
+        :rtype: bool
+        """
+        self.ensure_one()
+
+        def took_over(archived, successor):
+            """Whether *successor* was created a margin after *archived* was archived."""
+            return bool(
+                not archived.active and archived.archived_at
+                and successor.create_date
+                and archived.archived_at + _SUCCESSION_MARGIN
+                <= successor.create_date
+            )
+
+        return took_over(self, other) or took_over(other, self)
+
+    def _backup_purge_before(self, prefix, cutoff):
+        """Up to when a purge of this instance's *prefix* deletes.
+
+        *cutoff*, the instant the purge was decided, unless an instance
+        of the same name that holds the same path was created after this
+        one, the successor that took its name: then its creation, when
+        earlier. A delete decided after the successor's first copy would
+        otherwise take what the successor stored until then; the oldest
+        such creation, so one that was archived in turn keeps its copy
+        too. The purges of an archived instance's copy and of a recovery
+        archive switched off read it (``PURGE_BEFORE``).
+
+        :param str prefix: the duplicity or wal-g prefix the purge empties
+        :param datetime.datetime cutoff: naive UTC
+        :return: the bound, naive UTC
+        :rtype: datetime.datetime
+        """
+        self.ensure_one()
+        key = dst_key(prefix)
+        if not (key and key[1] and self.name and self.create_date and cutoff):
+            return cutoff
+        namesakes = self.env["cloud.instance"].sudo().with_context(
+            active_test=False,
+        ).search([
+            ("id", "!=", self.id), ("name", "=", self.name),
+            ("create_date", ">", self.create_date),
+        ])
+        later = [
+            other.create_date for other in namesakes
+            if any(dst_key(path) == key for path in other._backup_paths_held())
+        ]
+        return min([cutoff, *later])
 
     def _backup_purge_since(self, prefix):
         """Where a delete's purge of *prefix* starts, or ``""`` to empty it whole.

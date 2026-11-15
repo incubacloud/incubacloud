@@ -91,6 +91,37 @@ job.write({'state': 'failed',
 env.cr.commit()
 ```
 
+### `archived_purge_chain_continued`: an archived copy whose chain was continued
+
+Deleting an archived instance for good (`purge_archived_backups`)
+stopped with exit 23 and deleted nothing: an instance of the same name
+that inherited its backup path made an incremental backup on the
+archived full, so deleting that full would leave every later set of the
+live instance without its base (`lib/purge_prefix.sh`, `IC_PURGE_DEPENDS`
+in the job log names the first such object). The record stays. It only
+happens to a pair that shared its path before instances that take an
+archived one's name got a path of their own.
+
+1. Wait for, or take, a full backup of the live instance: the weekly
+   full opens a chain of its own, and so does a backup once duplicity
+   finds the archived full too old.
+2. From the live instance's directory on its host, check that
+   `collection-status` shows that full, after the delete's cutoff
+   (`purge_cutoff_at`, or the live instance's `create_date` when
+   earlier):
+
+   ```bash
+   docker compose run --rm --no-deps --entrypoint sh backup \
+       -c 'dup collection-status "$DST"'
+   ```
+
+3. Delete the live instance's incremental sets older than that full
+   (the names with `duplicity-inc.<T1>.to.<T2>` or
+   `duplicity-new-signatures.<T1>.to.<T2>` whose `<T1>` is before the
+   cutoff); the restore points they held are lost either way.
+4. Delete the archived instance again. The purge then removes the
+   archived chain and leaves the live one's.
+
 ## Rollback
 
 Marking a job `failed` is reversible (UPDATE again to `started`),
