@@ -3,8 +3,8 @@
 They work on a repository of the user's projects or instances only, with
 the panel's GitHub access. A repository of a Git provider (GitLab) is
 read with the panel's git and its provider's credential; the tools that
-write to one answer that it comes in a next version. Reading goes as every repository read of the
-panel goes: the App, then the personal access token, then anonymously.
+write to one answer that it is not available. Reading goes as every repository
+read of the panel goes: the App, then the personal access token, then anonymously.
 Writing goes with the App and, when GitHub refuses it (the App the panel
 creates may only read contents), with the personal access token. A
 developer's tools; the branch rule: a new branch needs no approval,
@@ -357,8 +357,8 @@ class McpToolsCode(models.AbstractModel):
         themselves, once the user approves.
 
         A repository of a Git provider (GitLab) is matched by its provider
-        and path, and returned as its ``RepoRef``; writing to one comes in
-        a next version.
+        and path, and returned as its ``RepoRef``; writing to one is not
+        available.
 
         :param bool write: the call writes to the repository
         :return: ``(owner, name)`` of GitHub, or a GitLab ``RepoRef``
@@ -417,8 +417,8 @@ class McpToolsCode(models.AbstractModel):
         if write:
             raise UserError(
                 self.env._(
-                    "Writing to GitLab repositories comes in a next version: for now "
-                    "the panel only reads this repository."
+                    "Writing to GitLab repositories is not available: the panel only "
+                    "reads this repository."
                 )
             )
         provider = self.env["cloud.git.provider"].sudo().search(

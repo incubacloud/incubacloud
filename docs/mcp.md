@@ -218,7 +218,7 @@ may connect the repository to the project).
   the tree under the path, one file read and paged as GitHub's, or a folder listed one
   level deep, without sizes. `project_connect_repo` and `github_repo_info` take its
   address too. `repo_create_branch`, `repo_write_files` and `repo_open_pull_request`
-  answer that writing to GitLab comes in a next version; `repo_create` is GitHub's.
+  answer that writing to GitLab is not available; `repo_create` is GitHub's.
   `get_project` and `get_instance` give each line's `repo_capabilities`.
 - **The branch rule is by user.** A new branch needs no approval: `incubacloud.mcp.agent.branch`
   records the branches an agent created, per user, so a branch any agent of the user
