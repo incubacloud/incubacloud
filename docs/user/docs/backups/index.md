@@ -1,11 +1,12 @@
 # Backups
 
-Backups go to **your own S3 bucket** — AWS, MinIO, Backblaze B2, Wasabi, or any
-S3-compatible service. You hold the keys. We run the schedule and the encryption.
+Backups go to **your own storage**: an S3 bucket (AWS, MinIO, Backblaze B2,
+Wasabi or any S3-compatible service) or an SFTP server. You hold the keys. We
+run the schedule and the encryption.
 
 ## How it works
 
-1. You register a **backup backend** (your S3 endpoint + credentials + a passphrase).
+1. You register a **backup backend** (your S3 bucket or SFTP server, its access, and a passphrase).
 2. You attach the backend to a project (or set it as the global default).
 3. The platform runs a nightly backup on every production instance and
    uploads the encrypted bundle to your bucket.
@@ -16,15 +17,15 @@ in an encrypted archive.
 
 ## Backup destinations
 
-A destination (a *backup backend*) is a bucket and a key to it. A production
-instance cannot be deployed without one.
+A destination (a *backup backend*) is a bucket or an SFTP server, and the way
+in. A production instance cannot be deployed without one.
 
-### Only S3-compatible storage
+### S3-compatible storage or SFTP
 
-The only type is **S3 compatible**: AWS S3 or any service that speaks its API.
-**Azure Blob Storage, a local disk, SFTP and FTP are not destinations.** (An
-SFTP or FTP link is accepted in one place only: as the source of an archive to
-[restore from a link](restore.md#from-a-link).)
+A destination is **S3 compatible** (AWS S3 or any service that speaks its API)
+or **SFTP** ([below](#sftp)). The type is chosen when the destination is
+created and does not change. **Azure Blob Storage, a local disk and FTP are not
+destinations.**
 
 Each instance's backups are made on its host, by a backup container that runs
 [duplicity](https://duplicity.us/). The panel also reads the bucket, to list
@@ -88,6 +89,80 @@ A MinIO policy that gives a key exactly what backups need, on the bucket
 Choose the destination on an instance, on its project, or for every production
 instance in **Settings → General → Default backup destination**. An instance
 uses its own if it has one, else its project's, else the default.
+
+## SFTP
+
+An SFTP destination is a folder on a server you reach over SSH: a Hetzner
+Storage Box, rsync.net, a NAS or a server of your own. The panel logs in with
+a key it generates for the destination (no password), and checks the
+server's own key against the one you confirmed: a server presenting another
+key is refused.
+
+### Create one
+
+1. **Backup Destinations → New Backend**: a **Name** and the type **SFTP** on
+   the **General** tab, then the **Storage** tab:
+
+    | Field | What to put |
+    |---|---|
+    | **Server** | Its host name or IPv4 address. |
+    | **Port** | 22 unless your provider says otherwise (a Storage Box, below). |
+    | **User** | The SFTP user, for instance `u123456` or a sub-account `u123456-sub1`. |
+    | **Folder** | Under the user's home, `backups` by default; start with `/` for an absolute path. Each instance writes under `<folder>/<project folder>/<instance>/`. |
+
+2. **Create Destination**. The **Keys** block now shows the public key, as a
+   line for `authorized_keys`. Add it to the user's `~/.ssh/authorized_keys`
+   on the server (**Copy** puts it on the clipboard). The line starts with
+   `restrict`, which keeps the key to file transfers; leave it out if your
+   provider does not accept options.
+3. **Read the server key**. Compare the fingerprint shown with the one your
+   provider publishes, or with `ssh-keygen -lf` on the server, then **Trust
+   this key**. Until a key is trusted no instance can be deployed to back up
+   there.
+4. **Test connection**: the panel logs in, creates the folder, writes and
+   removes a small file, and reports the free space when the server tells it.
+
+The test runs from the panel; the backups run from each server that hosts an
+instance. A server that accepts only some addresses must accept both.
+
+#### A Hetzner Storage Box
+
+Turn on **SSH support** for the box (or the sub-account), use the user of the
+box or sub-account and port **23**, which reads keys in the OpenSSH format the
+panel shows, and add the public key as the box's documentation says
+([Hetzner Docs](https://docs.hetzner.com/storage/storage-box/)).
+
+#### A server of your own
+
+Give the backups a user of their own, limited to SFTP in its own directory,
+for instance with OpenSSH:
+
+```
+Match User backups
+    ChrootDirectory /srv/backups
+    ForceCommand internal-sftp
+    AllowTcpForwarding no
+```
+
+The chroot directory belongs to root; give the user a folder inside it to
+write in, and set **Folder** to that folder.
+
+### Changing it later
+
+- **Another server or port** drops the trusted key: read and trust the new
+  one, then rebuild the instances on the destination. The server, port and
+  user cannot change while an archived instance keeps its copy there.
+- **Regenerate key** replaces the key pair. Add the new public key to the
+  server and keep the old line until every instance on the destination has
+  been rebuilt: until then they log in with the old key.
+- **The server's key changed**: backups fail and the panel raises a critical
+  alert, *SFTP server key changed*. Nothing is trusted on its own: check the
+  new key with your provider and trust it again.
+
+Retention works as for S3, except that there is no bucket lifecycle: the
+**Duplicity cron** deletes old backups, or **Nobody** does. The backups are
+encrypted with the destination's passphrase before they leave the host, so
+the SFTP server only holds encrypted files.
 
 ## How long backups are kept
 
