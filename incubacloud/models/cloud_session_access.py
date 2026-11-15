@@ -60,6 +60,11 @@ NOTICE_TEMPLATE = "incubacloud.mail_session_notice"
 #: bucket keeps it, and the buckets are swept a day after they start, so
 #: a longer value would not hold: it is capped here. RB-33 (13-nov-2026).
 NOTICE_WINDOW_HOURS = 24
+#: A second wake of the mail queue after the notices are queued. One
+#: pass of the queue can die on a concurrent write and leave them for
+#: the hourly one; two minutes clears that write and still tells the
+#: user while it matters (15-nov-2026).
+NOTICE_QUEUE_RETRY = timedelta(minutes=2)
 #: How many sessions, closes and values the page lists.
 PAGE_SESSIONS = 20
 PAGE_CLOSES = 10
@@ -272,8 +277,9 @@ class CloudSessionNotice(models.AbstractModel):
 
         Nothing goes out while notices are off. A user who is archived,
         or has no email address, is skipped. Each email is queued
-        (``mail.mail``) and the mail queue woken, never sent while the
-        request waits.
+        (``mail.mail``) and the mail queue woken, now and
+        :data:`NOTICE_QUEUE_RETRY` later in case that pass fails, never
+        sent while the request waits.
 
         :param users: the ``res.users`` to tell
         :param str reason: ``country``, ``browser``, ``agent`` (an agent
@@ -301,7 +307,10 @@ class CloudSessionNotice(models.AbstractModel):
             self._session_notice_queue(user, reason, facts, origin)
             told |= user
         if told:
-            self.env.ref("mail.ir_cron_mail_scheduler_action").sudo()._trigger()
+            now = fields.Datetime.now()
+            self.env.ref("mail.ir_cron_mail_scheduler_action").sudo()._trigger(
+                [now, now + NOTICE_QUEUE_RETRY],
+            )
         return told
 
     @api.model

@@ -424,6 +424,13 @@ then. The rest is the panel's assets and the Spanish catalogue.
   when an instance is created or renamed (existing ones keep working),
   and `incubacloud_pitr` refuses to switch continuous recovery on for `x`
   while an `x-pitr`, active or archived, is in the same folder.
+- **An account notice no longer waits up to an hour when a pass of the mail
+  queue fails.** The notice of a new country, browser, agent, API key, Git
+  token or invited user is queued and the mail queue woken once; a pass
+  that died on a concurrent write (a `SerializationFailure`) left it for
+  the next hourly pass. The queue is now woken now and again two minutes
+  later (`NOTICE_QUEUE_RETRY`). The notice is still never sent while the
+  request waits.
 
 ### Tests
 
