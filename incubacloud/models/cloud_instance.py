@@ -1154,7 +1154,7 @@ class CloudInstance(models.Model):
                 if inst._relay_oauth_renders() else {}
             ),
             # The retention the backup container's cleanup runs, once it
-            # is not the template's: until 1.0.229 none other applied,
+            # is not the template's: until 1.0.232 none other applied,
             # and a retention changed since left nothing to apply. Only
             # then, so the rest of the fleet hashes as before.
             **(

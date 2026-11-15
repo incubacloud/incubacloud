@@ -1,4 +1,4 @@
-"""Post-migrate for 1.0.229: backup destinations' retentions in the form they must have.
+"""Post-migrate for 1.0.232: backup destinations' retentions in the form they must have.
 
 From this version a destination's retention reaches the backup container
 (the compose override) and only ``<count><unit>`` with D, W, M or Y in
@@ -35,7 +35,7 @@ def migrate(cr, version):
         value = (stored or "").strip().upper() or TEMPLATE_BACKUP_RETENTION
         if not valid_backup_retention(value):
             _logger.warning(
-                "1.0.229: backup destination %s (%r) keeps the retention %r,"
+                "1.0.232: backup destination %s (%r) keeps the retention %r,"
                 " which is not a count followed by D, W, M or Y: the backup"
                 " cleanup ignores it and keeps three months until it is"
                 " fixed", backend_id, name, stored,
@@ -48,6 +48,6 @@ def migrate(cr, version):
                 (value, backend_id),
             )
             _logger.info(
-                "1.0.229: backup destination %s (%r) retention %r written as %r",
+                "1.0.232: backup destination %s (%r) retention %r written as %r",
                 backend_id, name, stored, value,
             )
