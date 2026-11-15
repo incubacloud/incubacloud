@@ -6031,6 +6031,11 @@ class CloudJob(models.Model):
             return None
         if not cjob.host_id:
             return None
+        # The panel restarts the server (``cloud.host._reboot_recent``):
+        # its silence is that restart's, which alerts on its own when the
+        # server does not come back (``host_reboot_failed``).
+        if cjob.host_id._reboot_recent():
+            return None
         attempts = qjob.retry or qjob.max_retries or 0
         # queue_job wraps our text as "Max. retries (N) reached: <marker>
         # <attempt>/<budget>: <type>: <detail>". The operator wants the

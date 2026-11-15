@@ -186,9 +186,10 @@ Hardening applies a security recipe on the host:
 - fail2ban: an address that fails SSH three times, or the Odoo login form ten
   times in ten minutes, is banned for an hour (the login ban is off on a host
   behind a CDN);
-- kernel `sysctl` hardening, automatic security updates (with a reboot at
-  04:00 when a kernel update lands), a hardened Docker daemon, journald limits
-  and auditd rules, with the audit log kept for weeks.
+- kernel `sysctl` hardening, automatic security updates (when one needs a
+  restart, the panel restarts the server inside its restart window, from 04:00
+  UTC by default, once nothing of the panel runs there), a hardened Docker
+  daemon, journald limits and auditd rules, with the audit log kept for weeks.
 
 Every instance also gets a stricter limit on its login endpoints (20 attempts
 a minute per address) on top of the general one, from its next deploy or

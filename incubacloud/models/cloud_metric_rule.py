@@ -463,6 +463,11 @@ class CloudMetricRule(models.Model):
             host = self._resolve_host(Host, labels)
             if not host:
                 continue
+            # The panel restarts the server: silent, or measured as it
+            # goes down and comes back, for a cut it asked for. Left as
+            # it was, neither raised nor resolved (``_reboot_recent``).
+            if host._reboot_recent():
+                continue
             text = self.message % {
                 "host": host.name,
                 "value": ("%g" % value),

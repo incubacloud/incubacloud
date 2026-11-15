@@ -32,11 +32,31 @@ shared lock of every host they touch, and of the key 0, before they read
 the holds. Either the dispatch commits first and the restart sees the job,
 or the hold commits first and the dispatch waits.
 
+A restart is the panel's once per host and per opening of its window
+(``_reboot_done_in_window``): a server whose update still asks for a
+restart once it is back waits for the next night, rather than restarting
+again every few minutes while the window stays open. The job queued by the
+check reads the window, the policy and the server's pending restart again
+when it starts (``host_reboot_executor``): it may have waited in the queue.
+
+A panel away. Every check leaves on the server the panel's mark (when it
+checked, whether it restarts the server by itself, its window), and the
+instances whose jobs a layer counts inside. A server the panel has not
+checked for ``REBOOT_PANEL_AWAY_H`` restarts by itself again
+(``host_reboot.sh away``, its timer every 30 minutes): inside the same
+window, once per opening, with the same veto of the server's
+(``reboot-guard.d`` included), no SSH session open and nothing running
+inside its instances. Once the panel checks it again, the panel decides.
+The owner's decision of 15-nov-2026: a panel that sleeps through the
+window, or that is gone, would otherwise leave its servers waiting for a
+restart with nobody to give it.
+
 The values below are the owner's choices of 15-nov-2026, kept here so that
 changing one is a one-line change: a window from 04:00 for 3 hours, in UTC,
 editable per host (a server carries instances of several projects, and
 ``cloud.project`` has no time zone); the alert of a restart pending for 7
-days whether or not the host restarts by itself.
+days whether or not the host restarts by itself; a day without a check
+before the server restarts by itself.
 """
 import json
 import logging
@@ -67,6 +87,18 @@ REBOOT_PENDING_ALERT_DAYS = 7
 #: too (``auto_security_updates`` off, or not hardened): the owner's
 #: choice of 15-nov-2026. False limits it to the hosts the panel restarts.
 REBOOT_PENDING_ALERT_ALWAYS = True
+#: Hours without a check of the panel after which the server restarts by
+#: itself (``host_reboot.sh away``): four checks missed in a row
+#: (``REBOOT_CHECK_EVERY_H``), so a panel down for a few hours, or one
+#: restarted, never makes a server act alone. The owner's decision of
+#: 15-nov-2026.
+REBOOT_PANEL_AWAY_H = 24
+#: Seconds from the order after which a server that does not answer, or
+#: answers with the boot it had, failed to restart: a restart measured in
+#: production takes about 2 minutes, and a disk check may take longer.
+#: Until then the server's silence is the restart's, not an incident
+#: (``cloud.host._reboot_recent``).
+RETURN_DEADLINE_S = 900
 
 REBOOT_PENDING_ALERT = "host_reboot_pending"
 REBOOT_FAILED_ALERT = "host_reboot_failed"
@@ -209,6 +241,106 @@ class CloudHost(models.Model):
         hour = local.hour + local.minute / 60 + local.second / 3600
         return (hour - self.reboot_window_start) % 24 < self.reboot_window_hours
 
+    def _reboot_window_opened_at(self, now=None):
+        """Return when the opening of the window *now* is in began, or None.
+
+        Counted back from *now* by the wall clock of the window's zone: on
+        the night the clock changes, an hour off at most.
+
+        :param datetime now: naive UTC
+        :return: naive UTC, or None when the window is closed
+        :rtype: datetime | None
+        """
+        self.ensure_one()
+        now = now or fields.Datetime.now()
+        try:
+            zone = ZoneInfo(self.reboot_tz or REBOOT_TZ_DEFAULT)
+        except (ZoneInfoNotFoundError, ValueError):
+            zone = ZoneInfo(REBOOT_TZ_DEFAULT)
+        local = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(zone)
+        hour = local.hour + local.minute / 60 + local.second / 3600
+        elapsed = (hour - self.reboot_window_start) % 24
+        if elapsed >= self.reboot_window_hours:
+            return None
+        return now - timedelta(hours=elapsed)
+
+    def _reboot_done_in_window(self, now=None):
+        """Whether the panel ordered a restart of this host in this opening.
+
+        A ``cloud.host.reboot`` row of the host whose order
+        (``shutdown_at``) is since the window opened: one restart per host
+        and per opening, whatever it ended in.
+
+        :param datetime now: naive UTC
+        :rtype: bool
+        """
+        self.ensure_one()
+        opened = self._reboot_window_opened_at(now)
+        if opened is None:
+            return False
+        return bool(self.env["cloud.host.reboot"].sudo().search_count([
+            ("host_id", "=", self.id), ("shutdown_at", ">=", opened),
+        ], limit=1))
+
+    def _reboot_not_due(self, now=None):
+        """Say why the panel does not restart this host by itself now.
+
+        Read by the check before it queues the restart, and by the
+        restart it queued when it starts, after its wait in the queue.
+        Whether a restart is pending is the caller's: the server says it.
+
+        :param datetime now: naive UTC
+        :return: the reason, ``''`` when the panel may restart it now
+        :rtype: str
+        """
+        self.ensure_one()
+        now = now or fields.Datetime.now()
+        if not self._reboot_by_panel():
+            return (
+                "The panel does not restart this server by itself: Auto"
+                " Security Updates is off, or it is not hardened."
+            )
+        if not self._reboot_window_open(now):
+            return (
+                f"Its restart window (from {self._reboot_window_label()} for"
+                f" {self.reboot_window_hours} h,"
+                f" {self.reboot_tz or REBOOT_TZ_DEFAULT}) is closed."
+            )
+        if self._reboot_done_in_window(now):
+            return (
+                "The panel restarted it once in this window already: an"
+                " update that still asks for a restart waits for the next one."
+            )
+        return ""
+
+    def _reboot_last_row(self):
+        """Return the host's last restart by the panel, if any.
+
+        :return: a ``cloud.host.reboot``, empty when there is none
+        """
+        self.ensure_one()
+        return self.env["cloud.host.reboot"].sudo().search(
+            [("host_id", "=", self.id)], order="id desc", limit=1,
+        )
+
+    def _reboot_recent(self, now=None):
+        """Whether the panel ordered a restart of this host a moment ago.
+
+        Within ``RETURN_DEADLINE_S`` of its order: the server's silence is
+        the restart's, and ``host_unreachable`` or ``metrics_host_absent``
+        would alert on a cut the panel asked for. Past it, a server that
+        did not come back has ``host_reboot_failed``.
+
+        :param datetime now: naive UTC
+        :rtype: bool
+        """
+        self.ensure_one()
+        now = now or fields.Datetime.now()
+        return bool(self.env["cloud.host.reboot"].sudo().search_count([
+            ("host_id", "=", self.id),
+            ("shutdown_at", ">=", now - timedelta(seconds=RETURN_DEADLINE_S)),
+        ], limit=1))
+
     def _reboot_by_panel(self):
         """Whether the panel restarts this host by itself for its updates.
 
@@ -225,9 +357,9 @@ class CloudHost(models.Model):
     def _reboot_check_due(self, now=None):
         """Whether the cron checks this host in this pass.
 
-        Every pass inside the window while a restart is pending and the
-        panel restarts the host by itself; every ``REBOOT_CHECK_EVERY_H``
-        hours otherwise.
+        Every pass inside the window while a restart is pending, the
+        panel restarts the host by itself and has not in this opening of
+        the window; every ``REBOOT_CHECK_EVERY_H`` hours otherwise.
 
         :param datetime now: naive UTC
         :rtype: bool
@@ -237,6 +369,7 @@ class CloudHost(models.Model):
         if (
             self.reboot_required_since and self._reboot_by_panel()
             and self._reboot_window_open(now)
+            and not self._reboot_done_in_window(now)
         ):
             return True
         return not self.reboot_checked_at or (
@@ -413,7 +546,10 @@ class CloudHost(models.Model):
 
         Every 30 minutes; a host is due by ``_reboot_check_due``. The jobs
         are hidden and of the platform: queued with ``sudo``, as the cron
-        bot is no cloud manager.
+        bot is no cloud manager. ``reboot_checked_at`` is stamped as the
+        check is queued: a check that fails, a server that does not answer,
+        waits its turn as one that answered, and is not queued again on
+        every pass.
         """
         now = fields.Datetime.now()
         Job = self.env["cloud.job"].sudo()
@@ -428,6 +564,7 @@ class CloudHost(models.Model):
                 ], limit=1):
                     continue
                 Job.enqueue(host.id, False, "host_reboot_check")
+                host.reboot_checked_at = now
             except Exception as exc:  # one host never stops the others
                 _logger.warning(
                     "Could not queue the restart check of host %s: %s",
