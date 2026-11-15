@@ -1111,3 +1111,72 @@ class TestDeletingALiveInstanceReachesOnlyItsCopy(_BackupDstCase):
         executor = self._delete({"keep_in_panel": True})
         self.assertEqual(executor._purge_prefixes(self.instance), [])
         executor._refuse_shared_prefix(self.instance)
+
+
+class TestDeletingASuccessorKeepsTheArchivedCopy(_BackupDstCase):
+    """The delete of a successor empties only what it stored since it was created.
+
+    An archived instance of the same name keeps its copies in the same
+    prefix (``custom_backup_dst``, frozen when it was archived), which
+    the prefix check lets through: the delete's purge is bounded to what
+    came after the successor's creation (``PURGE_SINCE``).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.instance._finalize_removal(keep_in_panel=True)
+        self.archived_path = self.instance.custom_backup_dst
+        elsewhere = self.env["cloud.project"].create({"name": "bd-proj-2"})
+        self.successor = self.env["cloud.instance"].create({
+            "name": "bd-inst", "project_id": elsewhere.id,
+            "environment": "production", "host_id": self.host.id,
+            "state": "deployed", "backup_backend_id": self.backend.id,
+            "custom_backup_dst": self.archived_path,
+        })
+
+    def _purge_args(self, instance):
+        """The arguments the delete of *instance* gives ``backup_purge.sh``.
+
+        :param instance: the live ``cloud.instance`` to delete
+        :return: the arguments after the script's path
+        :rtype: list
+        """
+        job = self.env["cloud.job"].create({
+            "job_type_id": self.env.ref("incubacloud.delete_instance").id,
+            "instance_id": instance.id,
+            "host_id": self.host.id,
+            "payload": {},
+        })
+        executor = DeleteInstanceExecutor(job, self.host)
+        executor._refuse_shared_prefix(instance)
+        ((_label, command, _opts),) = executor._purge_step(instance, "~/d")
+        argv = shlex.split(command)
+        script = next(
+            i for i, arg in enumerate(argv) if arg.endswith("/backup_purge.sh")
+        )
+        return argv[script + 1:]
+
+    def test_the_successor_s_purge_starts_at_its_creation(self):
+        self.assertEqual(self.successor.instance_backup_dst, self.archived_path)
+        since = self.successor.create_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        self.assertEqual(self._purge_args(self.successor), ["~/d", since])
+
+    def test_without_an_archived_instance_it_empties_its_prefix_whole(self):
+        lone = self.env["cloud.instance"].create({
+            "name": "bd-lone",
+            "project_id": self.env["cloud.project"].create({"name": "bd-proj-3"}).id,
+            "environment": "production", "host_id": self.host.id,
+            "state": "deployed", "backup_backend_id": self.backend.id,
+        })
+        self.assertEqual(self._purge_args(lone), ["~/d"])
+
+    def test_another_name_or_another_path_bounds_nothing(self):
+        other = self.env["cloud.instance"].create({
+            "name": "bd-third", "project_id": self.project.id,
+            "environment": "staging", "host_id": self.host.id,
+            "state": "deployed", "backup_backend_id": self.backend.id,
+        })
+        self.assertEqual(other._backup_purge_since(other.instance_backup_dst), "")
+        self.assertEqual(
+            self.successor._backup_purge_since(f"{self.archived_path}-pitr"), "",
+        )

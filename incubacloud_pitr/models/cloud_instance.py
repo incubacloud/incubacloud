@@ -19,6 +19,7 @@ import hashlib
 import logging
 import re
 import secrets
+import shlex
 from datetime import datetime, timedelta, timezone
 
 from odoo import _, api, fields, models
@@ -722,15 +723,26 @@ class CloudInstance(models.Model):
         stopped, so the instance is left running for the delete to be
         run again; a compose it cannot read stops it before it touches
         anything.
+
+        When an archived instance of the same name keeps its archive in
+        the same prefix (``_backup_purge_since``), only what was stored
+        since this instance was created is deleted, by the storage's own
+        dates: the archived one's stays for its own purge.
         """
         steps = super()._teardown_pre_steps(inst_dir, keep_in_panel)
         if keep_in_panel or not self._pitr_had_archive():
             return steps
+        _backend, prefix = self._pitr_purge_target()
+        since = self._backup_purge_since(prefix) if prefix else ""
+        what = (
+            "delete --use-server-modtime"
+            f" --max-age {shlex.quote(since)} pitr:" if since else "purge pitr:"
+        )
         # An ephemeral rclone with the agent's environment. rclone's 3 is
         # "directory not found": nothing was ever stored.
         purge = (
             f"rc=0; docker run --rm --env-file {ENV_FILE} {RCLONE_IMAGE}"
-            " purge pitr: || rc=$?"
+            f" {what} || rc=$?"
         )
         return steps + [
             (

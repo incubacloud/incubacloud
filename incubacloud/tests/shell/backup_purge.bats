@@ -89,6 +89,17 @@ _env_file() {
     ! grep -Eq 'compose (start|up|restart)' "$DOCKER_CALLS"
 }
 
+@test "purge bounds the container to the since it is given, and only then" {
+    run bash "$PURGE" "$HOME/project/inst"
+    [ "$status" -eq 0 ]
+    ! grep -q 'PURGE_SINCE' "$DOCKER_CALLS"
+    : > "$DOCKER_CALLS"
+    run bash "$PURGE" "$HOME/project/inst" "2026-02-01T00:00:00+00:00"
+    [ "$status" -eq 0 ]
+    grep 'compose run' "$DOCKER_CALLS" \
+        | grep -q -- ' --no-deps -e PURGE_SINCE=2026-02-01T00:00:00+00:00 --entrypoint python3 backup -'
+}
+
 @test "purge feeds the deletion program on stdin" {
     run bash "$PURGE" "$HOME/project/inst"
     grep -q 'IC_PURGE_OK' "$DOCKER_STDIN"
