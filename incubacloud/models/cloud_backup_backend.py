@@ -318,7 +318,7 @@ class CloudBackupBackend(models.Model):
         address = self._sftp_key_address()
         try:
             key = ssh_host_keys.presented_host_key(address, self.sftp_port)
-        except (asyncssh.Error, OSError, TimeoutError) as exc:
+        except (asyncssh.Error, OSError, TimeoutError, asyncio.TimeoutError) as exc:
             raise self._sftp_key_read_error(exc) from exc
         return self._sftp_presented_key_line(key)
 
@@ -338,7 +338,7 @@ class CloudBackupBackend(models.Model):
             key = await ssh_host_keys.presented_host_key_async(
                 address, self.sftp_port,
             )
-        except (asyncssh.Error, OSError, TimeoutError) as exc:
+        except (asyncssh.Error, OSError, TimeoutError, asyncio.TimeoutError) as exc:
             raise self._sftp_key_read_error(exc) from exc
         return self._sftp_presented_key_line(key)
 
@@ -499,7 +499,7 @@ class CloudBackupBackend(models.Model):
         """
         try:
             conn = await asyncssh.connect(**kwargs)
-        except (asyncssh.Error, OSError, TimeoutError) as exc:
+        except (asyncssh.Error, OSError, TimeoutError, asyncio.TimeoutError) as exc:
             raise SftpUnreachable(exc) from exc
         try:
             async with conn.start_sftp_client() as sftp:
@@ -528,7 +528,7 @@ class CloudBackupBackend(models.Model):
             return loop.run_until_complete(
                 asyncio.wait_for(_go(), _SFTP_OPERATION_TIMEOUT),
             )
-        except TimeoutError as exc:
+        except (TimeoutError, asyncio.TimeoutError) as exc:
             raise SftpUnreachable(exc) from exc
         finally:
             loop.close()
