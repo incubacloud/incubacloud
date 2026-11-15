@@ -212,7 +212,7 @@
                                     <tbody>
                                         <t t-foreach="httpRows" t-as="row" t-key="row.id">
                                             <tr>
-                                                <td class="ic-mb-cardtitle" t-esc="instanceName(row)"/>
+                                                <td class="ic-mb-cardtitle" t-esc="instanceLabel(row)"/>
                                                 <td class="ic-mb-num"><span class="ic-mb-k">Requests</span><t t-esc="fmtValue('rps', row.rps)"/></td>
                                                 <td class="ic-mb-num"><span class="ic-mb-k">4xx</span><t t-esc="fmtValue('rps', row.r4xx)"/></td>
                                                 <td class="ic-mb-num"><span class="ic-mb-k">5xx</span><t t-esc="fmtValue('rps', row.r5xx)"/></td>
