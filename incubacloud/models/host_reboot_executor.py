@@ -28,13 +28,32 @@ connections at once on the server going down:
    probe of each instance on the host, and its end serves the queues its
    hold kept (``cloud.job._reboot_released_scopes``).
 
-A veto, or what blocks the hold, ends the job ``done`` with a line saying
+The check asks the server's veto and counts inside the instances itself,
+inside the window with a restart pending, and queues no restart the
+server would refuse: a Restart Server job is not left behind, done, for
+each pass the server said no. What changes in the seconds between the
+check and the job's start still ends the job ``done`` with a line saying
 why and no alert: the next pass of the check tries again inside the
-window. A server that does not come back, or comes back with the same
-``boot_id``, fails the job with ``host_reboot_failed``.
+window. The job the check queued (``by_check`` in its payload) reads the
+window, the policy and the pending restart again as it starts: it may
+have waited in the queue behind another job of the host, for hours. A
+server that does not come back, or comes back with the same ``boot_id``,
+fails the job with ``host_reboot_failed``.
+
+Between the order and the park: a connection lost as the order is given,
+or an order that answered badly, may have left the restart scheduled.
+The job calls it off (``host_reboot.sh cancel``) and fails, letting its
+hold go, only when the server says nothing is scheduled any more; else it
+parks, as after the order, and the server's boot decides.
+
+The check closes the restart's alerts once the problem is over, whoever
+solved it: ``host_reboot_failed`` once the server answers with another
+boot than the one it had before the restart, ``host_reboot_incomplete``
+once Docker and every container the alert waited for run.
 """
 import json
 import logging
+from datetime import datetime, timezone
 
 from odoo import fields
 
@@ -47,7 +66,10 @@ from .cloud_host_reboot import (
     REBOOT_FAILED_ALERT,
     REBOOT_INCOMPLETE_ALERT,
     REBOOT_LOCK_NS,
+    REBOOT_PANEL_AWAY_H,
     REBOOT_PANEL_KEY,
+    REBOOT_TZ_DEFAULT,
+    RETURN_DEADLINE_S,
     first_mark,
     panel_boot_id,
     parse_marks,
@@ -61,10 +83,6 @@ _logger = logging.getLogger(__name__)
 PARK_FIRST_S = 90
 #: Seconds between two tries to reach the server while it comes back.
 PARK_RETRY_S = 30
-#: Seconds from the order after which a server that does not answer, or
-#: answers with the boot it had, failed to restart: a restart measured in
-#: production takes about 2 minutes, and a disk check may take longer.
-RETURN_DEADLINE_S = 900
 #: Exit status of ``host_reboot.sh guard`` when the server says no.
 EXIT_VETO = 75
 #: Seconds ``host_reboot.sh verify`` may take: the 300 it waits for the
@@ -73,11 +91,41 @@ VERIFY_TIMEOUT_S = 420
 
 #: The label of the order: the job's point of no return.
 REBOOT_LABEL = "Restart the server"
-#: What the panel reads of the server's boot.
+#: What the panel reads of the server's boot: its id, whether a restart
+#: is scheduled, whether an update waits for one.
 _READ_BOOT = (
     "cat /proc/sys/kernel/random/boot_id;"
-    " if [ -e /run/systemd/shutdown/scheduled ]; then echo IC_SCHEDULED=1; fi"
+    " if [ -e /run/systemd/shutdown/scheduled ]; then echo IC_SCHEDULED=1; fi;"
+    " if [ -e /run/reboot-required ]; then echo IC_REQUIRED=1; fi"
 )
+#: The payload of the restart the check queues: it reads again, as it
+#: starts, whether it is still due.
+BY_CHECK = "by_check"
+
+
+def inside_specs(executor):
+    """Return what to count inside each instance of the executor's host.
+
+    For each deployed instance whose ``cloud.instance._move_quiet_sql``
+    gives a statement: core gives none, a layer whose instances are
+    applications it knows counts their jobs, as before a move.
+
+    :param executor: an executor of the host
+    :return: ``[(instance name, [dir, pg_user, dbname, sql])]``
+    :rtype: list
+    """
+    instances = executor.env["cloud.instance"].sudo().search([
+        ("host_id", "=", executor._host().id), ("state", "=", "deployed"),
+    ])
+    specs = []
+    for inst in instances:
+        sql = inst._move_quiet_sql()
+        if sql:
+            specs.append((inst.name, [
+                executor._inst_dir(inst), inst.postgres_username or "odoo",
+                inst.postgres_dbname or "prod", sql,
+            ]))
+    return specs
 
 
 class HostRebootCheckExecutor(AbstractSSHExecutor):
@@ -94,8 +142,75 @@ class HostRebootCheckExecutor(AbstractSSHExecutor):
     _reboot_probe = True
 
     def get_commands(self):
-        """One order: ``host_reboot.sh check``."""
-        return [("Check", self.run_script("host_reboot.sh", ["check"]))]
+        """One order: ``host_reboot.sh check``, told what the panel knows.
+
+        Always the panel's mark: whether it restarts the server by itself,
+        its window and ``REBOOT_PANEL_AWAY_H`` (``host_reboot.sh away``).
+        For a host the panel restarts, the instances to count inside; and
+        the server's veto when the panel may restart it now
+        (``_reboot_not_due``). The containers to wait for while
+        ``host_reboot_incomplete`` is open.
+        """
+        host = self.job.host_id
+        auto = host._reboot_by_panel()
+        args = [
+            "check", "--auto", "1" if auto else "0",
+            "--window", host._reboot_window_label(),
+            str(host.reboot_window_hours), host.reboot_tz or REBOOT_TZ_DEFAULT,
+            "--away", str(REBOOT_PANEL_AWAY_H * 3600),
+        ]
+        if auto:
+            if not host._reboot_not_due():
+                args.append("--guard")
+            for _name, spec in inside_specs(self):
+                args += ["--inside", *spec]
+        if self._alert_open(REBOOT_INCOMPLETE_ALERT):
+            row = host._reboot_last_row()
+            args += ["--expect", *(row._containers() if row else [])]
+        return [("Check", self.run_script("host_reboot.sh", args))]
+
+    def _alert_open(self, code):
+        """Whether the alert *code* of the job's host is active.
+
+        :param str code: a ``cloud.alert`` code
+        :rtype: bool
+        """
+        return bool(self.env["cloud.alert"].sudo().search_count([
+            ("code", "=", code), ("host_id", "=", self.job.host_id.id),
+            ("state", "=", "active"),
+        ], limit=1))
+
+    def _close_restart_alerts(self, host, boot_id, marks):
+        """Close the restart's alerts the server shows are over.
+
+        ``host_reboot_failed`` once the server answers with another boot
+        than the one it had before the panel's last restart: it restarted
+        since, by a person, by itself or by the panel. ``host_reboot_incomplete``
+        once Docker runs and every container it waited for does
+        (``--expect``).
+
+        :param host: the job's ``cloud.host``
+        :param str boot_id: the boot the check read
+        :param dict marks: what ``parse_marks`` read of the check
+        """
+        if self._alert_open(REBOOT_FAILED_ALERT):
+            row = host._reboot_last_row()
+            if row and row.boot_id and boot_id != row.boot_id:
+                self._resolve_alert(REBOOT_FAILED_ALERT)
+                self._sys(
+                    "The server answers with a new boot since its restart"
+                    " failed: host_reboot_failed closed."
+                )
+        if (
+            self._alert_open(REBOOT_INCOMPLETE_ALERT)
+            and first_mark(marks, "IC_DOCKER") == "active"
+            and not marks.get("IC_MISSING")
+        ):
+            self._resolve_alert(REBOOT_INCOMPLETE_ALERT)
+            self._sys(
+                "Docker and every container the restart waited for run:"
+                " host_reboot_incomplete closed."
+            )
 
     async def on_stdout(self, line):
         """Keep the marks out of the job log: they are read, not shown."""
@@ -132,6 +247,14 @@ class HostRebootCheckExecutor(AbstractSSHExecutor):
                 "The server restarted by itself for its updates: turned off,"
                 " the panel restarts it inside its window."
             )
+        away = first_mark(marks, "IC_AWAY_RESTART")
+        if away.isdigit():
+            self._sys(
+                "The server restarted by itself at"
+                f" {datetime.fromtimestamp(int(away), timezone.utc):%Y-%m-%d %H:%M}"
+                f" UTC: the panel had not checked it for {REBOOT_PANEL_AWAY_H} h."
+            )
+        self._close_restart_alerts(host, boot_id, marks)
         host._reboot_alert_pending(now)
         if not required:
             self._sys("No restart pending.")
@@ -140,22 +263,26 @@ class HostRebootCheckExecutor(AbstractSSHExecutor):
             f"A restart is pending since {host.reboot_required_since}"
             f" ({host.reboot_required_pkgs or 'updates'})."
         )
-        if not host._reboot_by_panel():
-            self._sys(
-                "The panel does not restart this server by itself: Auto"
-                " Security Updates is off, or it is not hardened."
-            )
-            return
-        if not host._reboot_window_open(now):
+        not_due = host._reboot_not_due(now)
+        if not_due:
+            # A closed window is every check's but those of the night.
+            if host._reboot_window_open(now) or not host._reboot_by_panel():
+                self._sys(not_due)
             return
         if host._reboot_job_active():
+            return
+        veto = first_mark(marks, "IC_VETO")
+        if veto:
+            self._sys(f"Not restarted in this pass: the server said no: {veto}.")
             return
         holds_panel = boot_id == panel_boot_id()
         blockers = host._reboot_blockers(holds_panel=holds_panel)
         if blockers:
             self._sys("Not restarted in this pass: " + " ".join(blockers))
             return
-        job_id = self.env["cloud.job"].sudo().enqueue(host.id, False, "host_reboot")
+        job_id = self.env["cloud.job"].sudo().enqueue(
+            host.id, False, "host_reboot", payload={BY_CHECK: True},
+        )
         self._sys(f"Restart queued (job #{job_id}).")
 
 
@@ -272,9 +399,14 @@ class HostRebootExecutor(AbstractSSHExecutor):
         """
         self._sys("Restarting the server for its updates...")
         read = await transport.run(_READ_BOOT)
-        boot_id = (read.stdout or "").strip().splitlines()[0] if read.stdout else ""
+        lines = (read.stdout or "").strip().splitlines()
+        boot_id = lines[0].strip() if lines else ""
         if read.exit_status != 0 or not boot_id:
             raise RuntimeError("Could not read the server's boot.")
+        not_due = self._not_due_any_more("IC_REQUIRED=1" in lines)
+        if not_due:
+            self._verdict = ("skipped", not_due)
+            return
         reasons = self._take_hold(boot_id)
         if reasons:
             self._verdict = ("skipped", " ".join(reasons))
@@ -283,6 +415,7 @@ class HostRebootExecutor(AbstractSSHExecutor):
         counts = self._inside_counts()
         prepare = self.run_script("host_reboot.sh", ["prepare"])
         reboot = self.run_script("host_reboot.sh", ["reboot"])
+        cancel = self.run_script("host_reboot.sh", ["cancel"])
         await self._upload_scripts(transport)
         self._sys("Running: Ask the server")
         said = await transport.execute(guard, self.on_stdout, self.on_stderr)
@@ -298,7 +431,14 @@ class HostRebootExecutor(AbstractSSHExecutor):
             return
         self._sys("Running: Prepare the restart")
         prepared = await transport.execute(prepare, self.on_stdout, self.on_stderr)
-        containers = parse_marks(prepared.stdout).get("IC_CONTAINER", [])
+        prepared_marks = parse_marks(prepared.stdout)
+        containers = prepared_marks.get("IC_CONTAINER", [])
+        left = prepared_marks.get("IC_NOT_EXPECTED", [])
+        if left:
+            self._sys(
+                "Not expected back after the boot, no restart policy brings"
+                " them: " + ", ".join(left) + "."
+            )
         # A stop asked for until here ends the job, with no restart.
         self._pass_no_return(REBOOT_LABEL)
         # Before the order, so an attempt that dies right after it waits
@@ -308,8 +448,19 @@ class HostRebootExecutor(AbstractSSHExecutor):
             "containers": json.dumps(containers),
         })
         self._sys(f"Running: {REBOOT_LABEL}")
-        done = await transport.execute(reboot, self.on_stdout, self.on_stderr)
+        try:
+            done = await transport.execute(reboot, self.on_stdout, self.on_stderr)
+        except Exception as exc:
+            # The order may have reached the server: its boot decides.
+            raise self._park_unsure(
+                f"the connection was lost as the order was given ({type(exc).__name__})"
+            ) from exc
         if done.exit_status != 0:
+            if not await self._call_off(transport, cancel):
+                raise self._park_unsure(
+                    f"the order exited {done.exit_status}, and the restart"
+                    " could not be called off"
+                )
             self._write_row({"shutdown_at": False})
             raise RuntimeError(
                 f"The server did not schedule its restart (exit {done.exit_status})."
@@ -327,32 +478,69 @@ class HostRebootExecutor(AbstractSSHExecutor):
         """No steps of its own: ``before_execute`` gives the orders."""
         return []
 
+    def _not_due_any_more(self, required):
+        """Say why the restart the check queued is not due any more, or ''.
+
+        Only for a job the check queued (``BY_CHECK``): it may have waited
+        in the queue past its window, after its policy was switched off,
+        or after someone restarted the server (``_reboot_not_due``, and
+        the server's pending restart read now).
+
+        :param bool required: the server says an update waits for a restart
+        :rtype: str
+        """
+        if not (self.job.payload or {}).get(BY_CHECK):
+            return ""
+        not_due = self.job.host_id._reboot_not_due()
+        if not_due:
+            return not_due
+        if not required:
+            return "No update waits for a restart any more."
+        return ""
+
+    def _park_unsure(self, why):
+        """Return the park of an order that may have scheduled the restart.
+
+        The row keeps ``shutdown_at``, and with it the hold: the next
+        attempt waits for the server, and its boot says whether it
+        restarted (``_wait_for_return``).
+
+        :param str why: what happened to the order
+        :return: the ``JobParked`` to raise
+        """
+        self._sys(
+            f"Not sure the server restarts: {why}. The panel connects again"
+            f" in {PARK_FIRST_S} s, and the server's boot says."
+        )
+        return JobParked(f"The restart may be scheduled: {why}.", seconds=PARK_FIRST_S)
+
+    async def _call_off(self, transport, cancel):
+        """Call off a restart the order may have scheduled; never raises.
+
+        :param transport: the open connection of the order
+        :param str cancel: the command of ``host_reboot.sh cancel``
+        :return: whether the server says nothing is scheduled
+        :rtype: bool
+        """
+        try:
+            result = await transport.execute(cancel, self.on_stdout, self.on_stderr)
+        except Exception:  # noqa: BLE001 — the boot decides then
+            return False
+        return result.exit_status == 0
+
     def _inside_counts(self):
         """Return the count of what runs inside each instance a layer reads.
 
-        For each deployed instance of the host whose
-        ``cloud.instance._move_quiet_sql`` gives a statement: core gives
-        none, a layer whose instances are applications it knows counts
-        their jobs, as before a move. A stack that is parked counts 0
-        (``move_steps.sh quiet``).
+        For each instance ``inside_specs`` gives, ``move_steps.sh quiet``.
+        A stack that is parked counts 0.
 
         :return: ``[(instance name, command)]``
         :rtype: list
         """
-        instances = self.env["cloud.instance"].sudo().search([
-            ("host_id", "=", self._host().id), ("state", "=", "deployed"),
-        ])
-        counts = []
-        for inst in instances:
-            sql = inst._move_quiet_sql()
-            if not sql:
-                continue
-            counts.append((inst.name, self.run_script("move_steps.sh", [
-                "quiet", self._inst_dir(inst),
-                inst.postgres_username or "odoo", inst.postgres_dbname or "prod",
-                sql,
-            ])))
-        return counts
+        return [
+            (name, self.run_script("move_steps.sh", ["quiet", *spec]))
+            for name, spec in inside_specs(self)
+        ]
 
     async def _busy_inside(self, transport, counts):
         """Say what runs inside an instance, or that it could not be read.
@@ -513,10 +701,12 @@ class HostRebootExecutor(AbstractSSHExecutor):
             self._resolve_alert(REBOOT_INCOMPLETE_ALERT)
             self._sys("✓ Restarted: everything that ran is running again.")
         Job = self.env["cloud.job"].sudo()
+        # What each instance is now; its streaks and alerts are left to the
+        # cycle of ``cron_instance_health``, with Odoo maybe still starting.
         for inst in self.env["cloud.instance"].sudo().search([
             ("host_id", "=", host.id), ("deployed", "=", True),
         ]):
-            Job.enqueue(host.id, inst.id, "instance_health")
+            Job.enqueue(host.id, inst.id, "instance_health", payload={"state_only": True})
         # The check runs at once: whether an update still waits, and the
         # alert of a pending restart closed with it.
         Job.enqueue(host.id, False, "host_reboot_check")

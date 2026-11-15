@@ -16,16 +16,18 @@ from odoo.tests import tagged
 
 from odoo.addons.queue_job.exception import RetryableJobError
 
-from ..models.abstract_executor import JobParked
+from ..models.abstract_executor import CONNECTION_RETRY_MARKER, JobParked
 from ..models.cloud_host import CloudHost
 from ..models.cloud_host_reboot import (
     REBOOT_FAILED_ALERT,
     REBOOT_INCOMPLETE_ALERT,
+    REBOOT_PANEL_AWAY_H,
     REBOOT_PENDING_ALERT,
     REBOOT_PENDING_ALERT_DAYS,
     parse_marks,
 )
 from ..models.host_reboot_executor import (
+    BY_CHECK,
     EXIT_VETO,
     RETURN_DEADLINE_S,
     HostRebootCheckExecutor,
@@ -47,7 +49,8 @@ _CLEAN = f"IC_BOOT_ID={_NEW_BOOT}\nIC_REBOOT_REQUIRED=0\nIC_DOCKER=active\n"
 
 
 def _transport(boot=_BOOT, guard=(0, "IC_VETO=\n"), reboot=(0, "IC_SCHEDULED=1\n"),
-               scheduled=False, verify=_CLEAN, quiet="0\n"):
+               scheduled=False, verify=_CLEAN, quiet="0\n", required=True,
+               reboot_error=None, cancel=(0, "IC_CANCELLED=1\n")):
     """A transport answering the orders of the restart.
 
     :param str boot: what the server says of its boot
@@ -56,12 +59,18 @@ def _transport(boot=_BOOT, guard=(0, "IC_VETO=\n"), reboot=(0, "IC_SCHEDULED=1\n
     :param bool scheduled: the restart is still scheduled on the server
     :param str verify: what ``host_reboot.sh verify`` prints
     :param str quiet: what the count inside an instance prints
+    :param bool required: an update still waits for the restart
+    :param Exception reboot_error: what the order raises instead
+    :param tuple cancel: ``(exit, stdout)`` of ``host_reboot.sh cancel``
     """
     transport = MagicMock(spec=SSHTransport)
 
     async def _run(command, timeout=None):
         if "boot_id" in command:
-            out = boot + "\n" + ("IC_SCHEDULED=1\n" if scheduled else "")
+            out = (
+                boot + "\n" + ("IC_SCHEDULED=1\n" if scheduled else "")
+                + ("IC_REQUIRED=1\n" if required else "")
+            )
             return CommandResult(out, 0)
         if "move_steps.sh quiet" in command:
             return CommandResult(quiet, 0)
@@ -71,7 +80,11 @@ def _transport(boot=_BOOT, guard=(0, "IC_VETO=\n"), reboot=(0, "IC_SCHEDULED=1\n
         if "host_reboot.sh guard" in command:
             return CommandResult(guard[1], guard[0])
         if "host_reboot.sh reboot" in command:
+            if reboot_error is not None:
+                raise reboot_error
             return CommandResult(reboot[1], reboot[0])
+        if "host_reboot.sh cancel" in command:
+            return CommandResult(cancel[1], cancel[0])
         if "host_reboot.sh prepare" in command:
             return CommandResult("IC_CONTAINER=proxy\nIC_CONTAINER=queue-inst-db-1\n", 0)
         if "host_reboot.sh verify" in command:
@@ -99,9 +112,9 @@ class _RebootCase(_QueueCase):
         self.inside = datetime(2026, 11, 15, 5, 0)
         self.Reboot = self.env["cloud.host.reboot"]
 
-    def _reboot_job(self, state="started", host=None):
-        """A restart job of *host*, in *state*."""
-        return self._job("host_reboot", state=state, inst=False, host=host)
+    def _reboot_job(self, state="started", host=None, **vals):
+        """A restart job of *host*, in *state*, with *vals*."""
+        return self._job("host_reboot", state=state, inst=False, host=host, **vals)
 
     def _hold(self, job, holds_panel=False, shutdown_at=False):
         """The row of *job*'s hold."""
@@ -195,6 +208,36 @@ class TestRebootWindow(_RebootCase):
         host.reboot_checked_at = self.inside - timedelta(hours=6)
         self.assertTrue(host._reboot_check_due(self.inside))
 
+    def test_the_window_s_opening(self):
+        host = self.host
+        self.assertEqual(
+            host._reboot_window_opened_at(datetime(2026, 11, 15, 5, 30)),
+            datetime(2026, 11, 15, 4, 0),
+        )
+        self.assertIsNone(host._reboot_window_opened_at(datetime(2026, 11, 15, 7, 0)))
+        host.reboot_window_start = 23.0
+        self.assertEqual(
+            host._reboot_window_opened_at(datetime(2026, 11, 16, 1, 0)),
+            datetime(2026, 11, 15, 23, 0),
+        )
+
+    def test_a_check_that_fails_is_not_queued_again_on_every_pass(self):
+        with patch.object(
+            CloudHost, "_ssh_ready_hosts", autospec=True, return_value=self.host,
+        ):
+            self.env["cloud.host"].cron_host_reboot_check()
+            self.assertTrue(self.host.reboot_checked_at)
+            check = self.Job.search([
+                ("host_id", "=", self.host.id),
+                ("job_type_id.code", "=", "host_reboot_check"),
+            ])
+            check.state = "failed"
+            self.env["cloud.host"].cron_host_reboot_check()
+        self.assertEqual(self.Job.search_count([
+            ("host_id", "=", self.host.id),
+            ("job_type_id.code", "=", "host_reboot_check"),
+        ]), 1)
+
     def test_the_cron_queues_one_check_per_due_host(self):
         with patch.object(
             CloudHost, "_ssh_ready_hosts", autospec=True, return_value=self.host,
@@ -208,17 +251,20 @@ class TestRebootWindow(_RebootCase):
         self.assertEqual(len(checks), 1)
 
 
-@tagged("post_install", "-at_install")
-class TestRebootCheck(_RebootCase):
-    """What the check reads, and when it queues the restart."""
+class _CheckCase(_RebootCase):
+    """Runs the check's success hook on what the script would print."""
 
     def _check(self, required=True, pkgs="linux-image-6.8.0-90-generic", policy="kept",
-               now=None):
-        """Run the check's success hook on what the script would print."""
+               now=None, boot=_BOOT, extra=""):
+        """Run the check's success hook on what the script would print.
+
+        :param str extra: more lines of the script's
+        """
         job = self._job("host_reboot_check", inst=False)
         out = (
-            f"IC_BOOT_ID={_BOOT}\nIC_REBOOT_REQUIRED={int(required)}\n"
+            f"IC_BOOT_ID={boot}\nIC_REBOOT_REQUIRED={int(required)}\n"
             f"IC_REBOOT_PKGS={pkgs if required else ''}\nIC_POLICY={policy}\n"
+            + extra
         )
         executor = self._executor(HostRebootCheckExecutor, job)
         results = {"Check": {"stdout": out, "exit_status": 0}}
@@ -233,6 +279,11 @@ class TestRebootCheck(_RebootCase):
             ("host_id", "=", self.host.id),
             ("job_type_id.code", "=", "host_reboot"),
         ])
+
+
+@tagged("post_install", "-at_install")
+class TestRebootCheck(_CheckCase):
+    """What the check reads, and when it queues the restart."""
 
     def test_the_marks_are_read(self):
         marks = parse_marks("noise\nIC_BOOT_ID=a\nIC_REBOOT_PKGS=x y\n")
@@ -403,13 +454,14 @@ class TestRebootHold(_RebootCase):
 class _RebootJobCase(_RebootCase):
     """Runs the restart's attempts against a transport that answers."""
 
-    def _run_before(self, job, transport):
-        """Run the first attempt's orders; return what it raised."""
+    def _run_before(self, job, transport, now=None):
+        """Run the first attempt's orders at *now*; return what it raised."""
         executor = self._executor(HostRebootExecutor, job)
-        try:
-            asyncio.run(executor.before_execute(transport))
-        except Exception as exc:  # noqa: BLE001 — the test reads it
-            return executor, exc
+        with patch.object(fields.Datetime, "now", return_value=now or self.inside):
+            try:
+                asyncio.run(executor.before_execute(transport))
+            except Exception as exc:  # noqa: BLE001 — the test reads it
+                return executor, exc
         return executor, None
 
     def _row(self, job):
@@ -608,10 +660,13 @@ class TestRebootComesBack(_RebootJobCase):
         self.assertIsNone(raised)
         self.assertFalse(self.host.reboot_required_since)
         self.assertFalse(self._incomplete_alert())
-        self.assertTrue(self.Job.search([
+        probe = self.Job.search([
             ("instance_id", "=", self.inst.id),
             ("job_type_id.code", "=", "instance_health"),
-        ]))
+        ])
+        self.assertTrue(probe)
+        # What it is now; its streaks are left to the health cron's cycle.
+        self.assertEqual(probe.payload, {"state_only": True})
 
     def test_a_container_that_did_not_come_back_is_named(self):
         job = self._reboot_job()
@@ -630,3 +685,247 @@ class TestRebootComesBack(_RebootJobCase):
         verify = _CLEAN.replace("IC_REBOOT_REQUIRED=0", "IC_REBOOT_REQUIRED=1")
         self._wait(job, 95, _transport(boot=_NEW_BOOT, verify=verify))
         self.assertTrue(self.host.reboot_required_since)
+
+
+@tagged("post_install", "-at_install")
+class TestRebootDueWhenItStarts(_RebootJobCase):
+    """The restart the check queued reads again, as it starts, if it is due."""
+
+    def _queued_by_check(self):
+        return self._reboot_job(payload={BY_CHECK: True})
+
+    def _assert_not_restarted(self, executor, raised, transport, text):
+        self.assertIsNone(raised)
+        self.assertEqual(executor._verdict[0], "skipped")
+        self.assertIn(text, executor._verdict[1])
+        self.assertFalse(transport.execute.called)
+        self.assertFalse(self._row(executor.job))
+
+    def test_its_window_closed_while_it_waited(self):
+        job = self._queued_by_check()
+        transport = _transport()
+        executor, raised = self._run_before(job, transport, now=datetime(2026, 11, 15, 8, 0))
+        self._assert_not_restarted(executor, raised, transport, "window")
+
+    def test_its_policy_was_switched_off_while_it_waited(self):
+        job = self._queued_by_check()
+        self.host.auto_security_updates = False
+        transport = _transport()
+        executor, raised = self._run_before(job, transport)
+        self._assert_not_restarted(executor, raised, transport, "Auto Security Updates")
+
+    def test_someone_restarted_the_server_while_it_waited(self):
+        job = self._queued_by_check()
+        transport = _transport(required=False)
+        executor, raised = self._run_before(job, transport)
+        self._assert_not_restarted(executor, raised, transport, "No update waits")
+
+    def test_still_due_it_restarts(self):
+        job = self._queued_by_check()
+        _executor, raised = self._run_before(job, _transport())
+        self.assertIsInstance(raised, JobParked)
+
+    def test_a_restart_not_queued_by_the_check_is_not_read_again(self):
+        job = self._reboot_job()
+        _executor, raised = self._run_before(
+            job, _transport(required=False), now=datetime(2026, 11, 15, 8, 0),
+        )
+        self.assertIsInstance(raised, JobParked)
+
+
+@tagged("post_install", "-at_install")
+class TestRebootOncePerWindow(_CheckCase):
+    """One restart per host and per opening of its window."""
+
+    def _restarted_at(self, when):
+        """A restart of the host by the panel, ordered at *when*, done."""
+        job = self._reboot_job(state="done")
+        row = self._hold(job, shutdown_at=when)
+        self.env.flush_all()
+        return row
+
+    def test_back_and_still_pending_it_waits_for_the_next_window(self):
+        self._restarted_at(self.inside - timedelta(minutes=30))
+        job = self._check()
+        self.assertFalse(self._queued_reboots().filtered(lambda j: j.state != "done"))
+        self.assertTrue(self._said(job, "once in this window"))
+        self.assertTrue(self.host._reboot_done_in_window(self.inside))
+        self.host.reboot_checked_at = self.inside
+        self.assertFalse(self.host._reboot_check_due(self.inside + timedelta(minutes=30)))
+        # The next night.
+        self._check(now=self.inside + timedelta(days=1))
+        self.assertTrue(self._queued_reboots().filtered(lambda j: j.state != "done"))
+
+    def test_a_restart_of_the_night_before_does_not_count(self):
+        self._restarted_at(self.inside - timedelta(days=1))
+        self._check()
+        self.assertTrue(self._queued_reboots().filtered(lambda j: j.state != "done"))
+
+    def test_the_restart_is_queued_saying_it_was_the_check_s(self):
+        self._check()
+        reboot = self._queued_reboots()
+        self.assertEqual(reboot.payload, {BY_CHECK: True})
+
+    def test_the_server_s_veto_queues_no_restart(self):
+        job = self._check(extra="IC_VETO=pg_dump is running\n")
+        self.assertFalse(self._queued_reboots())
+        self.assertTrue(self._said(job, "the server said no: pg_dump is running"))
+
+
+@tagged("post_install", "-at_install")
+class TestRebootAlertsClose(_CheckCase):
+    """The restart's alerts close once the problem is over, whoever solved it."""
+
+    def _raise(self, code):
+        self.env["cloud.alert"].raise_alert(code, "test", host=self.host)
+
+    def _open(self, code):
+        return bool(self.env["cloud.alert"].search_count([
+            ("code", "=", code), ("host_id", "=", self.host.id),
+            ("state", "=", "active"),
+        ]))
+
+    def _failed_restart(self):
+        job = self._reboot_job(state="failed")
+        row = self._hold(job, shutdown_at=self.inside - timedelta(days=1))
+        row.containers = '["proxy", "queue-inst-db-1"]'
+        self.env.flush_all()
+        return row
+
+    def test_a_new_boot_closes_the_failed_restart(self):
+        self.host.reboot_window_start = 12.0
+        self._failed_restart()
+        self._raise(REBOOT_FAILED_ALERT)
+        self._check(boot=_BOOT)
+        self.assertTrue(self._open(REBOOT_FAILED_ALERT))
+        job = self._check(boot=_NEW_BOOT)
+        self.assertFalse(self._open(REBOOT_FAILED_ALERT))
+        self.assertTrue(self._said(job, "host_reboot_failed closed"))
+
+    def test_the_containers_back_close_the_incomplete_restart(self):
+        self.host.reboot_window_start = 12.0
+        self._failed_restart()
+        self._raise(REBOOT_INCOMPLETE_ALERT)
+        executor = self._executor(
+            HostRebootCheckExecutor, self._job("host_reboot_check", inst=False),
+        )
+        command = executor.get_commands()[0][1]
+        self.assertIn("--expect proxy queue-inst-db-1", command)
+        self._check(extra="IC_DOCKER=active\nIC_MISSING=proxy\n")
+        self.assertTrue(self._open(REBOOT_INCOMPLETE_ALERT))
+        self._check(extra="IC_DOCKER=inactive\n")
+        self.assertTrue(self._open(REBOOT_INCOMPLETE_ALERT))
+        self._check(extra="IC_DOCKER=active\n")
+        self.assertFalse(self._open(REBOOT_INCOMPLETE_ALERT))
+
+
+@tagged("post_install", "-at_install")
+class TestRebootPanelAway(_CheckCase):
+    """What the check leaves on the server for a panel that goes away."""
+
+    def _command(self, now=None):
+        executor = self._executor(
+            HostRebootCheckExecutor, self._job("host_reboot_check", inst=False),
+        )
+        with patch.object(fields.Datetime, "now", return_value=now or self.inside):
+            return executor.get_commands()[0][1]
+
+    def test_a_day_without_a_check(self):
+        """The owner's decision of 15-nov-2026: four checks missed in a row."""
+        self.assertEqual(REBOOT_PANEL_AWAY_H, 24)
+
+    def test_the_check_leaves_the_panel_s_mark(self):
+        command = self._command()
+        self.assertIn("--auto 1 --window 04:00 3 UTC --away 86400", command)
+        self.assertIn("--guard", command)
+        self.assertNotIn("--expect", command)
+        # Outside the window the server's veto is not asked.
+        self.assertNotIn("--guard", self._command(datetime(2026, 11, 15, 9, 0)))
+
+    def test_a_host_the_panel_does_not_restart_says_so(self):
+        self.host.auto_security_updates = False
+        command = self._command()
+        self.assertIn("--auto 0", command)
+        self.assertNotIn("--guard", command)
+        self.assertNotIn("--inside", command)
+
+    def test_the_instances_to_count_inside(self):
+        CloudInstance = type(self.env["cloud.instance"])
+        with patch.object(
+            CloudInstance, "_move_quiet_sql", autospec=True, return_value="SELECT 2",
+        ):
+            command = self._command()
+        self.assertIn("--inside", command)
+        self.assertIn("'SELECT 2'", command)
+
+    def test_a_restart_the_server_gave_itself_is_said(self):
+        self.host.reboot_window_start = 12.0
+        job = self._check(extra="IC_AWAY_RESTART=1794718800\n")
+        self.assertTrue(self._said(job, "restarted by itself at 2026-11-15 05:00"))
+
+
+@tagged("post_install", "-at_install")
+class TestRebootOrderUnsure(_RebootJobCase):
+    """Between the order and the park, the hold stays unless nothing is scheduled."""
+
+    def test_a_connection_lost_as_the_order_is_given_waits_for_the_boot(self):
+        job = self._reboot_job()
+        executor, raised = self._run_before(
+            job, _transport(reboot_error=ConnectionResetError()),
+        )
+        self.assertIsInstance(raised, JobParked)
+        self.assertTrue(self._row(job).shutdown_at)
+
+    def test_an_order_that_failed_and_could_not_be_called_off_waits_too(self):
+        job = self._reboot_job()
+        transport = _transport(reboot=(1, ""), cancel=(1, ""))
+        executor, raised = self._run_before(job, transport)
+        self.assertIsInstance(raised, JobParked)
+        self.assertTrue(self._row(job).shutdown_at)
+
+    def test_an_order_that_failed_and_was_called_off_lets_go(self):
+        job = self._reboot_job()
+        transport = _transport(reboot=(1, ""))
+        executor, raised = self._run_before(job, transport)
+        self.assertIsInstance(raised, RuntimeError)
+        self.assertFalse(self._row(job).shutdown_at)
+        orders = [c.args[0] for c in transport.execute.call_args_list]
+        self.assertTrue(any("host_reboot.sh cancel" in o for o in orders))
+
+
+@tagged("post_install", "-at_install")
+class TestRebootSilenceIsTheRestart(_RebootCase):
+    """The server's silence during a restart the panel ordered alerts nobody."""
+
+    def _ordered(self, seconds_ago):
+        job = self._reboot_job()
+        self._hold(job, shutdown_at=fields.Datetime.now() - timedelta(seconds=seconds_ago))
+        self.env.flush_all()
+
+    def test_recent_while_the_server_may_still_come_back(self):
+        self.assertFalse(self.host._reboot_recent())
+        self._ordered(60)
+        self.assertTrue(self.host._reboot_recent())
+
+    def test_not_past_the_deadline(self):
+        self._ordered(RETURN_DEADLINE_S + 60)
+        self.assertFalse(self.host._reboot_recent())
+
+    def test_no_host_unreachable_from_a_probe_during_the_restart(self):
+        probe = self._enqueue("host_metrics", inst=False)
+        qjob = probe.queue_job_id
+        qjob.exc_message = f"{CONNECTION_RETRY_MARKER} 10/10: TimeoutError: "
+        self._ordered(60)
+        self.assertIsNone(self.Job._create_host_unreachable_alert(probe, qjob))
+
+    def test_a_host_rule_neither_raises_nor_resolves_during_the_restart(self):
+        rule = self.env["cloud.metric.rule"].search(
+            [("code", "=", "metrics_host_absent")], limit=1,
+        )
+        self.assertTrue(rule)
+        self._ordered(60)
+        rule._sync_alerts([({rule.host_label or "host_id": str(self.host.id)}, 1)])
+        domain = [("code", "=", "metrics_host_absent"), ("host_id", "=", self.host.id)]
+        self.assertFalse(self.env["cloud.alert"].search_count(domain))
+        # Not its first sighting either, kept apart until it confirms.
+        self.assertFalse(self.env["cloud.alert.suspicion"].search_count(domain))

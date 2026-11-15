@@ -40,11 +40,29 @@ echo "shutdown $*" >> "${TMP}/calls"
 [ -z "${SHUTDOWN_FAILS:-}" ] || exit 1
 [ -n "${SHUTDOWN_SCHEDULES_NOTHING:-}" ] || : > "${IC_RUN_DIR}/systemd/shutdown/scheduled"
 EOF
-    chmod +x "${STUB_DIR}/pgrep" "${STUB_DIR}/sudo" "${STUB_DIR}/shutdown"
+    cat > "${STUB_DIR}/systemctl" <<'EOF'
+#!/usr/bin/env bash
+echo "systemctl $*" >> "${TMP}/calls"
+if [ "$1" = is-active ]; then [ -z "${DOCKER_DOWN:-}" ]; fi
+EOF
+    chmod +x "${STUB_DIR}/pgrep" "${STUB_DIR}/sudo" "${STUB_DIR}/shutdown" \
+        "${STUB_DIR}/systemctl"
+    export IC_STATE_DIR="${TMP}/state"
+    export IC_LIB_DIR="${TMP}/lib"
+    export IC_SYSTEMD_DIR="${TMP}/systemd"
+    export IC_PROC_STAT="${TMP}/stat"
+    mkdir -p "${IC_SYSTEMD_DIR}"
+    printf 'cpu  1 2 3\nbtime 1794718000\n' > "${IC_PROC_STAT}"
 }
 
 teardown() {
     rm -rf "${TMP}"
+}
+
+# Fails when the stubs logged a call of $1 (bats ignores a ``!`` that is
+# not a test's last command).
+_not_called() {
+    ! grep -q "$1" "${TMP}/calls" 2>/dev/null
 }
 
 _policy() {
@@ -160,7 +178,9 @@ EOF
 
 # A docker stub: ``ps`` lists ${TMP}/containers (the db ones from
 # ${TMP}/dbs), ``inspect`` says a container runs when it is in
-# ${TMP}/up, ``logs`` prints ${TMP}/log-<name>, ``exec`` logs its call.
+# ${TMP}/up and gives its restart policy from ${TMP}/policy-<name>
+# (``unless-stopped`` without one), ``logs`` prints ${TMP}/log-<name>,
+# ``exec`` logs its call, ``compose exec`` prints ${TMP}/inside-count.
 _stub_docker() {
     cat > "${STUB_DIR}/docker" <<'EOS'
 #!/usr/bin/env bash
@@ -170,17 +190,22 @@ case "$1" in
         if [[ "$*" == *"service=db"* ]]; then cat "${TMP}/dbs" 2>/dev/null
         else cat "${TMP}/containers" 2>/dev/null; fi ;;
     inspect)
-        if grep -qxF -- "${!#}" "${TMP}/up" 2>/dev/null; then echo true; else echo false; fi ;;
+        if [[ "$*" == *RestartPolicy* ]]; then
+            cat "${TMP}/policy-${!#}" 2>/dev/null || echo unless-stopped
+        elif [[ "$*" == *compose.service* ]]; then echo db
+        elif grep -qxF -- "${!#}" "${TMP}/up" 2>/dev/null; then echo true
+        else echo false; fi ;;
     logs) cat "${TMP}/log-${!#}" 2>/dev/null ;;
     exec) [ -z "${EXEC_FAILS:-}" ] || exit 2 ;;
+    compose)
+        case "$2" in
+            ps) echo cid1 ;;
+            exec) cat >/dev/null; cat "${TMP}/inside-count" 2>/dev/null || echo 0 ;;
+        esac ;;
 esac
 exit 0
 EOS
-    cat > "${STUB_DIR}/systemctl" <<'EOS'
-#!/usr/bin/env bash
-[ -z "${DOCKER_DOWN:-}" ]
-EOS
-    chmod +x "${STUB_DIR}/docker" "${STUB_DIR}/systemctl"
+    chmod +x "${STUB_DIR}/docker"
 }
 
 @test "prepare: names the running containers and checkpoints each database" {
@@ -243,4 +268,213 @@ EOS
     wait
     [ "$status" -eq 0 ]
     [[ "$output" != *"IC_MISSING"* ]]
+}
+
+@test "verify: reads only this boot's lines of each database" {
+    _stub_docker
+    printf 'prod-db-1\n' > "${TMP}/up"
+    echo "prod-db-1" > "${TMP}/dbs"
+    run bash "$SCRIPT" verify prod-db-1
+    [ "$status" -eq 0 ]
+    grep -q "docker logs --since 1794718000 --tail 500 prod-db-1" "${TMP}/calls"
+}
+
+@test "prepare: a container no policy brings back is not expected back" {
+    _stub_docker
+    printf 'proxy\noneoff\nretry\n' > "${TMP}/containers"
+    echo "no" > "${TMP}/policy-oneoff"
+    echo "on-failure" > "${TMP}/policy-retry"
+    echo "always" > "${TMP}/policy-proxy"
+    run bash "$SCRIPT" prepare
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_CONTAINER=proxy"* ]]
+    [[ "$output" == *"IC_NOT_EXPECTED=oneoff"* ]]
+    [[ "$output" == *"IC_NOT_EXPECTED=retry"* ]]
+    [[ "$output" != *"IC_CONTAINER=oneoff"* ]]
+    [[ "$output" != *"IC_CONTAINER=retry"* ]]
+}
+
+@test "cancel: a restart scheduled is called off" {
+    cat > "${STUB_DIR}/shutdown" <<'EOF'
+#!/usr/bin/env bash
+echo "shutdown $*" >> "${TMP}/calls"
+[ -n "${CANCEL_FAILS:-}" ] || rm -f "${IC_RUN_DIR}/systemd/shutdown/scheduled"
+EOF
+    : > "${IC_RUN_DIR}/systemd/shutdown/scheduled"
+    run bash "$SCRIPT" cancel
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_CANCELLED=1"* ]]
+    grep -q "shutdown -c" "${TMP}/calls"
+    : > "${IC_RUN_DIR}/systemd/shutdown/scheduled"
+    export CANCEL_FAILS=1
+    run bash "$SCRIPT" cancel
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"still scheduled"* ]]
+}
+
+@test "check: with --expect, Docker and the containers that do not run" {
+    _stub_docker
+    echo "proxy" > "${TMP}/up"
+    run bash "$SCRIPT" check --expect proxy prod-db-1
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_DOCKER=active"* ]]
+    [[ "$output" == *"IC_MISSING=prod-db-1"* ]]
+    [[ "$output" != *"IC_MISSING=proxy"* ]]
+}
+
+@test "check: with --guard and a restart pending, the server's veto" {
+    _stub_docker
+    run bash "$SCRIPT" check --guard
+    [[ "$output" != *"IC_VETO"* ]]
+    : > "${IC_RUN_DIR}/reboot-required"
+    run bash "$SCRIPT" check --guard
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_VETO="* ]]
+    [[ "$output" != *"IC_VETO=pg"* ]]
+    echo "pg_dump" > "${TMP}/running"
+    run bash "$SCRIPT" check --guard
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_VETO=pg_dump is running"* ]]
+    : > "${TMP}/running"
+    mkdir "${TMP}/inst"
+    echo 2 > "${TMP}/inside-count"
+    run bash "$SCRIPT" check --guard --inside "${TMP}/inst" odoo prod "SELECT 2"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_VETO=2 job(s) run inside inst"* ]]
+}
+
+# The panel's check of a host it restarts by itself, at 05:00 UTC.
+_check_auto() {
+    export IC_NOW=1794718800
+    run bash "$SCRIPT" check --auto "${1:-1}" --window 04:00 3 UTC --away 86400 \
+        --inside "~/proj/inst" odoo prod "SELECT 0"
+}
+
+@test "check: the panel's mark, the instances to count and the timer of away" {
+    _check_auto
+    [ "$status" -eq 0 ]
+    grep -qx "seen=1794718800" "${IC_STATE_DIR}/panel-seen"
+    grep -qx "auto=1" "${IC_STATE_DIR}/panel-seen"
+    grep -qx "start=04:00" "${IC_STATE_DIR}/panel-seen"
+    grep -qx "away=86400" "${IC_STATE_DIR}/panel-seen"
+    mapfile -d '' -t spec < "${IC_STATE_DIR}/inside/0"
+    [ "${spec[0]}" = "${HOME}/proj/inst" ]
+    [ "${spec[3]}" = "SELECT 0" ]
+    [ -f "${IC_LIB_DIR}/host_reboot.sh" ]
+    [ -f "${IC_LIB_DIR}/lib/common.sh" ]
+    grep -q "host_reboot.sh away" "${IC_SYSTEMD_DIR}/incubacloud-reboot-when-away.service"
+    grep -q "OnCalendar=\*:0/30" "${IC_SYSTEMD_DIR}/incubacloud-reboot-when-away.timer"
+    grep -q "systemctl enable --now incubacloud-reboot-when-away.timer" "${TMP}/calls"
+    : > "${TMP}/calls"
+    _check_auto
+    [ "$status" -eq 0 ]
+    _not_called systemctl
+}
+
+@test "check: a host the panel does not restart gets no mark, unless it had one" {
+    _check_auto 0
+    [ "$status" -eq 0 ]
+    [ ! -e "${IC_STATE_DIR}/panel-seen" ]
+    _check_auto 1
+    _check_auto 0
+    grep -qx "auto=0" "${IC_STATE_DIR}/panel-seen"
+}
+
+# A mark of the panel: seen at $1, restarting by itself ($2, default 1).
+_mark() {
+    mkdir -p "${IC_STATE_DIR}/inside"
+    printf 'seen=%s\nauto=%s\nstart=04:00\nhours=3\ntz=UTC\naway=86400\n' \
+        "$1" "${2:-1}" > "${IC_STATE_DIR}/panel-seen"
+}
+
+@test "away: the panel checked within a day, it decides" {
+    _stub_docker
+    export IC_NOW=1794718800
+    _mark 1794700000
+    : > "${IC_RUN_DIR}/reboot-required"
+    run bash "$SCRIPT" away
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"it decides"* ]]
+    _not_called shutdown
+}
+
+@test "away: a panel away for more than a day, inside the window, restarts it once" {
+    _stub_docker
+    export IC_NOW=1794718800
+    _mark 1794632000
+    : > "${IC_RUN_DIR}/reboot-required"
+    run bash "$SCRIPT" away
+    [ "$status" -eq 0 ]
+    grep -q "shutdown -r +1" "${TMP}/calls"
+    grep -qx "1794718800" "${IC_STATE_DIR}/away-restart"
+    : > "${TMP}/calls"
+    export IC_NOW=1794720600
+    run bash "$SCRIPT" away
+    [[ "$output" == *"once in this window"* ]]
+    _not_called shutdown
+    # The next night's window.
+    export IC_NOW=$((1794718800 + 86400))
+    run bash "$SCRIPT" away
+    grep -q "shutdown -r +1" "${TMP}/calls"
+}
+
+@test "away: nothing outside the window, with nothing pending, or when the panel does not restart it" {
+    _stub_docker
+    _mark 1794632000
+    : > "${IC_RUN_DIR}/reboot-required"
+    export IC_NOW=1794729600
+    run bash "$SCRIPT" away
+    [[ "$output" == *"outside the window"* ]]
+    export IC_NOW=1794718800
+    _mark 1794632000 0
+    run bash "$SCRIPT" away
+    [[ "$output" == *"does not restart this server by itself"* ]]
+    _mark 1794632000
+    rm "${IC_RUN_DIR}/reboot-required"
+    run bash "$SCRIPT" away
+    [[ "$output" == *"no restart pending"* ]]
+    rm -f "${IC_STATE_DIR}/panel-seen"
+    run bash "$SCRIPT" away
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"never checked"* ]]
+    _not_called shutdown
+}
+
+@test "away: the same veto, an SSH session and work inside an instance say no" {
+    _stub_docker
+    export IC_NOW=1794718800
+    _mark 1794632000
+    : > "${IC_RUN_DIR}/reboot-required"
+    echo "pg_dump" > "${TMP}/running"
+    run bash "$SCRIPT" away
+    [[ "$output" == *"pg_dump is running"* ]]
+    echo '^sshd(-session)?: [^ ]+@' > "${TMP}/running"
+    run bash "$SCRIPT" away
+    [[ "$output" == *"SSH session is open"* ]]
+    : > "${TMP}/running"
+    printf '#!/bin/sh\nexit 1\n' > "${IC_GUARD_DIR}/10-busy"
+    chmod +x "${IC_GUARD_DIR}/10-busy"
+    run bash "$SCRIPT" away
+    [[ "$output" == *"10-busy"* ]]
+    rm "${IC_GUARD_DIR}/10-busy"
+    mkdir "${TMP}/inst"
+    printf '%s\0' "${TMP}/inst" odoo prod "SELECT 1" > "${IC_STATE_DIR}/inside/0"
+    echo 1 > "${TMP}/inside-count"
+    run bash "$SCRIPT" away
+    [[ "$output" == *"1 job(s) run inside inst"* ]]
+    _not_called shutdown
+    echo 0 > "${TMP}/inside-count"
+    run bash "$SCRIPT" away
+    grep -q "shutdown -r +1" "${TMP}/calls"
+}
+
+@test "check: says once that the server restarted by itself while the panel was away" {
+    _mark 1794632000
+    echo 1794718800 > "${IC_STATE_DIR}/away-restart"
+    export IC_NOW=1794722400
+    run bash "$SCRIPT" check --auto 1 --window 04:00 3 UTC --away 86400
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_AWAY_RESTART=1794718800"* ]]
+    run bash "$SCRIPT" check --auto 1 --window 04:00 3 UTC --away 86400
+    [[ "$output" != *"IC_AWAY_RESTART"* ]]
 }

@@ -661,6 +661,26 @@ then. The rest is the panel's assets and the Spanish catalogue.
   of the host's instances skip their pass while it runs. New table
   `cloud_host_reboot` and seven columns on hosts; no data migration.
   `docs/architecture.md` («Host maintenance window») and RB-43.
+  One restart per host and per opening of its window: a server whose
+  update still asks for a restart once it is back waits for the next
+  night. Inside the window the check asks the server's veto itself and
+  queues no restart the server would refuse, and the restart it queued
+  reads the window, the policy and the pending restart again as it
+  starts, after its wait in the queue. Only the containers whose restart
+  policy brings them back after a boot (`always`, `unless-stopped`) are
+  waited for. A connection lost as the order is given leaves the hold to
+  the server's boot, and an order that answered badly is called off
+  (`shutdown -c`) before the hold goes. `host_reboot_failed` closes once
+  the server answers with another boot, and `host_reboot_incomplete` once
+  Docker and the containers named run, whoever brought them back; neither
+  `host_unreachable` nor a host's metric rule alerts during the 15 minutes
+  after the order. A server the panel has not checked for 24 hours (a
+  panel that sleeps through the window, or one that is gone) restarts by
+  itself again, inside the same window, once per opening and with the
+  same veto, no SSH session open and nothing running inside its
+  instances: every check leaves the panel's mark on the server and
+  installs the timer `incubacloud-reboot-when-away`; once the panel checks
+  it again, the panel decides (owner's decision, 15-nov-2026).
 
 - **A backup destination's, a project's and a host's pages after the form
   standard's review (#123).** On a backup destination, saving confirms the
