@@ -10,14 +10,25 @@ from urllib.parse import urlparse
 
 import asyncssh
 import boto3
+import pytz
 from botocore.exceptions import BotoCoreError, ClientError
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
+from odoo.tools import email_normalize
 
 from ..net.hostname import is_host_address
 from ..net.outbound import OutboundError, _resolve_public
 from . import sftp_dst, ssh_host_keys
+from ._backup_dst import (
+    access_key_is_valid,
+    breaks_line,
+    compose_env_breaks,
+    dst_is_valid,
+    endpoint_url_is_valid,
+    image_tag_is_valid,
+    normalize_endpoint_url,
+)
 from ._backup_retention import valid_backup_retention
 from .cloud_instance import _GLOBAL_BACKUP_PARAM
 from .encrypted_char import EncryptedChar, EncryptedText
@@ -752,6 +763,122 @@ class CloudBackupBackend(models.Model):
                     "cron delete old backups, or nobody."
                 ))
 
+    @api.constrains("backend_type", "s3_bucket", "s3_path")
+    def _check_backup_dst_shape(self):
+        """Keep the bucket and the path to the grammar of a backup path.
+
+        Every instance's path is computed from them
+        (``cloud.instance._compute_instance_backup_dst``) and frozen into
+        ``custom_backup_dst`` when the instance is archived, which holds
+        that field's grammar (``_backup_dst.dst_is_valid``): a bucket or a
+        path outside it would reach the hosts' files and commands. Checked
+        when they are written; a destination saved before goes on as it
+        is.
+
+        :raises ValidationError: for a bucket or a path outside it
+        """
+        for rec in self:
+            if rec.backup_dst and not dst_is_valid(rec.backup_dst):
+                raise ValidationError(
+                    _(
+                        "The bucket and the path of %(name)s may hold only "
+                        "letters, digits, dots, hyphens and underscores, with "
+                        "a / between the parts of the path. No '..', spaces "
+                        "or shell metacharacters.",
+                        name=rec.name,
+                    )
+                )
+
+    @api.constrains(
+        "s3_endpoint_url", "s3_access_key_id", "s3_secret_access_key",
+        "passphrase",
+    )
+    def _check_s3_access_shape(self):
+        """Keep the endpoint and the secrets to one line of an environment file.
+
+        Each is written as a line of the backup container's and the purges'
+        environment files (``_backup_dst.env_line``), where a line break
+        starts a variable of its own and the last of two wins: an endpoint
+        could name another ``DST``. ``backup.env`` and ``pitr.env`` are
+        read by compose, which also closes a value that opens with a quote
+        and reads the rest of the line as another variable, interpolates
+        ``$`` and cuts at `` #`` (``_backup_dst.compose_env_line``): a
+        passphrase would be another one, and lost to a restore. The
+        endpoint is an ``http``/``https`` URL of a host
+        (``endpoint_url_is_valid``), the keys hold letters, digits and
+        ``/ + = . _ -`` only (``access_key_is_valid``), and the passphrase
+        none of what compose reads as more (``compose_env_breaks``); the
+        one the panel generates holds none. Checked when they are written;
+        one saved before is refused by the file it would break, before the
+        host is reached.
+
+        :raises ValidationError: for a value outside that shape
+        """
+        for rec in self:
+            # sudo: the secrets are a manager's fields; the check is not.
+            secrets = rec.sudo()
+            url = rec.s3_endpoint_url
+            if url and not endpoint_url_is_valid(url):
+                raise ValidationError(_(
+                    "The endpoint URL of %(name)s must be an http:// or "
+                    "https:// address of a host, with an optional port and "
+                    "path, and no spaces.",
+                    name=rec.name,
+                ))
+            for key in (secrets.s3_access_key_id, secrets.s3_secret_access_key):
+                if key and not access_key_is_valid(key):
+                    raise ValidationError(_(
+                        "The access keys of %(name)s may hold only letters, "
+                        "digits and the characters / + = . _ -.",
+                        name=rec.name,
+                    ))
+            if secrets.passphrase and compose_env_breaks(secrets.passphrase):
+                raise ValidationError(_(
+                    "The encryption passphrase of %(name)s may not hold "
+                    "quotes, backquotes, $, \\, #, line breaks or control "
+                    "characters, nor start or end with a space.",
+                    name=rec.name,
+                ))
+
+    @api.constrains("backup_image_version", "backup_tz", "email_from", "email_to")
+    def _check_backup_answers_shape(self):
+        """Keep the answers the template renders into the compose file to their shape.
+
+        The image tag is written after ``image: …:`` unquoted, and the time
+        zone and the addresses between double quotes of the backup
+        service's environment (``cloud.instance._render_copier_answers``):
+        a line break would add YAML of its own to the service, such as
+        ``privileged: true``. A docker tag, a time zone ``pytz`` knows and
+        one address each; empty takes the template's default. Checked
+        when they are written, an import's included.
+
+        :raises ValidationError: for a value outside that shape
+        """
+        for rec in self:
+            tag = rec.backup_image_version
+            if tag and not image_tag_is_valid(tag):
+                raise ValidationError(_(
+                    "The image version of %(name)s must be a docker tag: "
+                    "letters, digits, dots, hyphens and underscores, such as "
+                    "latest or 4.0.0.",
+                    name=rec.name,
+                ))
+            if rec.backup_tz and rec.backup_tz not in pytz.all_timezones_set:
+                raise ValidationError(_(
+                    "The timezone of %(name)s must be a timezone name, such "
+                    "as UTC or Europe/Madrid.",
+                    name=rec.name,
+                ))
+            for address in (rec.email_from, rec.email_to):
+                if address and (
+                    breaks_line(address) or not email_normalize(address)
+                ):
+                    raise ValidationError(_(
+                        "The notification addresses of %(name)s must be one "
+                        "email address each.",
+                        name=rec.name,
+                    ))
+
     # ── Deletion guard ──────────────────────────────────────────────────────
 
     def _deletion_blockers(self):
@@ -958,6 +1085,8 @@ class CloudBackupBackend(models.Model):
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
                 del vals[field]
+        if vals.get("s3_endpoint_url"):
+            vals["s3_endpoint_url"] = normalize_endpoint_url(vals["s3_endpoint_url"])
         if "backend_type" in vals and any(
             rec.backend_type != vals["backend_type"] for rec in self
         ):
@@ -1017,6 +1146,10 @@ class CloudBackupBackend(models.Model):
             self._normalize_sftp_vals(vals)
             if not vals.get("passphrase"):
                 vals["passphrase"] = generate_password()
+            if vals.get("s3_endpoint_url"):
+                vals["s3_endpoint_url"] = normalize_endpoint_url(
+                    vals["s3_endpoint_url"],
+                )
             private = None
             if vals.get("backend_type") == "sftp":
                 pair = self._sftp_key_pair()

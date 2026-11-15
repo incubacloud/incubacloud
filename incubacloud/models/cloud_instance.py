@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.tools import SQL
 
 from odoo.addons.queue_job.exception import RetryableJobError
 
@@ -25,6 +26,7 @@ from ..net.restore_source import (
 from ..restore_staging import purge_stale
 from . import _odoo_versions, _relay_oauth, sftp_dst
 from ._odoo_versions import ODOO_VERSION_SELECTION
+from ._backup_dst import dst_covers, dst_is_valid, dst_key
 from . import _config_snapshot_diff as _snapshot_diff
 from ._backup_retention import TEMPLATE_BACKUP_RETENTION, valid_backup_retention
 from ._repo_requirements import (
@@ -859,19 +861,163 @@ class CloudInstance(models.Model):
     )
     def _compute_instance_backup_dst(self):
         for inst in self:
-            if inst.custom_backup_dst:
-                inst.instance_backup_dst = inst.custom_backup_dst
+            inst.instance_backup_dst = (
+                inst.custom_backup_dst or inst._computed_backup_dst()
+            )
+
+    def _computed_backup_dst(self):
+        """The path the destination computes for this instance, ignoring its own.
+
+        ``{backup_dst}/{project folder}/{name}``: where the panel puts an
+        instance's copies when nothing else is written
+        (``custom_backup_dst``).
+
+        :return: the path, or ``""`` without a destination or a name
+        :rtype: str
+        """
+        self.ensure_one()
+        bb = self.effective_backup_backend
+        if not (bb and bb.backup_dst and self.name):
+            return ""
+        folder = (self.project_id.remote_folder if self.project_id else "") \
+            or "default"
+        return f"{bb.backup_dst}/{folder}/{self.name}"
+
+    def _backup_paths_held(self):
+        """The backup paths this instance's copies are kept under.
+
+        Core's is the duplicity chain's (``instance_backup_dst``); a module
+        that keeps more of the copy elsewhere in the bucket adds its
+        prefix. What :meth:`_backup_prefix_conflict` protects from another
+        record's purge.
+
+        :rtype: list
+        """
+        self.ensure_one()
+        return [self.instance_backup_dst] if self.instance_backup_dst else []
+
+    def _backup_prefix_conflict(self, prefix, held=False):
+        """What emptying *prefix* for this instance would reach besides its own copy.
+
+        A purge deletes everything under ``prefix/`` older than its cutoff
+        (``lib/purge_prefix.sh``), and the cutoff protects only what was
+        written after it. Refused: a prefix that is a backup destination's
+        path (``backup_dst``) or above it, where every instance of the
+        destination keeps its copies, unless it is this instance's own
+        destination's path and no other instance uses that destination
+        (an import names one after the path it read); and one that is or
+        holds the path of another instance, archived included. One that is
+        the same path as another instance of the same name is not: that is
+        a successor, which the cutoff protects. Compared bucket and parts as the purge
+        reads them (``_backup_dst.dst_key``), whatever the endpoint: two
+        destinations naming one bucket are taken for one, which refuses
+        more, never less.
+
+        With *held*, *prefix* is a path to write as this instance's own
+        (``custom_backup_dst``): one under another instance's path is
+        refused too, as that one's purge would empty it.
+
+        :param str prefix: the duplicity or wal-g prefix
+        :param bool held: also refuse a *prefix* under another's path
+        :return: ``(backup destination, None)`` (empty for a bucket's
+            root), ``(None, instance)`` or None when nothing else is
+            reached
+        :rtype: tuple
+        """
+        self.ensure_one()
+        key = dst_key(prefix)
+        if key is None:
+            # No bucket: nothing a purge could empty (``purge_prefix.sh``
+            # refuses it), nor a path a write may hold (its grammar).
+            return None
+        if not key[1]:
+            # A bucket's root: every destination in it.
+            return self.env["cloud.backup.backend"].browse(), None
+        others = self.env["cloud.instance"].sudo().with_context(
+            active_test=False,
+        ).search([("id", "!=", self.id)])
+        own = self.effective_backup_backend
+        for backend in self.env["cloud.backup.backend"].sudo().search(
+            [("backup_dst", "!=", False)],
+        ):
+            root = dst_key(backend.backup_dst)
+            if not dst_covers(key, root):
                 continue
-            bb = inst.effective_backup_backend
-            if bb and bb.backup_dst and inst.name:
-                project_folder = (
-                    inst.project_id.remote_folder if inst.project_id else ""
-                ) or "default"
-                inst.instance_backup_dst = (
-                    f"{bb.backup_dst}/{project_folder}/{inst.name}"
-                )
-            else:
-                inst.instance_backup_dst = ""
+            if key == root and backend == own and not any(
+                other.effective_backup_backend == backend for other in others
+            ):
+                # Its own destination's path, which no other instance
+                # uses: what an import names after the path it read. Kept
+                # rather than having the import name its destination after
+                # the parent path: the imports made so far would be
+                # refused every purge. Its limit: a purge of it also
+                # reaches what the panel does not record under that path
+                # (another tool's objects, a recovery prefix a delete left
+                # behind), which only an administrator, or an import he
+                # starts, can have written there.
+                continue
+            return backend, None
+        for other in others:
+            for path in other._backup_paths_held():
+                theirs = dst_key(path)
+                if theirs == key and other.name == self.name:
+                    continue
+                if dst_covers(key, theirs) or (held and dst_covers(theirs, key)):
+                    return None, other
+        return None
+
+    def _backup_prefix_refusal(self, prefix):
+        """Why a purge of *prefix* is refused, for the job's log and its alert.
+
+        :param str prefix: the prefix the purge would empty
+        :return: the reason, or ``""`` when the purge may go on
+        :rtype: str
+        """
+        conflict = self._backup_prefix_conflict(prefix)
+        if conflict is None:
+            return ""
+        backend, other = conflict
+        if other:
+            return (
+                f"The purge of '{self.name}' would empty {prefix}, which holds "
+                f"the copy of '{other.name}' (id {other.id}): refused, nothing "
+                "deleted. Correct the backup path of either instance."
+            )
+        return (
+            f"The purge of '{self.name}' would empty {prefix}, the path of "
+            f"the backup destination '{backend.name or '?'}' or above it, "
+            "where every instance keeps its copies: refused, nothing "
+            "deleted. Correct the instance's backup path."
+        )
+
+    def _backup_purge_since(self, prefix):
+        """Where a delete's purge of *prefix* starts, or ``""`` to empty it whole.
+
+        Another instance of the same name that holds the same path, the
+        archived one whose name this one took (``_backup_prefix_conflict``
+        lets it through), keeps there what was stored before this one was
+        created: the delete's purge is bounded to what came after
+        (``PURGE_SINCE``, ``lib/purge_prefix.sh``), the archived one's own
+        purge to what came before (``PURGE_BEFORE``).
+
+        :param str prefix: the duplicity or wal-g prefix the delete empties
+        :return: this instance's creation as ISO-8601 UTC, to the second
+            and rounded down, or ``""`` when no other instance holds it
+        :rtype: str
+        """
+        self.ensure_one()
+        key = dst_key(prefix)
+        if not (key and key[1] and self.name and self.create_date):
+            return ""
+        namesakes = self.env["cloud.instance"].sudo().with_context(
+            active_test=False,
+        ).search([("id", "!=", self.id), ("name", "=", self.name)])
+        if not any(
+            dst_key(path) == key
+            for other in namesakes for path in other._backup_paths_held()
+        ):
+            return ""
+        return self.create_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
     @api.depends(
         "odoo_version",
@@ -1100,11 +1246,15 @@ class CloudInstance(models.Model):
                 {
                     "backup_dst": inst.instance_backup_dst or "",
                     "backup_image_version": bb.backup_image_version or "latest",
-                    "backup_email_from": bb.email_from or "",
-                    "backup_email_to": bb.email_to or "",
+                    # Inside the template's double quotes, as the SMTP
+                    # answers above: escaped for them, so a value saved
+                    # before the destination checked it renders as its
+                    # own text (``_check_backup_answers_shape``).
+                    "backup_email_from": _yaml_dq_escape(bb.email_from),
+                    "backup_email_to": _yaml_dq_escape(bb.email_to),
                     "backup_smtp_report_success": bb.smtp_report_success,
                     "backup_deletion": bb.retention_owner == "cron",
-                    "backup_tz": bb.backup_tz or "UTC",
+                    "backup_tz": _yaml_dq_escape(bb.backup_tz or "UTC"),
                     "backup_passphrase": bb.passphrase or "",
                 }
             )
@@ -1963,6 +2113,21 @@ class CloudInstance(models.Model):
         :param str inst_dir: the instance directory on the host
         :param bool keep_in_panel: the record stays as an archived draft
         :return: ``(label, command[, opts])`` tuples; none in core
+        :rtype: list
+        """
+        self.ensure_one()
+        return []
+
+    def _teardown_purge_prefixes(self, keep_in_panel):
+        """The prefixes the addon steps of a delete empty (``_teardown_pre_steps``).
+
+        Each is checked before the delete's first step, as the duplicity
+        chain's is (``DeleteInstanceExecutor._refuse_shared_prefix``): a
+        prefix that holds another instance's copies refuses the delete.
+
+        :param bool keep_in_panel: the record stays as an archived draft
+        :return: one ``boto3+s3://`` or ``s3://bucket/path`` per prefix;
+            none in core
         :rtype: list
         """
         self.ensure_one()
@@ -4304,14 +4469,37 @@ class CloudInstance(models.Model):
         if backend and not self.backup_backend_id:
             vals["backup_backend_id"] = backend.id
         computed = self.instance_backup_dst
+        outside = False
         if computed and not self.custom_backup_dst:
-            vals["custom_backup_dst"] = computed
-        if not vals:
+            if dst_is_valid(computed):
+                vals["custom_backup_dst"] = computed
+            else:
+                outside = True
+        if not vals and not outside:
             return
         # As the platform: the copy's place is an administrator's field
         # (``_MANAGER_FIELDS``), frozen here at the end of a teardown that
         # was authorised when it was asked for.
-        self.sudo().write(vals)
+        if vals:
+            self.sudo().write(vals)
+        if outside:
+            # Computed from a destination saved before its grammar
+            # (``cloud.backup.backend._check_backup_dst_shape``): frozen as
+            # it is, as the stack is gone by now and the path is the one
+            # thing left that finds the copy. In SQL, past the field's
+            # check (``_check_custom_backup_dst_shape``), which nothing
+            # sent to a write may lift.
+            self.env.cr.execute(SQL(
+                "UPDATE cloud_instance SET custom_backup_dst = %s WHERE id = %s",
+                computed, self.id,
+            ))
+            self.invalidate_recordset(["custom_backup_dst", "instance_backup_dst"])
+            _logger.warning(
+                "instance %s archived: its destination %s computes a backup "
+                "path outside the field's grammar, frozen as it is: correct "
+                "the destination's bucket and path",
+                self.name, backend.name,
+            )
         _logger.info(
             "instance %s archived: backup path frozen at %s on %s",
             self.name, self.custom_backup_dst, backend.name,
@@ -5515,6 +5703,61 @@ class CloudInstance(models.Model):
                         path=v,
                     )
                 )
+
+    @api.constrains("custom_backup_dst")
+    def _check_custom_backup_dst_shape(self):
+        """Keep the backup path to the grammar of the panel's destinations.
+
+        The path reaches the host as an argument of a command, as a line
+        of an environment file and inside the compose file: an S3 URL
+        (``boto3+s3://`` or ``s3://``) whose bucket and path hold letters,
+        digits, dots, hyphens and underscores only, or an ``sftp://`` URL
+        of a user, a server and such a path (``_backup_dst.dst_is_valid``). Checked when the path is written,
+        an import's included; a path saved before goes on as it is, as
+        does the one an archive freezes as it was computed
+        (``_freeze_backup_dst``).
+
+        A path written other than the one the destination computes must
+        not overlap a destination's or another instance's
+        (``_backup_prefix_conflict``): a purge of one would empty the
+        other's copies.
+
+        :raises ValidationError: for a path outside it, or one that
+            overlaps
+        """
+        for inst in self:
+            v = inst.custom_backup_dst
+            if v and not dst_is_valid(v):
+                raise ValidationError(
+                    _(
+                        "Custom backup path '%(path)s' is invalid. Use "
+                        "boto3+s3://bucket/path, s3://bucket/path or "
+                        "sftp://user@server/path, with only letters, digits, "
+                        "dots, hyphens and underscores in the bucket and in "
+                        "each part of the path. No '..', spaces or shell "
+                        "metacharacters.",
+                        path=v,
+                    )
+                )
+            if not v or v == inst._computed_backup_dst():
+                continue
+            conflict = inst._backup_prefix_conflict(v, held=True)
+            if conflict is None:
+                continue
+            backend, other = conflict
+            if other:
+                raise ValidationError(_(
+                    "Custom backup path '%(path)s' overlaps the backup path "
+                    "of the instance %(other)s: deleting either would delete "
+                    "the other's copies. Use a path of its own.",
+                    path=v, other=other.name,
+                ))
+            raise ValidationError(_(
+                "Custom backup path '%(path)s' is the path of a backup "
+                "destination or above it, where every instance keeps its "
+                "copies. Use a path of the instance's own under it.",
+                path=v,
+            ))
 
     @api.constrains("postgres_dbname", "postgres_username")
     def _check_pg_identifiers_shell_safe(self):

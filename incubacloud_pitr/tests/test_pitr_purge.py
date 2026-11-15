@@ -18,6 +18,10 @@ from odoo import fields
 from odoo.exceptions import UserError
 from odoo.modules.neutralize import neutralize_database
 
+from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+from odoo.addons.incubacloud.models.delete_instance_executor import (
+    DeleteInstanceExecutor,
+)
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
 
 from odoo.addons.incubacloud_pitr.models import pitr_executors as ex
@@ -26,6 +30,8 @@ from odoo.addons.incubacloud_pitr.models._constants import (
     ALERT_PURGE_FAILED,
     ENV_FILE,
 )
+
+from odoo.addons.incubacloud.tests.test_backup_dst_shell import _compose_env
 
 from .test_pitr import _PitrCase
 
@@ -303,6 +309,240 @@ class TestThePurge(_SwitchedOffCase):
         self.assertIn("rejected", self._alerts(ALERT_PURGE_FAILED).message)
         self.assertEqual(self.inst.pitr_cluster_id, "7698")
         self.assertTrue(self.inst.pitr_purge_at)
+
+
+class TestThePurgeEnvironmentKeepsItsLines(_SwitchedOffCase):
+
+    def test_a_prefix_that_breaks_its_line_fails_the_job_before_the_host(self):
+        """Its environment file would read the rest as variables of its own."""
+        before = self._switched_off(15)
+        self.inst._pitr_record_rendered()
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET pitr_rendered_prefix = %s WHERE id = %s",
+            (f"{PREFIX}\nAWS_ENDPOINT_URL=https://elsewhere.example", self.inst.id),
+        )
+        self.env.invalidate_all()
+        executor = self._purge(before)
+        with patch.object(
+            ex.PitrPurgeExecutor, "_upload_private_files", autospec=True,
+        ) as upload, self.assertRaises(ValueError):
+            asyncio.run(executor.before_execute(MagicMock(spec=SSHTransport)))
+        upload.assert_not_awaited()
+
+    def test_an_endpoint_or_a_key_saved_before_that_names_dst_again_fails_it(self):
+        """``--env-file`` takes the last DST: the destination's root, emptied."""
+        before = self._switched_off(15)
+        executor = self._purge(before)
+        for column, value in (
+            ("s3_endpoint_url", "https://r2.example.com\nDST=s3://bucket/backups"),
+            ("s3_access_key_id", "AK\nPURGE_BEFORE="),
+            ("s3_secret_access_key", "SK\rDST=s3://bucket"),
+        ):
+            with self.subTest(column=column):
+                self.env.flush_all()
+                self.env.cr.execute(
+                    f"UPDATE cloud_backup_backend SET {column} = %s WHERE id = %s",  # noqa: S608
+                    (value, self.backend.id),
+                )
+                self.env.invalidate_all()
+                with patch.object(
+                    ex.PitrPurgeExecutor, "_upload_private_files", autospec=True,
+                ) as upload, self.assertRaises(ValueError):
+                    asyncio.run(executor.before_execute(MagicMock(spec=SSHTransport)))
+                upload.assert_not_awaited()
+                self.env.cr.execute(
+                    f"UPDATE cloud_backup_backend SET {column} = %s WHERE id = %s",  # noqa: S608
+                    ("clean", self.backend.id),
+                )
+                self.env.invalidate_all()
+
+    def test_the_agent_s_environment_refuses_a_key_that_breaks_its_line(self):
+        """``pitr.env`` is read by the archive's agent and the delete's purge."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_backup_backend SET s3_access_key_id = %s WHERE id = %s",
+            ("AK\nIC_PITR_PREFIX=s3://bucket", self.backend.id),
+        )
+        self.env.invalidate_all()
+        with self.assertRaises(ValueError):
+            self.inst._pitr_env()
+
+    def test_the_agent_s_environment_refuses_what_compose_reads_as_more(self):
+        """The agent's ``env_file``: a quote would add an ``IC_PITR_PREFIX``."""
+        for column, value in (
+            ("s3_secret_access_key", '"SK" IC_PITR_PREFIX=s3://bucket'),
+            ("s3_access_key_id", '"AK"IC_PITR_PREFIX=s3://bucket'),
+            ("s3_access_key_id", "AK$PGHOST"),
+        ):
+            with self.subTest(column=column, value=value):
+                self.env.flush_all()
+                self.env.cr.execute(
+                    f"UPDATE cloud_backup_backend SET {column} = %s WHERE id = %s",  # noqa: S608
+                    (value, self.backend.id),
+                )
+                self.env.invalidate_all()
+                with self.assertRaises(ValueError):
+                    self.inst._pitr_env()
+
+    def test_the_agent_s_environment_reaches_it_as_written(self):
+        content = self.inst._pitr_env()
+        written = dict(line.split("=", 1) for line in content.splitlines())
+        self.assertEqual(_compose_env(content), written)
+        self.assertEqual(written["IC_PITR_PREFIX"], PREFIX)
+
+
+class TestTheDeleteReachesOnlyItsOwnArchive(_PitrCase):
+    """Deleting an instance empties its recovery prefix whole, or only what
+    it stored since it was created when an archived instance of the same
+    name keeps its archive there."""
+
+    def setUp(self):
+        super().setUp()
+        self.inst.pitr_enabled = True
+        # A staging: a project has one production.
+        self.other = self.env["cloud.instance"].create({
+            "name": "pitr-other", "project_id": self.project.id,
+            "environment": "staging", "host_id": self.host.id,
+            "state": "deployed",
+        })
+
+    def test_the_recovery_prefix_is_checked_with_the_chain_s(self):
+        executor = self._executor(DeleteInstanceExecutor, "delete_instance")
+        self.assertIn(PREFIX, executor._purge_prefixes(self.inst))
+        executor._refuse_shared_prefix(self.inst)
+
+    def test_another_s_copy_under_it_refuses_the_delete_before_any_step(self):
+        """Saved before the check: a write of it now is refused."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET custom_backup_dst = %s WHERE id = %s",
+            (f"{PREFIX}/held", self.other.id),
+        )
+        self.env.invalidate_all()
+        executor = self._executor(DeleteInstanceExecutor, "delete_instance")
+        with self.assertRaises(JobRefused) as caught:
+            asyncio.run(executor.before_execute(MagicMock(spec=SSHTransport)))
+        self.assertIn("pitr-other", str(caught.exception))
+        self.assertIn(PREFIX, str(caught.exception))
+        self.assertEqual(self.inst.state, "deployed")
+
+    def test_archiving_it_keeps_the_prefix_and_is_not_refused(self):
+        executor = self._executor(
+            DeleteInstanceExecutor, "delete_instance", payload={"keep_in_panel": True},
+        )
+        self.assertEqual(executor._purge_prefixes(self.inst), [])
+
+    def _archived_namesake(self, prefix):
+        """An archived instance of this name whose recovery archive is *prefix*.
+
+        :param str prefix: its frozen recovery prefix
+        :return: the archived ``cloud.instance``
+        """
+        project = self.env["cloud.project"].create({
+            "name": "pitr-proj-2", "remote_folder": "pp2",
+            "backup_backend_id": self.backend.id,
+        })
+        namesake = self.env["cloud.instance"].create({
+            "name": "pitr-inst", "project_id": project.id,
+            "environment": "staging", "host_id": self.host.id,
+            "state": "deployed",
+        })
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET active = false, pitr_archived_prefix = %s"
+            " WHERE id = %s",
+            (prefix, namesake.id),
+        )
+        self.env.invalidate_all()
+        return namesake
+
+    def test_a_successor_s_delete_keeps_the_archived_one_s_archive(self):
+        self._archived_namesake(PREFIX)
+        executor = self._executor(DeleteInstanceExecutor, "delete_instance")
+        executor._refuse_shared_prefix(self.inst)
+        since = self.inst.create_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        for step in self.inst._teardown_pre_steps("~/pp/pitr-inst", False):
+            with self.subTest(step=step[0]):
+                self.assertIn(
+                    f" delete --use-server-modtime --max-age {since} pitr: ",
+                    step[1],
+                )
+                self.assertNotIn("purge pitr:", step[1])
+
+    def test_without_one_in_its_prefix_the_delete_empties_it_whole(self):
+        self._archived_namesake("s3://bucket/backups/pp2/pitr-inst-pitr")
+        for step in self.inst._teardown_pre_steps("~/pp/pitr-inst", False):
+            with self.subTest(step=step[0]):
+                self.assertIn(" purge pitr: ", step[1])
+                self.assertNotIn("--max-age", step[1])
+
+
+class TestThePurgeReachesOnlyItsOwnArchive(_SwitchedOffCase):
+    """A prefix that is a destination's, or holds another instance's, is refused."""
+
+    def _rendered(self, prefix):
+        """Store *prefix* as the one the instance's server was last given."""
+        self.inst._pitr_record_rendered()
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET pitr_rendered_prefix = %s WHERE id = %s",
+            (prefix, self.inst.id),
+        )
+        self.env.invalidate_all()
+
+    def test_a_destination_s_path_fails_closed_with_an_alert(self):
+        before = self._switched_off(15)
+        # A staging: a project has one production.
+        self.env["cloud.instance"].create({
+            "name": "pitr-other", "project_id": self.project.id,
+            "environment": "staging", "host_id": self.host.id,
+            "state": "deployed",
+        })
+        for prefix in ("s3://bucket/backups", "s3://bucket", "s3://bucket/backups/pp"):
+            with self.subTest(prefix=prefix):
+                self._rendered(prefix)
+                executor = self._purge(before)
+                with patch.object(
+                    ex.PitrPurgeExecutor, "_upload_private_files", autospec=True,
+                ) as upload, self.assertRaises(JobRefused):
+                    asyncio.run(executor.before_execute(MagicMock(spec=SSHTransport)))
+                upload.assert_not_awaited()
+        asyncio.run(executor.on_abort(JobRefused("refused")))
+        alert = self._alerts(ALERT_PURGE_FAILED)
+        self.assertEqual(len(alert), 1)
+        self.assertIn("pitr-other", alert.message)
+
+    def _elsewhere(self, name, **vals):
+        """A production of *name* archiving, in a project of its own on the destination.
+
+        :param str name: the instance's name
+        :param vals: more of its values
+        :return: the instance
+        """
+        project = self.env["cloud.project"].create({
+            "name": f"{name}-proj", "remote_folder": "pp2",
+            "backup_backend_id": self.backend.id,
+        })
+        return self.env["cloud.instance"].create({
+            "name": name, "project_id": project.id,
+            "environment": "production", "host_id": self.host.id,
+            "state": "deployed", "pitr_enabled": True, **vals,
+        })
+
+    def test_another_instance_s_archive_is_not_emptied(self):
+        before = self._switched_off(15)
+        other = self._elsewhere("pitr-other")
+        self._rendered(other._pitr_prefix_base())
+        with self.assertRaises(JobRefused) as caught:
+            self._purge(before)._env_content()
+        self.assertIn("pitr-other", str(caught.exception))
+
+    def test_a_successor_s_archive_under_the_same_name_is_left_to_the_cutoff(self):
+        before = self._switched_off(15)
+        self.inst._pitr_record_rendered()
+        self._elsewhere("pitr-inst", pitr_rendered_prefix=PREFIX)
+        self.assertIn(f"DST={PREFIX}\n", self._purge(before)._env_content())
 
 
 class TestSwitchingOnBeforeTheDate(_SwitchedOffCase):

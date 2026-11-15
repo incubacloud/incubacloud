@@ -202,6 +202,38 @@ _run_program() {
     [ -z "$(_remaining)" ]
 }
 
+@test "with a since only what was stored from it on is deleted" {
+    # The delete of a successor: the archived instance of the same name
+    # keeps, in the same prefix, what it stored before.
+    _seed \
+        "backups/proj/inst/archived-full=2026-01-01T00:00:00+00:00" \
+        "backups/proj/inst/archived-inc=2026-01-02T00:00:00+00:00" \
+        "backups/proj/inst/successor=2026-03-01T00:00:00+00:00"
+    export PURGE_SINCE="2026-02-01T00:00:00+00:00"
+    run _run_program
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"removed 1 object(s) stored since"* ]]
+    [ "$(_remaining)" = "$(printf '%s\n' \
+        backups/proj/inst/archived-full backups/proj/inst/archived-inc)" ]
+}
+
+@test "a since after everything stored deletes nothing" {
+    _seed "backups/proj/inst/archived-full=2026-01-01T00:00:00+00:00"
+    export PURGE_SINCE="2026-02-01T00:00:00+00:00"
+    run _run_program
+    [ "$status" -eq 10 ]
+    [ "$(_remaining)" = "backups/proj/inst/archived-full" ]
+}
+
+@test "an unparseable since refuses instead of purging everything" {
+    _seed "backups/proj/inst/full=2026-01-01T00:00:00+00:00"
+    export PURGE_SINCE="yesterday"
+    run _run_program
+    [ "$status" -eq 22 ]
+    [[ "$output" == *"PURGE_SINCE is not an ISO-8601 instant"* ]]
+    [ "$(_remaining)" = "backups/proj/inst/full" ]
+}
+
 @test "a prefix beside the chain empties itself and nothing of the chain" {
     # Continuous recovery's ``<name>-pitr``, handed as ``s3://``: its
     # name starts with the chain's, and neither one may take the other.

@@ -14,15 +14,19 @@ purges go there. A backup retention other than three months applies, and
 it must be a count followed by D, W, M or Y. A production instance whose
 scheduled backups stopped raises `backup_stale`. An account notice no
 longer waits for the hourly pass of the mail queue when a pass fails.
+A backup path and the rest of a backup destination reach the servers as
+data, and a purge empties only its own instance's copies.
 
 The update adds the SFTP columns of backup destinations (`sftp_host`,
 `sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
 `sftp_public_key`, `sftp_known_hosts`, `sftp_host_key_fingerprint`,
 `sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
-destinations there are. Its one data migration, 1.0.232's
-`post-backup-retention`, writes each backup destination's retention in
-the form it must now have (spaces gone, the unit in capitals, an empty
-one as `3M`) and names in the log any it leaves invalid.
+destinations there are. Its data migration, 1.0.232's post-migrate,
+writes each backup destination's retention in the form it must now have
+(spaces gone, the unit in capitals, an empty one as `3M`) and names in
+the log any it leaves invalid, the backup paths outside their new
+grammar, and the backup destinations' values and instances' backup
+paths that their new checks refuse, keeping them.
 
 ### Added
 
@@ -107,6 +111,61 @@ one as `3M`) and names in the log any it leaves invalid.
   the next hourly pass. The queue is now woken now and again two minutes
   later (`NOTICE_QUEUE_RETRY`). The notice is still never sent while the
   request waits.
+
+### Security
+
+- **An instance's backup path is held to the grammar of the panel's
+  destinations.** `custom_backup_dst` (written by an Administrator, by
+  an import and by archiving) is accepted only as `boto3+s3://` or
+  `s3://`, with letters, digits, dots, hyphens and underscores in the
+  bucket and in each part of the path, no `.` or `..` part and a port of
+  at most 65535, or as `sftp://` with a user, a host name or IPv4
+  address and such a path, as an SFTP destination writes it; a
+  destination's bucket and path only where the path they compute is
+  too. Where a backup path reaches a server it is quoted
+  in the command, and an environment or compose file refuses one that
+  would break its line, before the host is reached. Paths saved before
+  stay as they are: 1.0.232's post-migrate names in the log those outside
+  the grammar, for an Administrator to correct. Spanish translation
+  included.
+- **The rest of a backup destination reaches the servers as data too.**
+  Its endpoint must be an `http://` or `https://` URL of a host (the
+  scheme is stored in lower case, and a host name may hold `_` or end in
+  a `.`), its keys letters, digits and `/ + = . _ -` only, its
+  passphrase no quote, backquote, `$`, `\`, `#`, line break or space at
+  either end (the one the panel generates holds none), its image version
+  a docker tag, its time zone one `pytz` knows and each notification
+  address one address, checked when they are written, an import's
+  included. Every line of the environment files the panel writes is
+  checked as the backup path is, and in the files compose reads, for
+  what compose would read as more than the value; the time zone and the
+  addresses are escaped where the template quotes them, and a deploy or
+  a purge stops before the host is reached on a value saved before that
+  would not fit. 1.0.232's post-migrate names in the log the
+  destinations that hold one, without the value of a secret, and keeps
+  them. Spanish translation included.
+- **A purge empties only its own instance's copies.** The deletion of an
+  archived instance and the purge of a switched-off recovery archive
+  refuse a prefix that is a backup destination's path or above it, or
+  that is or holds another instance's path (archived instances
+  included; a successor of the same name is left to the purge's
+  cutoff): the job fails before anything is deleted, raises its purge
+  alert and keeps the record. Deleting a live instance refuses such a
+  prefix the same way, for its backup path and its recovery archive,
+  before its first step: the instance stays as it was. Deleting the
+  successor of an archived instance of the same name, which shares its
+  backup path and recovery archive, empties only what the successor
+  stored since it was created (on an SFTP destination by the files'
+  times, once the server's clock is checked): the archived instance
+  keeps its copies. A backup path an Administrator or an import writes
+  is held to the same check, naming the instance it would overlap; 1.0.232's post-migrate names those saved before. A layer that
+  shares one bucket between panels must give each panel credentials
+  limited to its own prefix (`docs/architecture.md`, security model).
+- **An import with a backup value the panel refuses goes on without it.**
+  A backup path or destination from the host's files that the checks
+  above refuse is left out and the import says why, instead of «An
+  internal error occurred»; any other value refused is named the same
+  way.
 
 ## [1.0.231] — unreleased
 

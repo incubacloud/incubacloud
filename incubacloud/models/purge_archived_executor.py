@@ -22,7 +22,8 @@ from odoo import _
 from odoo.exceptions import UserError
 
 from . import sftp_dst
-from .abstract_executor import AbstractSSHExecutor
+from ._backup_dst import env_line
+from .abstract_executor import AbstractSSHExecutor, JobRefused
 
 _logger = logging.getLogger(__name__)
 
@@ -51,6 +52,12 @@ PURGE_ARCHIVED_ALERT_BY_EXIT = {
         "purge image failing to pull or to start is the usual cause.",
     ),
 }
+
+#: The alert of a purge stopped before its step, under the code of 22.
+PURGE_ARCHIVED_REFUSED = (
+    "Could not delete %(name)s's archived copy: the purge stopped before "
+    "it started. %(why)s"
+)
 
 #: The prefix was already empty — the chain is gone by other means. Not
 #: a failure: the invariant already holds, so the record may go.
@@ -155,24 +162,26 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         :param str dst: a further prefix (``_extra_prefixes``), or None
             for the chain's frozen one
         :rtype: str
+        :raises ValueError: when the destination would not stay on its
+            line (``env_line``): the job fails before the host is reached
         """
         inst = self._inst()
         backend = inst.effective_backup_backend.sudo()
-        lines = [f"DST={dst or inst.custom_backup_dst}"]
+        lines = [env_line("DST", dst or inst.custom_backup_dst)]
         if inst.purge_cutoff_at:
-            lines.append(f"PURGE_BEFORE={inst.purge_cutoff_at.isoformat()}")
+            lines.append(env_line("PURGE_BEFORE", inst.purge_cutoff_at.isoformat()))
         if backend.backend_type == "sftp":
             # The key and the trusted server key travel as files of their
             # own (``_sftp_files``), mounted where the program reads them.
             return "\n".join(lines) + "\n"
         if backend.s3_access_key_id:
-            lines.append(f"AWS_ACCESS_KEY_ID={backend.s3_access_key_id}")
+            lines.append(env_line("AWS_ACCESS_KEY_ID", backend.s3_access_key_id))
         if backend.s3_secret_access_key:
             lines.append(
-                f"AWS_SECRET_ACCESS_KEY={backend.s3_secret_access_key}"
+                env_line("AWS_SECRET_ACCESS_KEY", backend.s3_secret_access_key)
             )
         if backend.s3_endpoint_url:
-            lines.append(f"AWS_ENDPOINT_URL={backend.s3_endpoint_url}")
+            lines.append(env_line("AWS_ENDPOINT_URL", backend.s3_endpoint_url))
         return "\n".join(lines) + "\n"
 
     async def before_execute(self, transport):
@@ -188,7 +197,11 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         anybody could create first. The script removes the files on its
         way out, and the job its directory, failure included. One file
         per prefix of the copy (``_env_contents``).
+
+        Refused before anything is uploaded when a prefix would reach more
+        than this instance's copy (``_refuse_shared_prefix``).
         """
+        self._refuse_shared_prefix()
         await self._upload_private_files(
             transport, {**self._env_contents(), **self._sftp_files()},
         )
@@ -237,6 +250,21 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
             self._job_path(SFTP_KEY_NAME): key if key.endswith("\n") else key + "\n",
             self._job_path(SFTP_KNOWN_HOSTS_NAME): backend.sftp_known_hosts.strip() + "\n",
         }
+
+    def _refuse_shared_prefix(self):
+        """Refuse a prefix whose purge would reach another's copies.
+
+        A destination's own path, or one that is or holds another
+        instance's (``cloud.instance._backup_prefix_conflict``): fails
+        closed, the record stays and ``on_abort`` raises the alert.
+
+        :raises JobRefused: naming the prefix and what it would reach
+        """
+        inst = self._inst()
+        for dst in self._dsts():
+            refusal = inst._backup_prefix_refusal(dst)
+            if refusal:
+                raise JobRefused(refusal)
 
     def get_commands(self):
         image = (
@@ -314,6 +342,17 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         the instance has to read it before, in its own ``on_success``.
         """
 
+    async def on_abort(self, exc):
+        """A purge stopped before its step fails as one that ran did.
+
+        Its reason in the job's log, the alert and the record kept: a
+        prefix refused (``_refuse_shared_prefix``), a value that would
+        break its line in the environment (``env_line``).
+
+        :param Exception exc: what stopped the run
+        """
+        await self.on_failure({}, [str(exc)])
+
     async def on_failure(self, results, errors):
         """Report, alert, and leave the record standing."""
         for err in errors:
@@ -328,9 +367,16 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         if not code_message:
             code_message = PURGE_ARCHIVED_ALERT_BY_EXIT[22]
         code, template = code_message
+        message = template % {"name": inst.name}
+        if not results:
+            # Stopped before the step (``on_abort``): the reason is the
+            # message, not the image.
+            message = PURGE_ARCHIVED_REFUSED % {
+                "name": inst.name, "why": "; ".join(errors),
+            }
         self.env["cloud.alert"].sudo().raise_alert(
             code,
-            template % {"name": inst.name},
+            message,
             level="warning",
             host=self._host(),
             instance=inst,

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+import shlex
 from datetime import datetime, timedelta
 
 import asyncssh
@@ -206,7 +207,7 @@ class BackupListExecutor(AbstractSSHExecutor):
             (
                 "List backups",
                 f"cd {d} && docker compose exec -T backup"
-                f" dup collection-status \"{dst}\" </dev/null 2>&1",
+                f" dup collection-status {shlex.quote(dst)} </dev/null 2>&1",
             ),
         ]
 

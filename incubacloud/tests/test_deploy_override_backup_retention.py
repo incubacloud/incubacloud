@@ -263,8 +263,8 @@ class TestBackupRetentionMigration(TransactionCase):
     def setUp(self):
         super().setUp()
         spec = importlib.util.spec_from_file_location(
-            "post_backup_retention_1_0_232",
-            file_path("incubacloud/migrations/1.0.232/post-backup-retention.py"),
+            "post_migrate_1_0_232",
+            file_path("incubacloud/migrations/1.0.232/post-migrate.py"),
         )
         self.migration = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.migration)

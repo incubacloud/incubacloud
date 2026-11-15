@@ -19,12 +19,14 @@ import hashlib
 import logging
 import re
 import secrets
+import shlex
 from datetime import datetime, timedelta, timezone
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 from odoo.addons.incubacloud.models import _odoo_versions
+from odoo.addons.incubacloud.models._backup_dst import compose_env_line
 from odoo.addons.incubacloud.models.encrypted_char import EncryptedChar
 
 from ._constants import (
@@ -376,6 +378,27 @@ class CloudInstance(models.Model):
             prefixes.append(prefix)
         return prefixes
 
+    def _backup_paths_held(self):
+        """Core's paths and the recovery archive's prefixes.
+
+        The prefix frozen when the instance was archived, the one its
+        server was last given and, while it may have an archive, the one
+        computed now: another record's purge must reach none of them
+        (``_backup_prefix_conflict``).
+
+        :rtype: list
+        """
+        paths = list(super()._backup_paths_held())
+        paths += [
+            p for p in (self.pitr_archived_prefix, self.pitr_rendered_prefix)
+            if p
+        ]
+        if self._pitr_had_archive():
+            bucket, path = self._pitr_bucket_path()
+            if bucket and path:
+                paths.append(f"s3://{bucket}/{path}")
+        return paths
+
     def delete_archived(self, payload=None):
         """Say so when the recovery archive cannot go with the copy.
 
@@ -634,6 +657,9 @@ class CloudInstance(models.Model):
         cluster under ``IC_PITR_PREFIX/<system id>``.
 
         :rtype: str
+        :raises ValueError: when compose would not read a value as it is
+            written (``compose_env_line``), before the file reaches the
+            host
         """
         backend = self.effective_backup_backend.sudo()
         bucket, path = self._pitr_bucket_path()
@@ -674,7 +700,13 @@ class CloudInstance(models.Model):
                 f"AWS_ENDPOINT={backend.s3_endpoint_url}",
                 f"RCLONE_CONFIG_PITRS3_ENDPOINT={backend.s3_endpoint_url}",
             ]
-        return "\n".join(lines) + "\n"
+        # Each line through ``compose_env_line``: the agent reads this file
+        # as its ``env_file``, where a line break, or a value that opens
+        # with a quote, would start a variable of its own, such as another
+        # ``IC_PITR_PREFIX``. The names hold no ``=``.
+        return "\n".join(
+            compose_env_line(*line.split("=", 1)) for line in lines
+        ) + "\n"
 
     def _teardown_pre_steps(self, inst_dir, keep_in_panel):
         """Empty the recovery prefix when the instance is deleted.
@@ -691,15 +723,26 @@ class CloudInstance(models.Model):
         stopped, so the instance is left running for the delete to be
         run again; a compose it cannot read stops it before it touches
         anything.
+
+        When an archived instance of the same name keeps its archive in
+        the same prefix (``_backup_purge_since``), only what was stored
+        since this instance was created is deleted, by the storage's own
+        dates: the archived one's stays for its own purge.
         """
         steps = super()._teardown_pre_steps(inst_dir, keep_in_panel)
         if keep_in_panel or not self._pitr_had_archive():
             return steps
+        _backend, prefix = self._pitr_purge_target()
+        since = self._backup_purge_since(prefix) if prefix else ""
+        what = (
+            "delete --use-server-modtime"
+            f" --max-age {shlex.quote(since)} pitr:" if since else "purge pitr:"
+        )
         # An ephemeral rclone with the agent's environment. rclone's 3 is
         # "directory not found": nothing was ever stored.
         purge = (
             f"rc=0; docker run --rm --env-file {ENV_FILE} {RCLONE_IMAGE}"
-            " purge pitr: || rc=$?"
+            f" {what} || rc=$?"
         )
         return steps + [
             (
@@ -732,6 +775,24 @@ class CloudInstance(models.Model):
                 {"stop_on_failure": True},
             ),
         ]
+
+    def _teardown_purge_prefixes(self, keep_in_panel):
+        """The recovery prefix the delete's purge empties, when it runs one.
+
+        The prefix its server was last given, or the one computed now
+        (``_pitr_purge_target``): what the host's ``pitr.env`` names.
+
+        :param bool keep_in_panel: the record stays as an archived draft
+        :return: core's prefixes and the recovery one
+        :rtype: list
+        """
+        prefixes = list(super()._teardown_purge_prefixes(keep_in_panel))
+        if keep_in_panel or not self._pitr_had_archive():
+            return prefixes
+        _backend, prefix = self._pitr_purge_target()
+        if prefix:
+            prefixes.append(prefix)
+        return prefixes
 
     def _teardown_pre_steps_left(self, results, job):
         """Alert when the delete left the recovery prefix in the bucket.
