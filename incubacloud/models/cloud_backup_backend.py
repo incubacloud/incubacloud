@@ -6,7 +6,9 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from odoo import _, api, fields, models
+from odoo.exceptions import ValidationError
 
+from ._backup_retention import valid_backup_retention
 from .cloud_instance import _GLOBAL_BACKUP_PARAM
 from .encrypted_char import EncryptedChar
 from .password_utils import generate_password
@@ -85,6 +87,23 @@ class CloudBackupBackend(models.Model):
         default="3M",
         help="How long to keep old backups (e.g. 3M = 3 months, 30D = 30 days, 1Y = 1 year).",
     )
+
+    @api.constrains("backup_retention")
+    def _check_backup_retention(self):
+        """Refuse a retention the backup container must not run.
+
+        It reaches a shell inside the container as duplicity's
+        ``remove-older-than`` argument (``_backup_retention``): a count
+        of at least one and ``D``, ``W``, ``M`` or ``Y``, upper case.
+
+        :raises ValidationError: for any other value, empty included
+        """
+        for backend in self:
+            if not valid_backup_retention(backend.backup_retention):
+                raise ValidationError(_(
+                    "The retention period must be a number followed by D, "
+                    "W, M or Y in capitals (e.g. 30D, 3M, 1Y)."
+                ))
 
     # ── Advanced ────────────────────────────────────────────────────────────
 

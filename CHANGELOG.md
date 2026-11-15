@@ -31,7 +31,10 @@ tokens saved without a chat ID and the webhook secrets left without a
 URL, and `incubacloud_pitr` 1.0.16's end-migrate records where each
 instance archives and dates the purge of the archives switched off
 before it from the update, so each gets the whole backup window from
-then. The rest is the panel's assets and the Spanish catalogue.
+then. 1.0.229's `post-backup-retention` writes each backup destination's
+retention in the form it must now have (spaces gone, the unit in
+capitals, an empty one as `3M`) and names in the log any it leaves
+invalid. The rest is the panel's assets and the Spanish catalogue.
 
 ### Added
 
@@ -268,8 +271,22 @@ then. The rest is the panel's assets and the Spanish catalogue.
   retention now rides the compose override, which wins over the template,
   on every deploy and rebuild while the cron owns it. With «Nobody» or
   «Bucket lifecycle» owning the retention, `backup.env` no longer carries
-  a `JOB_800_WHAT` line. Instances already deployed take it on their next
-  rebuild.
+  a `JOB_800_WHAT` line. The deploy's and the rebuild's log say which
+  retention applies. Instances already deployed take it on their next
+  rebuild, and the first weekly cleanup after it deletes the backup sets
+  older than the retention, which until then were kept for three months.
+  A retention other than `3M` is part of the configuration snapshot, as
+  `backup_retention`, so such an instance shows changes not deployed
+  until it is rebuilt, and so does one whose destination's retention
+  changes later; every other instance hashes as before.
+
+- **A backup retention must be a count followed by D, W, M or Y.** It
+  reaches a shell in the backup container, and only the form checked it:
+  `1m` is one minute to duplicity, which deletes every chain but the
+  active one, and anything after a `;` runs as a command. A backup
+  destination refuses any other value (`^[1-9][0-9]*[DWMY]$`, capitals),
+  and a deploy that finds one stored writes no cleanup for it, leaves the
+  template's `3M` and says so in its log, without failing.
 
 - **A backup destination's, a project's and a host's pages after the form
   standard's review (#123).** On a backup destination, saving confirms the
