@@ -40,7 +40,7 @@ import logging
 import math
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timezone
+from datetime import datetime, timezone
 from operator import itemgetter
 
 import requests
@@ -798,6 +798,53 @@ PANELS = {
     ),
 }
 
+#: The panels of an instance's Metrics tab its summary by the hour reads
+#: (``read_metrics`` of the MCP), the very entries of ``PANELS["instance"]``.
+SUMMARY_PANELS = ("latency", "requests", "cpu", "memory")
+
+#: The database collector's series of one instance, on its server.
+_PG_INSTANCE = _HOST_SELECTOR + ', instance_id="%(instance_id)d"'
+
+#: An instance's database connections over time, which the tab reads only
+#: on demand from the server: the summary's one panel of its own. Kept
+#: while the collector's file is fresh, as the server's table reads them.
+_CONNECTIONS_PANEL = {
+    "key": "connections", "kind": "series", "unit": None,
+    "digits": 0, "legend": None,
+    "needs": "host",
+    "queries": (
+        _q("connections", "max by (host_id) (ic_pg_connections{"
+           + _PG_INSTANCE + "})" + _PG_FRESH, peak=True),
+        _q("max_connections", "max by (host_id) (ic_pg_max_connections{"
+           + _PG_INSTANCE + "})" + _PG_FRESH),
+    ),
+}
+
+PANELS["instance_summary"] = tuple(
+    panel for panel in PANELS["instance"] if panel["key"] in SUMMARY_PANELS
+) + (_CONNECTIONS_PANEL,)
+
+#: The widest window of a summary, in hours: the tab's widest range, 7 days.
+SUMMARY_MAX_HOURS = CHART_RANGES["7d"] // 3600
+
+#: A metric's highest point marks its hour as a peak when it is at least
+#: this many times the window's average: below it, the line looks flat on
+#: the tab's chart (15-nov-2026).
+PEAK_FACTOR = 2
+
+#: What the summary gives, in its order: the name, the panel and role it
+#: reads (summed over the instance's services at each moment), the role of
+#: its limit, and whether the limit is per service (``True``) or one.
+_SUMMARY_METRICS = (
+    ("cpu_percent", "cpu", "use", "limit", True),
+    ("memory_bytes", "memory", "use", "limit", True),
+    ("requests_per_s", "requests", "requests", None, False),
+    ("errors_5xx_per_s", "requests", "5xx", None, False),
+    ("p50_s", "latency", "p50", None, False),
+    ("p95_s", "latency", "p95", None, False),
+    ("db_connections", "connections", "connections", "max_connections", False),
+)
+
 
 def chart_window(range_key=None, start=None, end=None, now=None):
     """Return ``(start, end, step)`` in unix seconds for a chart request.
@@ -1327,6 +1374,98 @@ def board_failure(env, board, user, token):
     return None
 
 
+def _iso_ts(ts):
+    """Return unix seconds as ISO 8601 in UTC, ``"2026-11-14T09:00:00+00:00"``."""
+    return datetime.fromtimestamp(ts, timezone.utc).isoformat()
+
+
+def _rounded(value, digits):
+    """Round *value* to the panel's *digits*; an integer when it has none."""
+    return int(round(value)) if digits == 0 else round(value, digits)
+
+
+def summarize_hours(board):
+    """Turn an ``instance_summary`` board into its summary by the hour.
+
+    Each metric of ``_SUMMARY_METRICS`` is the sum of its role's lines at
+    each moment (CPU and memory add up the instance's services). An hour
+    (UTC) gives each metric's mean and highest point of the board's points
+    in it; an hour with no point is left out, and the first and last may
+    be partial. ``peaks`` gives each metric's highest point in the window
+    above zero, how many times the window's average it is and, with a
+    limit that covers every line of it, its share of that limit; its hour
+    lists it in ``peak`` when it is ``PEAK_FACTOR`` times the average.
+
+    :param dict board: ``run_board``'s answer, after ``board_failure``:
+        a panel that failed carries its ``error`` in words.
+    :returns: ``{"hours": [{"hour", <metric>: {"avg", "max"}, "peak"?}],
+        "peaks": {metric: {"at", "hour", "value", "times_average",
+        "share_of_limit"?}}, "limits": {metric: {service: value} |
+        value}, "unanswered": {metric: error}}``.
+    :rtype: dict
+    """
+    digits_of = {p["key"]: p["digits"] for p in PANELS["instance_summary"]}
+    panels = board["panels"]
+    hours, peaks, limits, unanswered = {}, {}, {}, {}
+    for metric, key, role, limit_role, by_service in _SUMMARY_METRICS:
+        panel = panels.get(key) or {}
+        if panel.get("error"):
+            unanswered[metric] = panel["error"]
+            continue
+        digits = digits_of[key]
+        totals, names, caps = {}, set(), {}
+        for series in panel.get("series") or []:
+            if series["role"] == role:
+                names.add(series["name"])
+                for ts, value in series["points"]:
+                    totals[ts] = totals.get(ts, 0) + value
+            elif limit_role and series["role"] == limit_role and series["points"]:
+                caps[series["name"]] = series["points"][-1][1]
+        if caps:
+            limits[metric] = (
+                caps if by_service else _rounded(sum(caps.values()), digits)
+            )
+        for ts, value in totals.items():
+            hours.setdefault(ts - ts % 3600, {}).setdefault(metric, []).append(value)
+        if not totals:
+            continue
+        top_ts = min(totals, key=lambda ts: (-totals[ts], ts))
+        top = totals[top_ts]
+        if top <= 0:
+            continue
+        mean = sum(totals.values()) / len(totals)
+        peak = {
+            "at": _iso_ts(top_ts),
+            "hour": _iso_ts(top_ts - top_ts % 3600),
+            "value": _rounded(top, digits),
+            "times_average": round(top / mean, 1),
+        }
+        covered = caps and (not by_service or names <= set(caps))
+        cap = sum(caps.values()) if covered else 0
+        if cap > 0:
+            peak["share_of_limit"] = round(100 * top / cap, 1)
+        peaks[metric] = peak
+    rows = []
+    for hour in sorted(hours):
+        stamp = _iso_ts(hour)
+        row = {"hour": stamp}
+        for metric, key, *_rest in _SUMMARY_METRICS:
+            values = hours[hour].get(metric)
+            if values:
+                row[metric] = {
+                    "avg": _rounded(sum(values) / len(values), digits_of[key]),
+                    "max": _rounded(max(values), digits_of[key]),
+                }
+        marked = [
+            metric for metric, peak in peaks.items()
+            if peak["hour"] == stamp and peak["times_average"] >= PEAK_FACTOR
+        ]
+        if marked:
+            row["peak"] = marked
+        rows.append(row)
+    return {"hours": rows, "peaks": peaks, "limits": limits, "unanswered": unanswered}
+
+
 class CloudInstance(models.Model):
     _inherit = "cloud.instance"
 
@@ -1395,6 +1534,55 @@ class CloudInstance(models.Model):
         )
         board["silence"] = self._metrics_silence()
         return {"ok": True, **board}
+
+    def _metrics_summary(self, hours=24):
+        """Read this instance's metrics by the hour over the last *hours*.
+
+        The panels of ``PANELS["instance_summary"]``, read from the
+        central as the Metrics tab's board is (``run_board``), and summed
+        up by ``summarize_hours``.
+
+        :param int hours: the window up to now, 1 to ``SUMMARY_MAX_HOURS``;
+            outside it, the nearest of the two.
+        :returns: ``{"ok": True, "window_hours", "start", "end", "step",
+            "hours", "peaks", "limits", "unanswered", "silence",
+            "timing"}``, or the board's ``{"ok": False, "reason",
+            "error"}`` (``disabled``, ``unconfigured``, ``credential``,
+            ``central``, ``busy``).
+        :rtype: dict
+        :raises UserError: when *hours* is not a number.
+        """
+        self.ensure_one()
+        try:
+            hours = min(max(int(hours), 1), SUMMARY_MAX_HOURS)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise UserError(_("The chart window is not valid.")) from exc
+        source = metrics_source(self.env)
+        if not source["ok"]:
+            return source
+        host = self.sudo().host_id
+        values = {"instance_id": self.id, "host_id": host.id or 0}
+        available = {"instance"} | ({"host"} if host else set())
+        end = int(time.time())
+        board = run_board(
+            "instance_summary", values, available,
+            source["base"], source["user"], source["token"],
+            start=end - hours * 3600, end=end,
+            verify=source.get("verify", True),
+        )
+        failure = board_failure(self.env, board, source["user"], source["token"])
+        if failure:
+            return failure
+        return {
+            "ok": True,
+            "window_hours": hours,
+            "start": _iso_ts(board["start"]),
+            "end": _iso_ts(board["end"]),
+            "step": board["step"],
+            **summarize_hours(board),
+            "silence": self._metrics_silence(),
+            "timing": board["timing"],
+        }
 
     def _metrics_failing_since(self):
         """Return since when the central has failed (see ``failing_since``).
