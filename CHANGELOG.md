@@ -97,6 +97,35 @@ one as `3M`) and names in the log any it leaves invalid.
 
 ### Fixed
 
+- **A Full Setup no longer hangs installing the host tools on Ubuntu.**
+  After every apt run, needrestart restarts the services still on files
+  that run replaced, and one of them can be cloud-init's hotplug hook
+  (`cloud-init-hotplugd`, on Hetzner's Ubuntu 22.04 and 24.04 images):
+  an interface Docker creates starts it when its MAC begins with `86:`,
+  as Hetzner's private networks' do, and it spends seconds to minutes
+  asking the metadata service. The unit is a oneshot fed by a FIFO, so
+  restarted by hand it waits on the FIFO for good, and the apt run with
+  it: a Full Setup on Ubuntu 24.04 stopped at «Install host tools» until
+  its hour ran out. Every apt run of the Full Setup, Docker's installer,
+  the hardening, the observability agents' install and the log rotation
+  of instances and proxy now has needrestart only list what needs
+  restarting (`NEEDRESTART_MODE=l`), and the Full Setup tells needrestart
+  to leave that unit alone in any other apt run on the host, the
+  unattended upgrades included
+  (`/etc/needrestart/conf.d/50-incubacloud-hotplug.conf`, only where
+  needrestart is installed). cloud-init's hotplug itself is untouched.
+  needrestart stops every apt run on a drop-in it cannot parse, so the
+  text is read the way needrestart reads it before it replaces the file,
+  and one that does not read is never left in place. The server's
+  restart check (`host_reboot.sh check`, every 30 minutes on every
+  server the panel reaches) writes the same drop-in, so the servers set
+  up before it get it within half an hour of the update, with no new
+  Full Setup and no new hardening. The hardening's own apt task is left
+  as it was, with the recipe's fingerprint, so no hardened server shows
+  its hardening as outdated: it installs nothing on a hardened server,
+  and the drop-in covers it. A host stuck there now comes back with
+  `systemctl kill cloud-init-hotplugd.service`.
+
 - **A backup retention other than three months applies.** With the
   duplicity cron owning the retention, the doodba template renders
   `JOB_800_WHAT` with `3M` in the `backup` service's `environment:`, and
