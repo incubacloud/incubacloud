@@ -123,7 +123,7 @@
     # Measured on 2.9.8 with a week of lines: the same board, 6 reads,
     # 0.1-0.2 s, no refusal.
     ic_loki_split_queries_by_interval: "24h"
-    ic_loki_max_outstanding_per_tenant: 2048
+    ic_loki_max_outstanding_per_account: 2048
     # Bound to the Docker bridge gateway, NOT to 127.0.0.1.
     #
     # Everything that consumes this stack is itself a container: the host
@@ -235,7 +235,7 @@
                 priority: 1
                 period: {{ ic_security_log_retention_days }}d
           query_scheduler:
-            max_outstanding_requests_per_tenant: {{ ic_loki_max_outstanding_per_tenant | int }}
+            max_outstanding_requests_per_tenant: {{ ic_loki_max_outstanding_per_account | int }}
           compactor:
             working_directory: /loki/compactor
             retention_enabled: true

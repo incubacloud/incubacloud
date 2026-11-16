@@ -316,7 +316,7 @@ series a query (5000, provisional until step M of plan #84 measures the
 top source addresses under a distributed attack; Loki's default, 500,
 breaks them). It splits a query by day and queues 2 048 subqueries per
 account (`ic_loki_split_queries_by_interval`,
-`ic_loki_max_outstanding_per_tenant`, 15-nov-2026): as it comes (2.9) it
+`ic_loki_max_outstanding_per_account`, 15-nov-2026): as it comes (2.9) it
 splits every 30 minutes and queues 100, so a week of a server's sign-ins
 was 336 subqueries and answered 429 even alone, and the Security view's
 7-day tables said the central was busy. A host's credential reaches only
