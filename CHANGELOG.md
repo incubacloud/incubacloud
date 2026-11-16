@@ -107,8 +107,8 @@ one as `3M`) and names in the log any it leaves invalid.
   restarted by hand it waits on the FIFO for good, and the apt run with
   it: a Full Setup on Ubuntu 24.04 stopped at «Install host tools» until
   its hour ran out. Every apt run of the Full Setup, Docker's installer,
-  the hardening, the observability agents' install and the log rotation
-  of instances and proxy now has needrestart only list what needs
+  the observability agents' install and the log rotation of instances
+  and proxy now has needrestart only list what needs
   restarting (`NEEDRESTART_MODE=l`), and the Full Setup tells needrestart
   to leave that unit alone in any other apt run on the host, the
   unattended upgrades included
