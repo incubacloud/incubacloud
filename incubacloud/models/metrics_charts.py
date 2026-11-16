@@ -1485,7 +1485,7 @@ def summarize_hours(board):
                 for name, use in own.items() if caps.get(name, 0) > 0
             ]
             if shares:
-                share, service = max(shares, key=lambda item: (item[0], item[1]))
+                share, service = max(shares, key=itemgetter(0, 1))
                 peak["share_of_limit"] = round(100 * share, 1)
                 peak["limit_service"] = service
         elif caps and sum(caps.values()) > 0:
