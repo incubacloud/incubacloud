@@ -69,7 +69,10 @@ Go to `/cloud/hosts`. Click **Add Host**.
 - **Port** — the SSH port, usually `22`.
 - **User** — `root` is fine; a user with passwordless `sudo` is also fine.
 - **Login type** — **SSH Key** (recommended) or **Password**. Hardening
-  needs a key: it copies the user's authorized keys to the account it creates.
+  needs a key. It adds root's authorized keys to the operator user's, keeping
+  the keys that user already has, and leaves out a key of root's with a forced
+  command (`command=`), such as the «Please login as the user …» line some
+  cloud images put on root.
 - **Wildcard domain** — the domain your instances get their names under
   (`example.com` or `*.example.com`): each instance answers at a name such as
   `myproject-prod.example.com`. Point a wildcard DNS record (`*.example.com`)
@@ -223,7 +226,9 @@ Re-running it is safe: every step checks the host before it changes anything.
 ## Deleting the host from the panel
 
 Deleting a host with no instances left stops the panel's agents and proxy on
-it, and then takes the panel's own access off the server:
+it, and then takes the panel's own access off the server. It does so on any
+server the panel has logged in to and can still log in to, also one whose Full
+Setup never finished, as after a hardening whose Full Setup failed:
 
 - the panel's key leaves the `authorized_keys` of every user on the server
   (`root`, the user the panel connects as, the operator user); your keys
@@ -239,7 +244,9 @@ it, and then takes the panel's own access off the server:
 
 Root's account, your other users and keys, and the SSH, firewall and update
 settings that hardening applied stay as they are. The job's log lists what was
-removed and what was kept.
+removed and what was kept. A host whose Full Setup never finished leaves the
+panel even when the server cannot be reached; the job's log then says what to
+remove by hand.
 
 ## Security logs
 

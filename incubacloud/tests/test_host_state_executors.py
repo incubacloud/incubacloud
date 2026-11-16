@@ -35,6 +35,10 @@ from odoo.addons.incubacloud.models.host_probe_executor import (
 from odoo.addons.incubacloud.models.docker_prune_executor import (
     DockerPruneExecutor,
 )
+from odoo.addons.incubacloud.models.abstract_executor import (
+    CANCELLED_WHILE_RUNNING,
+    JobCancelled,
+)
 from odoo.addons.incubacloud.models.delete_host_executor import (
     DeleteHostExecutor,
 )
@@ -431,6 +435,35 @@ class TestDeleteHostArchive(HostStateCase):
         ex = self._executor(DeleteHostExecutor, host=host)
         _run(ex.on_success({}))
         self.assertFalse(host.active)
+
+    def test_a_failed_teardown_keeps_a_host_with_its_proxy(self):
+        """It can run again: the proxy and the agents are still there."""
+        host = self._host(traefik_deployed=True)
+        ex = self._executor(DeleteHostExecutor, host=host)
+        _run(ex.on_failure({}, ["unreachable"]))
+        self.assertTrue(host.active)
+
+    def test_a_failed_teardown_archives_a_host_without_a_proxy(self):
+        """Queued only because the panel had reached the server, which may
+        be gone: before, such a host was archived with no teardown, and it
+        must still leave the panel, saying what may be left there."""
+        host = self._host()
+        ex = self._executor(DeleteHostExecutor, host=host)
+        _run(ex.on_failure({}, ["unreachable"]))
+        self.assertFalse(host.active)
+        said = " ".join(line for line, _src in ex._log_buffer)
+        self.assertIn("✗ unreachable", said)
+        self.assertIn("archived all the same", said)
+        self.assertIn("/etc/sudoers.d/incubacloud-system", said)
+
+    def test_a_stopped_teardown_keeps_the_host(self):
+        """A person who stops the deletion does not get it all the same."""
+        host = self._host()
+        ex = self._executor(DeleteHostExecutor, host=host)
+        _run(ex.on_cancelled_running({}, JobCancelled(CANCELLED_WHILE_RUNNING)))
+        self.assertTrue(host.active)
+        said = " ".join(line for line, _src in ex._log_buffer)
+        self.assertIn("The host is kept.", said)
 
 
 _TEARDOWN = (

@@ -911,6 +911,8 @@ class CrudMixin:
             'last_probed': host.last_probed,
             'instance_count': len(host.instance_ids),
             'traefik_deployed': host.traefik_deployed,
+            # Whether deleting it runs the teardown on the server.
+            'teardown_reaches_server': host._teardown_reaches_server(),
             'hardened': host.hardened,
             'hardened_at': (
                 host.hardened_at.isoformat() if host.hardened_at else ''
@@ -1059,8 +1061,12 @@ class CrudMixin:
         if host == Settings._live_central_host():
             # Before the teardown, which removes the host's proxy first.
             return {'ok': False, 'error': Settings._central_host_refusal(host)}
-        if not host.traefik_deployed:
-            # Nothing was deployed remotely — no SSH cleanup needed.
+        if not host.traefik_deployed and not host._teardown_reaches_server():
+            # The panel never reached the server, or cannot log in to it
+            # any more: there is nothing it could take off it. A server it
+            # reached is torn down below even with no proxy deployed: its
+            # key, and the operator account and sudo grant of a hardening,
+            # may be there (a Full Setup that failed after the hardening).
             # Two sub-cases by job history:
             #
             #   * The host has zero ``cloud.job`` rows referencing it
