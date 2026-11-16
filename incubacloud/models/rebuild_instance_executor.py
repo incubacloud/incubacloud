@@ -785,10 +785,17 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         ``on_abort`` would mark it in error. The job log says what
         happened, and what an attempt that got further left on the host
         (``_warn_unapplied``) — a run whose worker died, closed by the
-        reconciliation; the next probe says how the instance is.
+        reconciliation; the next probe says how the instance is. The
+        error goes after it, as the log's last line, and a preview's
+        request hears of the failure (``_preview_rebuild_failed``), as
+        after ``on_failure``.
         """
-        self._sys(f"✗ {type(exc).__name__}: {exc}")
+        # The error last: the log's last line is what the job's card shows.
         self._warn_unapplied(None)
+        self._sys(f"✗ {type(exc).__name__}: {exc}")
+        inst = self._inst()
+        if inst:
+            inst._preview_rebuild_failed(self.job)
 
     async def on_cancelled_running(self, results, exc):
         """A rebuild stopped by hand leaves the instance's status alone.
@@ -957,3 +964,5 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         inst = self._inst()
         if inst and self._failure_leaves_error(results):
             inst.write({"status": "error"})
+        if inst:
+            inst._preview_rebuild_failed(self.job)

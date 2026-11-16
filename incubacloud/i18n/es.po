@@ -23388,6 +23388,21 @@ msgid "When the step at next_index started on the server."
 msgstr "Cuándo empezó en el servidor el paso de next_index."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pr_rebuild_failed_job_id
+msgid "Preview Rebuild Failed"
+msgstr "Reconstrucción fallida de la vista previa"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_rebuild_failed_job_id
+msgid ""
+"The last rebuild of a preview, when it failed: its comment or note says so, "
+"with a link to its log. Cleared when a rebuild of it succeeds."
+msgstr ""
+"La última reconstrucción de una vista previa, cuando falló: su comentario o "
+"nota lo dice, con un enlace a su registro. Se vacía cuando una "
+"reconstrucción de la vista previa termina bien."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pr_update_cut_off
 msgid "Preview Update Cut Off"
 msgstr "Actualización de la vista previa cortada"
