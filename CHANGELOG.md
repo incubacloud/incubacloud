@@ -171,8 +171,8 @@ gestionado de copias* on a running panel too.
   for a new one, plus the 5 GiB reserve) against what is free on Docker's
   disk, after removing the dangling images and the build cache when short.
   A refused deploy fails as any other (the instance in error, a move undone).
-  Every deploy that builds passes there, a tenant's and a warm pool's
-  included; a claim of a warm instance builds nothing and does not.
+  Every deploy that builds passes there, whatever the instance is for; a
+  claim of a warm instance builds nothing and does not.
 
 - **A Full Setup no longer hangs installing the host tools on Ubuntu.**
   After every apt run, needrestart restarts the services still on files
