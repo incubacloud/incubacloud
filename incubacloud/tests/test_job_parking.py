@@ -275,9 +275,11 @@ class TestParkAndResume(_ParkingCase):
         self.assertEqual(second._job_dir_path, first._job_dir_path)
         self.assertEqual(second.closed[0], "success")
         self.assertEqual(list(second.closed[1]), ["First", "Apart", "Last"])
+        apart = dict(second.closed[1]["Apart"])
+        # What the step took in its attempt (``seconds``) is not compared.
+        apart.pop("seconds", None)
         self.assertEqual(
-            second.closed[1]["Apart"],
-            {"stdout": "line-1\nline-2\nline-3", "exit_status": 0},
+            apart, {"stdout": "line-1\nline-2\nline-3", "exit_status": 0},
         )
         self.assertEqual(self._runs(), ["First", "Apart", "Last"])
         self._assert_lines_once(

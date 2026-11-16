@@ -516,6 +516,8 @@ class TestTheCutIsMeasured(_MoveCase):
     def test_the_sources_stop_stamps_the_start_of_the_cut(self):
         self.registry_enter_test_mode()
         self.inst.move_cut_parts = {"started": 1.0, "jobs": {"1": {"end": 2.0}}}
+        # In the database, where the stop's own cursor reads and writes.
+        self.env.flush_all()
         stop = self._job("stop_instance", self.source, payload={
             "services": ["odoo"], "move_cut": True,
         })
@@ -659,6 +661,8 @@ class TestTheCutIsBrokenDown(_MoveCase):
             "move_cut_started_at": fields.Datetime.now(),
             "move_cut_parts": {"started": self.started, "jobs": {}},
         })
+        # In the database, where the note's own cursor reads them.
+        self.env.flush_all()
         self.executor = self._executor(self.job)
         self.marks = {
             "start": self.started + 1, "connected": self.started + 2,
@@ -699,6 +703,7 @@ class TestTheCutIsBrokenDown(_MoveCase):
 
     def test_nothing_is_noted_before_the_cut(self):
         self.inst.move_cut_started_at = False
+        self.env.flush_all()
         self.executor._note_move_cut_part()
         self.assertEqual(self._noted(), {})
 
