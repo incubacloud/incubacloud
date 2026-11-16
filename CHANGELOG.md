@@ -20,17 +20,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   restarted by hand it waits on the FIFO for good, and the apt run with
   it: a Full Setup on Ubuntu 24.04 stopped at «Install host tools» until
   its hour ran out. Every apt run of the Full Setup, Docker's installer,
-  the hardening, the observability agents' install and the log rotation
-  of instances and proxy now has needrestart only list what needs
+  the observability agents' install and the log rotation of instances
+  and proxy now has needrestart only list what needs
   restarting (`NEEDRESTART_MODE=l`), and the Full Setup tells needrestart
   to leave that unit alone in any other apt run on the host, the
   unattended upgrades included
   (`/etc/needrestart/conf.d/50-incubacloud-hotplug.conf`, only where
   needrestart is installed). cloud-init's hotplug itself is untouched.
-  The hardening recipe changes, so hardened servers show their hardening
-  as outdated until it is applied again; a server already set up gets
-  the needrestart setting with its next Full Setup. A host stuck there
-  now comes back with `systemctl kill cloud-init-hotplugd.service`.
+  needrestart stops every apt run on a drop-in it cannot parse, so the
+  text is read the way needrestart reads it before it replaces the file,
+  and one that does not read is never left in place. A server set up
+  before it gets the drop-in with its next Full Setup; until then the
+  unattended upgrades there can still restart the unit. The hardening's
+  own apt task is left
+  as it was, with the recipe's fingerprint, so no hardened server shows
+  its hardening as outdated: it installs nothing on a hardened server,
+  and the drop-in covers it. A host stuck there now comes back with
+  `systemctl kill cloud-init-hotplugd.service`.
 
 - **«In use» on Sessions and access means the session still works (#48).**
   The page called a session in use while Odoo's trace had it unrevoked and

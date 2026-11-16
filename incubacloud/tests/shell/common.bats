@@ -497,3 +497,88 @@ STUB
         [ -z "$output" ]
     done
 }
+
+# needrestart's drop-ins, read the way needrestart.conf reads them: the
+# unit's restart is turned off by a key that matches it.
+_needrestart_reads() {
+    # shellcheck disable=SC2016
+    command perl -e '
+        our %nrconf;
+        my $fn = shift;
+        eval do { local (@ARGV, $/) = $fn; <> };
+        die "Error parsing $fn: $@" if $@;
+        my ($re) = grep { "cloud-init-hotplugd.service" =~ $_ }
+            keys %{ $nrconf{override_rc} || {} };
+        exit(defined $re && !$nrconf{override_rc}{$re} ? 0 : 1);
+    ' "$1"
+}
+
+# Restarted by hand, cloud-init's hotplug hook (a oneshot unit fed by a
+# FIFO) waits on the FIFO for good, and the apt run with it (QA,
+# 15-nov-2026).
+@test "ic_needrestart_keep_hotplug writes a drop-in needrestart reads, and nothing on stdout" {
+    export IC_NEEDRESTART_CONF_DIR="$TMP/needrestart"
+    mkdir -p "$IC_NEEDRESTART_CONF_DIR"
+    sudo() { [ "$1" = -n ] && shift; "$@"; }
+    run ic_needrestart_keep_hotplug
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    conf="$IC_NEEDRESTART_CONF_DIR/50-incubacloud-hotplug.conf"
+    grep -qxF '$nrconf{override_rc}{qr(^cloud-init-hotplugd)} = 0;' "$conf"
+    [ "$(stat -c %a "$conf")" = 644 ]
+    _needrestart_reads "$conf"
+    [ "$(ls -A "$IC_NEEDRESTART_CONF_DIR")" = 50-incubacloud-hotplug.conf ]
+}
+
+@test "ic_needrestart_keep_hotplug leaves a drop-in saying the same as it is, and replaces another" {
+    export IC_NEEDRESTART_CONF_DIR="$TMP/needrestart"
+    mkdir -p "$IC_NEEDRESTART_CONF_DIR"
+    sudo() { [ "$1" = -n ] && shift; "$@"; }
+    conf="$IC_NEEDRESTART_CONF_DIR/50-incubacloud-hotplug.conf"
+    ic_needrestart_keep_hotplug
+    first="$(stat -c %i "$conf")"
+    ic_needrestart_keep_hotplug
+    [ "$(stat -c %i "$conf")" = "$first" ]
+    printf '%s\n' '$nrconf{override_rc}{qr(^cloud-init-hotplugd)} = 1;' > "$conf"
+    ic_needrestart_keep_hotplug
+    _needrestart_reads "$conf"
+}
+
+@test "ic_needrestart_keep_hotplug never leaves a drop-in needrestart would not read" {
+    export IC_NEEDRESTART_CONF_DIR="$TMP/needrestart"
+    mkdir -p "$IC_NEEDRESTART_CONF_DIR"
+    sudo() { [ "$1" = -n ] && shift; "$@"; }
+    # The check refuses the text, as it would a drop-in with a syntax error.
+    perl() { return 1; }
+    run ic_needrestart_keep_hotplug
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"WARNING: needrestart: the hotplug drop-in did not read"* ]]
+    [ -z "$(ls -A "$IC_NEEDRESTART_CONF_DIR")" ]
+    # One already there is left as it was.
+    printf 'kept\n' > "$IC_NEEDRESTART_CONF_DIR/50-incubacloud-hotplug.conf"
+    run ic_needrestart_keep_hotplug
+    [ "$status" -eq 1 ]
+    [ "$(cat "$IC_NEEDRESTART_CONF_DIR/50-incubacloud-hotplug.conf")" = kept ]
+    [ "$(ls -A "$IC_NEEDRESTART_CONF_DIR")" = 50-incubacloud-hotplug.conf ]
+}
+
+@test "ic_needrestart_keep_hotplug leaves a host without needrestart alone" {
+    export IC_NEEDRESTART_CONF_DIR="$TMP/needrestart"
+    sudo() { [ "$1" = -n ] && shift; "$@"; }
+    run ic_needrestart_keep_hotplug
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ ! -e "$IC_NEEDRESTART_CONF_DIR" ]
+}
+
+@test "ic_needrestart_keep_hotplug: a drop-in it cannot write is warned of and left out" {
+    export IC_NEEDRESTART_CONF_DIR="$TMP/needrestart"
+    [ "$(id -u)" -ne 0 ] || skip "root writes without sudo"
+    mkdir -p "$IC_NEEDRESTART_CONF_DIR"
+    # sudo -n with no rule: everything but the directory's test fails.
+    sudo() { [ "$2" = test ] && { shift; "$@"; return; }; return 1; }
+    run ic_needrestart_keep_hotplug
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"WARNING: needrestart: could not write"* ]]
+    [ -z "$(ls -A "$IC_NEEDRESTART_CONF_DIR")" ]
+}
