@@ -489,8 +489,7 @@ class TestDeleteHostTakesThePanelsAccess(HostStateCase):
                 .export_private_key("openssh"),
             ).decode(),
         )
-        ex = self._executor(DeleteHostExecutor, host=host)
-        extra = ex.get_extra_vars()
+        extra = self._executor(DeleteHostExecutor, host=host).get_extra_vars()
         self.assertEqual(extra["ic_panel_key"], host._ssh_public_key())
         self.assertTrue(extra["ic_panel_key"].startswith("ssh-ed25519 AAAA"))
         self.assertEqual(extra["ic_operator_user"], DEFAULT_HARDENED_USER)
