@@ -544,6 +544,15 @@ columns: Odoo keeps what each holds as its English text.
   on every server. The installs, the reconciliation's revision pass and
   the read credential's rotation decide by the same check.
 
+### Fixed
+
+- **The agents install on a new server again (#61).** With the central on
+  its single name, the install wrote the central's authority before it
+  created its directory, and failed on every server that did not have it
+  yet with «Destination directory ... does not exist»; servers installed
+  before were not affected. The directories are created first, and a test
+  fails when a play writes into one of its directories before creating it.
+
 ### Documentation
 
 - The user guide gains *Security logs* (what leaves a server, the failed
