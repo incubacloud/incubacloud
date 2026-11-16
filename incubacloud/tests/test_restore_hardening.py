@@ -69,6 +69,7 @@ from odoo.addons.incubacloud.restore_space import (
     room_needed,
     room_refusal,
 )
+from odoo.addons.incubacloud.tests._transport import take_the_tar
 
 #: A presigned link: its query downloads the archive by itself.
 SIGNATURE = "deadbeefcafe0123456789abcdef0123456789abcdef0123456789abcdef0123"
@@ -158,6 +159,7 @@ def _transport(free=100 * GIB, size=None, others=None, docker=None):
     :rtype: MagicMock
     """
     transport = MagicMock(spec=SSHTransport)
+    take_the_tar(transport)
     transport.run.side_effect = _host_answers(free, size, others, docker)
     return transport
 
@@ -1542,6 +1544,7 @@ class TestADoorWritesNoMoreThanTheDisksTake(RestoreFixture, TransactionCase):
             self._job("watch_restore_uploads", instance=False), self.host,
         )
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.run.return_value = CommandResult(stdout, 0)
         asyncio.run(executor.before_execute(transport))
         command = transport.run.await_args.args[0]

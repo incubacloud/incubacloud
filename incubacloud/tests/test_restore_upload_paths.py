@@ -48,6 +48,7 @@ from odoo.addons.incubacloud.restore_staging import (
     path_for_upload,
     upload_id_of,
 )
+from odoo.addons.incubacloud.tests._transport import take_the_tar
 from odoo.addons.incubacloud.tests.test_executor_durable_writes import (
     JobEndAssertions,
 )
@@ -744,6 +745,7 @@ class TestTheConsumedGrantOutlivesTheJob(JobEndAssertions, TransactionCase):
         """Both the closure and the queued revocation survive the job's end."""
         executor = RestoreInstanceExecutor(self.job, self.host)
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         # The archive taken is the one that was checked.
         transport.run.side_effect = lambda command, *_a, **_kw: CommandResult(
             f"{'ab' * 32}  -\n" if command.startswith("sha256sum ")
@@ -857,6 +859,7 @@ class TestTheJobSecretIsTheServers(TransactionCase):
             job.with_user(self.developer), self.host,
         )
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.run.return_value = CommandResult(FREE, 0)
         asyncio.run(executor.before_execute(transport))
         transport.upload_text_files.assert_awaited_once_with(
@@ -947,6 +950,7 @@ class TestADownloadFromALinkRunsNothingItCarries(TransactionCase):
     def _staged(self):
         """Run ``before_execute``; return what it staged owner-only."""
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.run.return_value = CommandResult(FREE, 0)
         asyncio.run(self.executor.before_execute(transport))
         private = {}
@@ -1112,6 +1116,7 @@ class TestALinkIsCheckedAgainWhereItIsFetched(TransactionCase):
             with self.subTest(url=url):
                 executor = self._queued(url)
                 transport = MagicMock(spec=SSHTransport)
+                take_the_tar(transport)
                 with self.assertRaisesRegex(ValueError, "link"):
                     asyncio.run(executor.before_execute(transport))
                 self.assertFalse(transport.method_calls)
@@ -1122,6 +1127,7 @@ class TestALinkIsCheckedAgainWhereItIsFetched(TransactionCase):
         """The address curl dials is the one resolved here."""
         executor = self._queued(PUBLIC_LINK, resolve="93.184.216.34:443:10.0.0.1")
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.run.return_value = CommandResult(FREE, 0)
         asyncio.run(executor.before_execute(transport))
         _label, command, _opts = executor._download_command(
@@ -1179,6 +1185,7 @@ class TestALinkIsCheckedAgainWhereItIsFetched(TransactionCase):
             with self.subTest(url=url):
                 executor = self._queued(url)
                 transport = MagicMock(spec=SSHTransport)
+                take_the_tar(transport)
                 with self.assertRaisesRegex(ValueError, "xn--"):
                     asyncio.run(executor.before_execute(transport))
                 self.assertFalse(transport.method_calls)

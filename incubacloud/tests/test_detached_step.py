@@ -41,6 +41,7 @@ from ..models.abstract_executor import (
 from ..models.cloud_host import CloudHost
 from ..models.registry import executor_registry
 from ..models.transport import CommandResult, SSHTransport
+from ._transport import take_the_tar
 
 #: Output with an empty line, trailing blanks, stderr and a failing exit.
 _STEP = "printf 'one\\n\\ntwo  \\n'; echo warn >&2; exit 3"
@@ -110,6 +111,27 @@ async def _local_upload(files, mode=None):
             os.chmod(path, mode)
 
 
+async def _local_run_with_stdin(command, data, timeout=3600):
+    """Run *command* here fed *data*, as ``SSHTransport.run_with_stdin``.
+
+    The scripts' tar unpacks on this machine, as it does on a host.
+
+    :return: its stdout and stderr, stripped, and its exit status
+    :rtype: CommandResult
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "bash", "-c", command, stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+    )
+    try:
+        out, _err = await asyncio.wait_for(proc.communicate(data), timeout)
+    except BaseException:
+        with contextlib.suppress(ProcessLookupError):
+            proc.terminate()
+        raise
+    return CommandResult(stdout=out.decode().strip(), exit_status=proc.returncode)
+
+
 def _answer(result):
     """Return a step's result without what it took (``seconds``).
 
@@ -126,6 +148,7 @@ def _local_transport(start_answer=None):
         ``detached_step.sh start`` instead of running it
     """
     transport = MagicMock(spec=SSHTransport)
+    take_the_tar(transport)
 
     async def _run(command, timeout=3600):
         """Answer a start as told, run anything else."""
@@ -136,6 +159,7 @@ def _local_transport(start_answer=None):
     transport.run.side_effect = _run
     transport.execute.side_effect = _local_execute
     transport.upload_text_files.side_effect = _local_upload
+    transport.run_with_stdin.side_effect = _local_run_with_stdin
     return transport
 
 
@@ -491,6 +515,7 @@ class TestAPlanWithoutStepsApart(BaseCase):
         executor = object.__new__(_Plain)
         executor._log_buffer = []
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.execute.return_value = CommandResult("", 0)
         results, _skipped = asyncio.run(executor._run_steps(
             transport, [("A", "a"), ("B", "b", {"timeout": 5})],
