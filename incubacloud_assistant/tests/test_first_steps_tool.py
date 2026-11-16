@@ -56,7 +56,13 @@ class TestFirstStepsTool(McpUsersMixin, TransactionCase):
         self.assertEqual(answer["next"], "server")
         server = answer["steps"][0]
         self.assertEqual(server["title"], "Get a server")
-        self.assertEqual(server["actions"], [{"button": "Connect a server", "screen": "New Host"}])
+        # Core's button first; a layer may add its own after it.
+        self.assertEqual(server["actions"][0], {"button": "Connect a server", "screen": "New Host"})
+        english = self.env["cloud.first.steps"].with_context(lang="en_US")._steps()[0]
+        self.assertEqual(server["actions"], [
+            {"button": action["label"], "screen": action["screen"]}
+            for action in english["actions"]
+        ])
         self.assertTrue(server["guide_url"].startswith("https://docs.incubacloud.io/"))
         # The card shows the same step in the person's language.
         card = self.env["cloud.first.steps"].with_user(self.manager).with_context(
