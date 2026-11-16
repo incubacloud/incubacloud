@@ -11,7 +11,6 @@ from unittest.mock import patch
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 
-from odoo.addons.incubacloud.models.cloud_first_step import CloudFirstSteps
 from odoo.addons.incubacloud_mcp.tests.common import McpUsersMixin
 
 from ..models.assistant_prompt import system_prompt
@@ -29,6 +28,24 @@ class TestFirstStepsTool(McpUsersMixin, TransactionCase):
         self.manager = self._cloud_user("asis-fs-m", group="group_cloud_manager")
         (self.user | self.manager).lang = "es_ES"
         self.env.cr.execute("DELETE FROM cloud_first_step")
+        # A layer may turn the first steps off (the master's does): these
+        # are tests of core's tool, so they stay on, on the registry's class.
+        self.StepsClass = type(self.env["cloud.first.steps"])
+        patcher = patch.object(self.StepsClass, "_enabled", return_value=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # On a copy of a running panel only the servers a test creates
+        # count, so the server step is the next one as on a new panel.
+        before = self.env["cloud.host"].sudo().with_context(active_test=False).search([]).ids
+        layer = self.StepsClass._first_step_host_domain
+
+        def domain(model):
+            """The layer's servers, without those the database held before."""
+            return [*layer(model), ("id", "not in", before)]
+
+        patcher = patch.object(self.StepsClass, "_first_step_host_domain", domain)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _tools(self, user):
         """The assistant's tools as *user*."""
@@ -94,7 +111,7 @@ class TestFirstStepsTool(McpUsersMixin, TransactionCase):
         self.assertIn("Open the instance", text)
 
     def test_absent_when_the_panel_keeps_no_first_steps(self):
-        with patch.object(CloudFirstSteps, "_enabled", return_value=False):
+        with patch.object(self.StepsClass, "_enabled", return_value=False):
             self.assertNotIn("get_first_steps", self._names(self.manager))
             tools = self._tools(self.manager)
             self.assertFalse(tools._allowed(tools._local_spec("get_first_steps")))
