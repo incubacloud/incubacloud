@@ -22,10 +22,7 @@ and first done: a server, backups, a project, the first deploy, a push
 that rebuilds, a domain of its own and outgoing mail. A date once written
 stays, also when the record behind it is deleted. Agents read an
 instance's metrics by the hour, and the assistant's Stop takes effect at
-once. The hardening recipe changes (root's keys are added to the operator
-user's, below), so every hardened host reads `host_hardening_outdated` at
-the next hourly check until its hardening is re-applied; nothing re-runs
-by itself.
+once.
 
 The update adds the SFTP columns of backup destinations (`sftp_host`,
 `sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
@@ -356,10 +353,13 @@ own, and what fails is logged without breaking the update.
   command is never copied, and the job's log says how many were left out.
   Comments and lines that do not read as a key are not copied, a linked
   file is left as it is, and root without `authorized_keys` no longer
-  fails the run. The recipe changes, so every hardened host reads
-  `host_hardening_outdated` at the next hourly check until its hardening
-  is re-applied (**Re-apply Hardening**); nothing re-runs by itself, and
-  re-applying adds no key to a host where root's were copied before.
+  fails the run. The recipe's fingerprint changes, and a host hardened
+  with the one before still reads as current: the change only matters on a
+  host whose panel connected as a user of its image, where the old copy
+  locked the panel out, and a host hardened from root holds what the new
+  step gives. Equivalent fingerprints are listed, with why, in
+  `host_hardening_executor._EQUIVALENT_RECIPES`, which
+  `host_hardening_outdated` reads.
 - **An instance's backup path is held to the grammar of the panel's
   destinations.** `custom_backup_dst` (written by an Administrator, by
   an import and by archiving) is accepted only as `boto3+s3://` or

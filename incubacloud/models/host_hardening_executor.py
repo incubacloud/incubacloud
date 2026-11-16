@@ -106,6 +106,35 @@ def _recipe_fingerprint_of(text):
     return hashlib.sha256("\n".join(lines).encode()).hexdigest()[:12]
 
 
+#: Recipes a host hardened with is as current as with the one shipped:
+#: {shipped fingerprint: {earlier fingerprints it stands for}}. Only for a
+#: change that leaves every host already hardened as the new recipe would,
+#: so asking the whole fleet to harden again would gain nothing.
+#: An entry names a shipped fingerprint, so the next change to the recipe
+#: leaves it unused and every host reads as behind again, as it should.
+_EQUIVALENT_RECIPES = {
+    # 16-nov-2026: root's keys are added to the operator user's instead of
+    # copied over it, without the lines that run a forced command
+    # (files/copy_root_keys.sh). That changes only a host whose panel
+    # connected as a user of its image (AWS's ``admin``), where the copy
+    # locked the panel out, so no such host was left hardened. A host
+    # hardened from root got root's keys, which is what the new step gives.
+    "0b5a14aa18f2": frozenset({"3ab1139825de"}),
+}
+
+
+def _recipe_is_current(applied, shipped):
+    """Return whether a host hardened with *applied* is up to date.
+
+    :param str applied: the fingerprint the host's last hardening recorded
+    :param str shipped: the fingerprint of the recipe this panel ships
+    :return: True when they are the same, or *applied* stands for
+        *shipped* (:data:`_EQUIVALENT_RECIPES`)
+    :rtype: bool
+    """
+    return applied == shipped or applied in _EQUIVALENT_RECIPES.get(shipped, ())
+
+
 def _ssh_rollback_error(facts):
     """Return the job's error when the playbook put the SSH setup back.
 
