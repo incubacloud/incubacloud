@@ -488,6 +488,97 @@ _DETACHED_HEADER_RE = re.compile(
 #: offset in a step's log the lines before it end at (``_flush_logs``).
 _LOG_OFFSET = "detached_offset"
 
+#: What a command prints when the disk it writes on is full (ENOSPC). A
+#: failed step whose output says it names the full disk as its cause,
+#: not only its exit status (16-nov-2026: a build that filled its
+#: server's disk was reported as a server that restarted).
+_NO_SPACE_RE = re.compile(r"no space left on device", re.IGNORECASE)
+
+#: Free space, in percent of the disk, under which a step that died
+#: without recording how it ended is said to have most likely died of a
+#: full disk, even when the output that reached the panel does not say so:
+#: the step's own log and exit status are written on the server's disk,
+#: and may be the first writes it refused. 3 %: a server with 1 GB free
+#: of 33 GB after such a build, as on 16-nov-2026, is under it, and a disk
+#: in normal use is well above it (the Check marks a server low on disk
+#: from ``host_probe_executor.MIN_DISK_GB`` free, long before).
+DISK_NEARLY_FULL_PCT = 3
+
+
+def _disk_probe_command(directory=None):
+    """Return the command that reads why the server's disk may fail a step.
+
+    It prints ``nospace`` when the log of the step apart in *directory*
+    says ``no space left on device`` (the log of every attempt that
+    followed it), then one line ``df <total_kb> <free_kb> <mount>`` for
+    the disk Docker keeps its data on (``DockerRootDir``,
+    ``/var/lib/docker`` when it cannot be read) and one for the disk of
+    the steps' directories (``DETACHED_PREFIX``). It never fails.
+
+    :param str directory: :func:`detached_dir`, or None for a step that
+        ran attached
+    :rtype: str
+    """
+    grep = ""
+    if directory:
+        grep = (
+            f"grep -qi 'no space left on device' {shlex.quote(directory)}/log"
+            " 2>/dev/null && echo nospace;"
+        )
+    tmp = shlex.quote(DETACHED_PREFIX.rsplit("/", 1)[0] or "/")
+    return (
+        "{ " + grep
+        + " root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null);"
+        + f' for p in "${{root:-/var/lib/docker}}" {tmp}; do'
+        + ' df -Pk "$p" 2>/dev/null'
+        + " | awk 'NR == 2 { print \"df\", $2, $4, $6 }'; done; } 2>/dev/null; true"
+    )
+
+
+def _disk_cause_sentence(answer, mentioned=False, guess=False):
+    """Return what the probe's *answer* says of the server's disk, or ''.
+
+    The disk with the least free share of those read is the one named,
+    with its figures. A full disk when the output said
+    ``no space left on device`` (in *answer*, or *mentioned*); with
+    *guess*, a disk nearly full (``DISK_NEARLY_FULL_PCT``) as the likely
+    cause otherwise; nothing else.
+
+    :param str answer: what :func:`_disk_probe_command` printed
+    :param bool mentioned: the output the panel read said it
+    :param bool guess: the step died without a status, and a disk nearly
+        full is its likely cause; not for one that ended with its own
+        status, which its output explains
+    :rtype: str
+    """
+    disks = []
+    for line in (answer or "").splitlines():
+        parts = line.split()
+        if parts == ["nospace"]:
+            mentioned = True
+        elif len(parts) >= 4 and parts[0] == "df" \
+                and parts[1].isdigit() and parts[2].isdigit() and int(parts[1]):
+            disks.append((int(parts[1]), int(parts[2]), " ".join(parts[3:])))
+    worst = min(disks, key=lambda disk: disk[1] / disk[0]) if disks else None
+    figures = ""
+    if worst:
+        total, free, mount = worst
+        figures = (
+            f"{free / 1048576:.1f} GB free of {total / 1048576:.0f} GB"
+            f" on {mount}"
+        )
+    if mentioned:
+        return (
+            "the server's disk is full (its output says 'no space left on"
+            " device'" + (f"; {figures} now" if figures else "") + ")"
+        )
+    if guess and worst and worst[1] * 100 < DISK_NEARLY_FULL_PCT * worst[0]:
+        return (
+            f"the server's disk is nearly full ({figures}), which most"
+            " likely made it fail"
+        )
+    return ""
+
 
 def detached_dir(env, job_id, queue_job_uuid, index):
     """Return the directory step *index* of job *job_id* runs apart in.
@@ -786,6 +877,15 @@ class AbstractExecutor(ABC):
     # one missing from ``_step_results`` never answered, as when the
     # connection dropped or its time ran out.
     _running_step = None
+    # Whether the output of the running step said ``no space left on
+    # device`` (``on_stdout``, ``on_stderr``); cleared as each step starts.
+    _saw_no_space = False
+    # Why the server's disk failed a step, by label (``_run_steps``), for
+    # the job's errors (``_outcome_errors``); None before the steps.
+    _step_causes = None
+    # Why the server's disk failed the step apart that just ended
+    # (``_follow_detached``), read before its directory goes.
+    _detached_cause = ""
 
     # Connection-retry opt-in. When True, a transient connection failure
     # (see ``is_transient_connection_error``) does not fail the job on the
@@ -1334,6 +1434,7 @@ class AbstractExecutor(ABC):
         # Shared with ``_step_results``: a cancellation halfway hands
         # ``on_failure`` what had run.
         results = self._step_results = {}
+        self._step_causes = {}
         first = 0
         if self._resumed:
             results.update(self._checkpoint_data.get("results") or {})
@@ -1364,6 +1465,8 @@ class AbstractExecutor(ABC):
             if label == self._no_return_from and not resumed:
                 self._pass_no_return(label)
             self._running_step = label
+            self._saw_no_space = False
+            self._detached_cause = ""
             if not resumed:
                 self._sys(f"Running: {label}")
             # ``timeout``: a step that needs longer than the transport's
@@ -1400,14 +1503,66 @@ class AbstractExecutor(ABC):
                     f" step accepts — continuing."
                 )
                 continue
+            cause = await self._failed_step_cause(transport, opts)
+            if cause:
+                self._step_causes[label] = cause
+            because = f": {cause}" if cause else ""
             if stops:
                 self._sys(
-                    f"✗ '{label}' failed (exit {status})"
+                    f"✗ '{label}' failed (exit {status}){because}"
                     f" — aborting remaining steps."
                 )
                 return results, skipped
-            self._sys(f"✗ '{label}' exited with status {status}.")
+            self._sys(f"✗ '{label}' exited with status {status}{because}.")
         return results, []
+
+    async def _failed_step_cause(self, transport, opts):
+        """Return why the server's disk failed the step that just did, or ''.
+
+        A step apart had its server read as it ended, before its
+        directory went (``_follow_detached``). One attached is read only
+        when its output said ``no space left on device``: the figures of
+        the disk go with it.
+
+        :param transport: the job's open transport
+        :param dict opts: the step's options
+        :rtype: str
+        """
+        if opts.get("detached") and not self._detached_attached:
+            cause, self._detached_cause = self._detached_cause, ""
+            return cause
+        if not self._saw_no_space:
+            return ""
+        return await self._disk_full_cause(transport, mentioned=True)
+
+    async def _disk_full_cause(
+        self, transport, directory=None, mentioned=False, guess=False,
+    ):
+        """Read the server's disk; return why it failed the step, or ''.
+
+        :func:`_disk_probe_command`, through *transport*, and
+        :func:`_disk_cause_sentence` of its answer. A read that fails
+        leaves only what the output said.
+
+        :param transport: the job's open transport
+        :param str directory: the step's :func:`detached_dir`, whose log
+            is searched too, or None
+        :param bool mentioned: the output the panel read said
+            ``no space left on device``
+        :param bool guess: name a disk nearly full as the likely cause
+            (a step that died without a status)
+        :rtype: str
+        """
+        try:
+            answer = (await transport.run(_disk_probe_command(directory))).stdout
+        except Exception as exc:  # noqa: BLE001 — only the message is at stake
+            logging.getLogger("AbstractExecutor").info(
+                "[job %s] could not read the server's disk: %s", self.job.id, exc,
+            )
+            answer = ""
+        return _disk_cause_sentence(
+            answer if isinstance(answer, str) else "", mentioned, guess,
+        )
 
     def _outcome_errors(self, results, skipped=()):
         """Return the job's errors: ``parse_results`` plus skipped steps.
@@ -1435,6 +1590,13 @@ class AbstractExecutor(ABC):
             errors = [
                 f"'{stopper}' stopped the run, so these steps never ran: "
                 + ", ".join(f"'{label}'" for label in skipped)
+            ]
+        if errors and self._step_causes:
+            # Last, as the log's last line is what the job's card shows.
+            errors = list(errors) + [
+                f"'{label}' failed because {cause}."
+                for label, cause in self._step_causes.items()
+                if label in results
             ]
         return errors
 
@@ -3157,6 +3319,11 @@ class AbstractExecutor(ABC):
                     await asyncio.sleep(DETACHED_POLL_S)
                 continue
             if state == "done":
+                if exit_status and not timedout:
+                    # Read now: its directory goes once its result is in.
+                    self._detached_cause = await self._disk_full_cause(
+                        transport, directory, self._saw_no_space,
+                    )
                 if timedout:
                     # What ``SSHTransport.execute`` writes for its timeout.
                     await self.on_stderr(
@@ -3171,6 +3338,16 @@ class AbstractExecutor(ABC):
                 self._on_server_index = None
                 self._ended_apart = (directory, index)
                 return CommandResult(stdout=stdout, exit_status=exit_status)
+            # Its exit status and its log are written on the server's disk:
+            # a full one leaves the step lost, the cause with it.
+            cause = await self._disk_full_cause(
+                transport, directory, self._saw_no_space, guess=True,
+            )
+            if cause:
+                raise RuntimeError(
+                    f"'{label}' died without recording how it ended:"
+                    f" {cause}. Free space on the server, then run it again."
+                )
             raise RuntimeError(
                 f"'{label}' neither ended nor runs on the server: the server"
                 " restarted, or the step's process died while it ran."
@@ -3403,11 +3580,15 @@ class AbstractExecutor(ABC):
         truncated = self._truncate_line(line)
         source = "stderr" if _looks_like_error(truncated) else "stdout"
         self._log_buffer.append((truncated, source))
+        if _NO_SPACE_RE.search(truncated):
+            self._saw_no_space = True
 
     async def on_stderr(self, line):
         truncated = self._truncate_line(line)
         source = "stderr" if _looks_like_error(truncated) else "stdout"
         self._log_buffer.append((truncated, source))
+        if _NO_SPACE_RE.search(truncated):
+            self._saw_no_space = True
 
     # ===============================
     # PRE-RUN CHECKS

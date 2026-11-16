@@ -329,6 +329,53 @@ class TestStepsApart(TransactionCase):
         self.assertIn("before", self._log())
         self.assertFalse(Path(self._dir(0)).exists())
 
+    def test_a_step_lost_on_a_full_disk_names_the_disk(self):
+        """Its log said ENOSPC: the error names the full disk, not a restart."""
+        executor = self._executor(("Apart", (
+            "echo 'write /tmp/x: no space left on device'; sleep 0.3;"
+            " sid=$(ps -o sid= -p $$ | tr -d ' '); pkill -KILL -s \"$sid\""
+        ), {"detached": True}))
+        exc = self._raised(RuntimeError, self._steps, executor)
+        self.assertIn("died without recording how it ended", str(exc))
+        self.assertIn("the server's disk is full", str(exc))
+        self.assertIn("GB free of", str(exc))
+        self.assertNotIn("restarted", str(exc))
+        self.assertFalse(Path(self._dir(0)).exists())
+
+    def test_a_step_failed_on_a_full_disk_says_so(self):
+        """Its exit status, and the full disk as the cause, last of the errors."""
+        for detached in (True, False):
+            with self.subTest(detached=detached):
+                executor = self._executor((
+                    "Build",
+                    "echo 'write /tmp/x: no space left on device' >&2; exit 1",
+                    {"detached": detached, "stop_on_failure": True},
+                ), ("After", "true"))
+                results, skipped = self._steps(executor)
+                self.assertEqual(skipped, ["After"])
+                executor._flush_logs()
+                failed = [line for line in self._log() if line.startswith("✗ 'Build'")]
+                self.assertTrue(failed)
+                self.assertIn(
+                    "failed (exit 1): the server's disk is full", failed[-1],
+                )
+                errors = executor._outcome_errors(results, skipped)
+                self.assertTrue(errors[-1].startswith(
+                    "'Build' failed because the server's disk is full",
+                ), errors)
+
+    def test_a_step_failed_with_room_on_the_disk_says_only_its_status(self):
+        """No ENOSPC in its output: nothing is added to its exit status."""
+        executor = self._executor(
+            ("Build", "echo nope; exit 2", {"detached": True}),
+        )
+        results, _skipped = self._steps(executor)
+        executor._flush_logs()
+        self.assertIn("✗ 'Build' exited with status 2.", self._log())
+        self.assertEqual(
+            executor._outcome_errors(results), ["'Build' exited with status 2"],
+        )
+
     def test_a_server_that_kills_at_logout_runs_the_step_attached(self):
         """78: the step runs in the request, as before, and says so."""
         transport = _local_transport(start_answer=CommandResult(
@@ -462,6 +509,37 @@ class TestStepsApart(TransactionCase):
         self.assertIn("trapped", log)
         self.assertFalse(self._row())
         self.assertFalse(executor._detached_left_alive)
+
+
+class TestDiskCause(BaseCase):
+    """What the read of a server's disk says of a failed step."""
+
+    def test_the_sentence_names_the_fullest_disk(self):
+        """ENOSPC said: a full disk, with the figures of the fullest one."""
+        answer = "nospace\ndf 34603008 1048576 /\ndf 104857600 52428800 /data"
+        sentence = abstract_executor._disk_cause_sentence(answer)
+        self.assertIn("the server's disk is full", sentence)
+        self.assertIn("1.0 GB free of 33 GB on /", sentence)
+
+    def test_a_nearly_full_disk_is_a_guess_only_when_asked(self):
+        """Under ``DISK_NEARLY_FULL_PCT``, only for a step lost."""
+        answer = "df 34603008 524288 /"
+        self.assertEqual(abstract_executor._disk_cause_sentence(answer), "")
+        self.assertIn(
+            "nearly full (0.5 GB free of 33 GB on /)",
+            abstract_executor._disk_cause_sentence(answer, guess=True),
+        )
+
+    def test_room_and_no_enospc_say_nothing(self):
+        """A disk with room, no such line, or an answer unread: ''."""
+        self.assertEqual(abstract_executor._disk_cause_sentence(
+            "df 34603008 20000000 /", guess=True,
+        ), "")
+        self.assertEqual(abstract_executor._disk_cause_sentence("", guess=True), "")
+        self.assertIn(
+            "the server's disk is full",
+            abstract_executor._disk_cause_sentence("", mentioned=True),
+        )
 
 
 class TestAPlanWithoutStepsApart(BaseCase):

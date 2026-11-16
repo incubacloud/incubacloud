@@ -30,7 +30,7 @@ from .deploy_instance_executor import (
     _build_retried_once,
     _then_context_prune,
 )
-from .docker_prune_executor import build_cache_prune_if_low
+from .docker_prune_executor import after_build_prune, build_cache_prune_if_low
 from .restore_instance_executor import LABEL_NEUTRALIZE_AGAIN
 
 # ``cron_guard.sh`` exits with this when the instance still had crons
@@ -54,6 +54,9 @@ _LABEL_BUILD = "Rebuild Odoo image"
 #: return (``_no_return_from``).
 _LABEL_UPDATE = "Update changed modules"
 _LABEL_RESTART = "Restart instance"
+#: The step after the restart of a rebuild that builds: the previous image,
+#: and the build cache on a disk short of room (``after_build_prune``).
+_LABEL_AFTER_BUILD_PRUNE = "Remove the previous image"
 #: The step that boots the new image on a copy of the database first.
 _LABEL_BOOT_TEST = "Test new image (safe boot check)"
 #: The boot test's cap, in seconds (13-nov-2026, #91). The step runs apart
@@ -107,10 +110,56 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             raise ValueError("rebuild_instance job has no instance_id")
         inst._check_template_ref(self._copier_template()[1])
         self._preflight_tls_check()
+        if self._builds_image:
+            await self._check_room_for_this_attempt(transport)
         self._sys(f"Preparing rebuild for '{inst.name}'...")
         await self._upload_copier_files(transport)
         await self._ship_secret_key(transport)
         await self._stage_extra_env_files(transport)
+
+    async def _check_room_for_this_attempt(self, transport):
+        """Check the room of the build, as this attempt of the job can be refused.
+
+        The job's first attempt checks it before copier rewrites anything:
+        a refusal leaves the instance as it was, on its previous build. A
+        later attempt (a retry after the crons were busy or the connection
+        was lost) starts from scratch with the earlier one's work behind
+        it: its image is written, which lowered the free space the check
+        measures, and its files are rewritten. With the build cache the
+        new build writes nothing more, so it is not checked: a refusal
+        would fail a job whose collision resolves itself. A full rebuild
+        writes its image again, so it is checked, but its refusal does not
+        say that nothing was changed.
+
+        :param transport: the job's open transport
+        :raise JobRefused: when the room is short
+        """
+        if self._left_unapplied(None) is None:
+            await self._check_build_room(
+                transport, "Nothing was changed: the instance runs its"
+                " previous build.",
+            )
+        elif self._needs_full_rebuild():
+            await self._check_build_room(
+                transport, "An earlier attempt of this job had begun the"
+                " rebuild: the log says what it left on the server.",
+            )
+        else:
+            self._sys(
+                "A later attempt of the rebuild, with the build cache: the"
+                " room is not checked again."
+            )
+
+    def _needs_full_rebuild(self):
+        """Whether the rebuild is a full one (``--pull --no-cache``).
+
+        The instance's configuration changed since its last rebuild
+        (``rebuild_fingerprint``); otherwise the Docker cache serves it.
+
+        :rtype: bool
+        """
+        inst = self._inst()
+        return inst.rebuild_fingerprint != inst.last_rebuild_fingerprint
 
     def get_commands(self):
         inst = self._inst()
@@ -132,9 +181,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
         has_smtp = bool(inst.smtp_relay_host)
-        needs_full_rebuild = (
-            inst.rebuild_fingerprint != inst.last_rebuild_fingerprint
-        )
+        needs_full_rebuild = self._needs_full_rebuild()
         if needs_full_rebuild:
             self._sys(
                 "Full rebuild: configuration changed since last deploy."
@@ -442,6 +489,15 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 self._clearing_unapplied(
                     f"cd {d} && docker compose up -d --remove-orphans", d,
                 ),
+            ),
+            # 13a. The previous image, which the restart freed, and the
+            #      build cache where the disk is short (16-nov-2026): until
+            #      the daily prune they filled a small disk. Its own step,
+            #      so a layer that replaces the restart's command keeps it;
+            #      never fails.
+            *(
+                [(_LABEL_AFTER_BUILD_PRUNE, after_build_prune())]
+                if self._builds_image else []
             ),
             # 13. Set web.base.url and report.url in ir.config_parameter
             #     (shared with deploy via the same script; base_url arrives
@@ -785,10 +841,17 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         ``on_abort`` would mark it in error. The job log says what
         happened, and what an attempt that got further left on the host
         (``_warn_unapplied``) — a run whose worker died, closed by the
-        reconciliation; the next probe says how the instance is.
+        reconciliation; the next probe says how the instance is. The
+        error goes after it, as the log's last line, and a preview's
+        request hears of the failure (``_preview_rebuild_failed``), as
+        after ``on_failure``.
         """
-        self._sys(f"✗ {type(exc).__name__}: {exc}")
+        # The error last: the log's last line is what the job's card shows.
         self._warn_unapplied(None)
+        self._sys(f"✗ {type(exc).__name__}: {exc}")
+        inst = self._inst()
+        if inst:
+            inst._preview_rebuild_failed(self.job)
 
     async def on_cancelled_running(self, results, exc):
         """A rebuild stopped by hand leaves the instance's status alone.
@@ -957,3 +1020,5 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         inst = self._inst()
         if inst and self._failure_leaves_error(results):
             inst.write({"status": "error"})
+        if inst:
+            inst._preview_rebuild_failed(self.job)

@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 
 from psycopg2 import errors as pg_errors
 
+from odoo import fields
 from odoo.exceptions import UserError
 from odoo.http import Request
 from odoo.tests.common import TransactionCase
@@ -415,6 +416,54 @@ class TestPreviewFailureIsVisible(_PreviewBase):
         self.assertTrue(self._alert())
 
 
+class TestPreviewOnAFullServer(_PreviewBase):
+    """A preview is not created on a server short of disk (16-nov-2026).
+
+    It goes to its production's server, past the rule of the automatic
+    placement: under ``_MIN_DISK_FREE_GB`` free the clone is refused with
+    a ``UserError``, which the pull request hears as any refusal.
+    """
+
+    def _clone(self, free_gb, pr_number=7, probed=True):
+        """Clone production with the host at *free_gb*, probed or not; return the result."""
+        self.host.write({
+            'disk_free_gb': free_gb,
+            'last_probed': fields.Datetime.now() if probed else False,
+        })
+        with patch.object(
+            type(self.env['cloud.job']), 'enqueue_chain', return_value=[1, 2, 3],
+        ):
+            return self.prod.clone_to_staging(
+                f'pr-{pr_number}', pr_number=pr_number, pr_repo=REPO_FULL,
+                pr_head_branch='feature-x',
+            )
+
+    def test_a_server_short_of_disk_gets_no_preview(self):
+        with self.assertRaisesRegex(UserError, 'no preview is created'):
+            self._clone(self.host._MIN_DISK_FREE_GB - 7)
+        self.assertFalse(self.env['cloud.instance'].search([('pr_number', '=', 7)]))
+
+    def test_a_server_with_room_gets_it(self):
+        self.assertTrue(
+            self._clone(self.host._MIN_DISK_FREE_GB, 8)['staging_id'],
+        )
+
+    def test_a_server_without_a_free_byte_is_refused_and_not_named(self):
+        with self.assertRaisesRegex(UserError, 'no preview is created') as caught:
+            self._clone(0)
+        self.assertNotIn(self.host.name, str(caught.exception))
+
+    def test_a_server_never_read_gets_it(self):
+        self.assertTrue(self._clone(0, 9, probed=False)['staging_id'])
+
+    def test_a_staging_by_hand_is_not_held_to_it(self):
+        self.host.disk_free_gb = 1
+        with patch.object(
+            type(self.env['cloud.job']), 'enqueue_chain', return_value=[1, 2, 3],
+        ):
+            self.assertTrue(self.prod.clone_to_staging('stg')['staging_id'])
+
+
 class TestPreviewAddress(_PreviewBase):
 
     def _clone(self):
@@ -771,6 +820,124 @@ class TestPreviewUpdateFailedComment(_CommentCase):
     def test_a_closed_request_hears_nothing(self):
         preview = self._preview(pr_state='closed')
         preview._preview_rebuilt(self.env['cloud.job'])
+        self.assertFalse(self._comment_jobs())
+
+
+class TestPreviewRebuildFailedComment(_CommentCase):
+    """A preview whose rebuild failed says so on its pull request.
+
+    The comment said «ready» after a rebuild that failed (16-nov-2026: a
+    build that filled its server's disk): it now says the rebuild failed,
+    with a link to its log, until a rebuild passes.
+    """
+
+    def _rebuild_job(self, preview):
+        """Return a rebuild job of *preview*."""
+        return self.env['cloud.job'].sudo().create({
+            'name': 'rebuild', 'host_id': self.host.id,
+            'instance_id': preview.id,
+            'job_type_id': self.env['cloud.job.type'].search(
+                [('code', '=', 'rebuild_instance')], limit=1,
+            ).id,
+        })
+
+    def _executor(self, job):
+        """Return the rebuild executor of *job*, its log kept in a list."""
+        from odoo.addons.incubacloud.models.rebuild_instance_executor import (
+            RebuildInstanceExecutor,
+        )
+        ex = object.__new__(RebuildInstanceExecutor)
+        ex.job = job
+        ex.env = self.env
+        ex.lines = []
+        return ex, patch.object(
+            RebuildInstanceExecutor, '_sys', autospec=True,
+            side_effect=lambda _self, line: _self.lines.append(line),
+        )
+
+    def test_a_failed_rebuild_is_kept_and_its_comment_queued(self):
+        preview = self._preview(pr_comment_id=31)
+        job = self._rebuild_job(preview)
+        ex, sys_patch = self._executor(job)
+        with sys_patch:
+            asyncio.run(ex.on_failure(
+                {'Rebuild Odoo image': {'exit_status': 1, 'stdout': ''}},
+                ["'Rebuild Odoo image' exited with status 1"],
+            ))
+        self.assertEqual(preview.pr_rebuild_failed_job, job.id)
+        self.assertEqual(len(self._comment_jobs()), 1)
+
+    def test_an_aborted_rebuild_says_its_error_last_and_is_kept(self):
+        preview = self._preview(pr_comment_id=31)
+        job = self._rebuild_job(preview)
+        ex, sys_patch = self._executor(job)
+        with sys_patch, patch.object(
+            type(ex), '_left_unapplied', autospec=True,
+            return_value='Rebuild Odoo image',
+        ):
+            asyncio.run(ex.on_abort(RuntimeError('the disk is full')))
+        self.assertEqual(ex.lines[-1], '✗ RuntimeError: the disk is full')
+        self.assertIn('rewrote the instance', ex.lines[0])
+        self.assertEqual(preview.pr_rebuild_failed_job, job.id)
+        self.assertEqual(len(self._comment_jobs()), 1)
+
+    def test_the_comment_says_the_rebuild_failed_with_its_log(self):
+        preview = self._preview(pr_comment_id=31)
+        job = self._rebuild_job(preview)
+        self.env['ir.config_parameter'].sudo().set_param(
+            'web.base.url', 'https://panel.example.com/',
+        )
+        preview._preview_rebuild_failed(job)
+        client, patcher = self._client()
+        with patcher:
+            preview._job_pr_comment()
+        body = client.patch_issue_comment.call_args.args[3]
+        self.assertIn('rebuild failed', body)
+        self.assertIn(f'https://panel.example.com/cloud/log/{job.id}', body)
+        self.assertNotIn('ready', body)
+        self.assertIn(preview._pr_note_marker(), body)
+
+    def test_a_purged_job_leaves_the_failure_without_its_link(self):
+        """Purging the old jobs does not turn the failure into «ready»."""
+        preview = self._preview(pr_comment_id=31)
+        job = self._rebuild_job(preview)
+        self.env['ir.config_parameter'].sudo().set_param(
+            'web.base.url', 'https://panel.example.com',
+        )
+        preview._preview_rebuild_failed(job)
+        job_id = job.id
+        self.env.flush_all()
+        job.unlink()
+        preview.invalidate_recordset()
+        self.assertEqual(preview.pr_rebuild_failed_job, job_id)
+        body = preview._pr_preview_body()
+        self.assertIn('rebuild failed', body)
+        self.assertNotIn('/cloud/log/', body)
+        self.assertNotIn('The log says why', body)
+
+    def test_a_rebuild_that_succeeds_says_ready_again(self):
+        preview = self._preview(pr_comment_id=31)
+        job = self._rebuild_job(preview)
+        preview._preview_rebuild_failed(job)
+        self._comment_jobs().unlink()
+        preview._preview_rebuilt(self._rebuild_job(preview))
+        self.assertFalse(preview.pr_rebuild_failed_job)
+        self.assertEqual(len(self._comment_jobs()), 1)
+        client, patcher = self._client()
+        with patcher:
+            preview._job_pr_comment()
+        self.assertIn('ready', client.patch_issue_comment.call_args.args[3])
+
+    def test_a_closed_request_hears_nothing_of_it(self):
+        preview = self._preview(pr_state='closed')
+        preview._preview_rebuild_failed(self._rebuild_job(preview))
+        self.assertFalse(preview.pr_rebuild_failed_job)
+        self.assertFalse(self._comment_jobs())
+
+    def test_an_instance_of_no_request_is_left_alone(self):
+        job = self._rebuild_job(self.prod)
+        self.prod._preview_rebuild_failed(job)
+        self.assertFalse(self.prod.pr_rebuild_failed_job)
         self.assertFalse(self._comment_jobs())
 
 

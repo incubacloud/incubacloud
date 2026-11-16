@@ -177,7 +177,7 @@ _PLATFORM_FIELDS = frozenset({
     "move_frozen_until", "move_cut_started_at", "move_last_cut_seconds",
     "pr_number", "pr_repo", "pr_head_branch", "pr_comment_id",
     "pr_installation_id", "pr_provider_id", "pr_state", "pr_update_error",
-    "pr_update_cut_off",
+    "pr_update_cut_off", "pr_rebuild_failed_job",
     "removal_finalized",
     "smtp_relay_state", "smtp_relay_checked_at", "smtp_relay_error",
     "backup_path_suffix",
@@ -519,6 +519,14 @@ class CloudInstance(models.Model):
         help="Why the restore of a preview could not update its modules to "
         "the request's code, as its comment or note says; empty once a "
         "restore or a rebuild of it succeeds.",
+    )
+    pr_rebuild_failed_job = fields.Integer(
+        string="Preview Rebuild Failed",
+        copy=False,
+        help="The id of the last rebuild of a preview, when it failed: its "
+        "comment or note says so, with a link to its log while the job "
+        "exists. A number and not a link, so that purging old jobs keeps "
+        "the mark. Cleared (0) when a rebuild of it succeeds.",
     )
     pr_update_cut_off = fields.Boolean(
         string="Preview Update Cut Off",
@@ -2947,6 +2955,23 @@ class CloudInstance(models.Model):
             raise UserError(_("Only production instances can be cloned."))
         if not self.deployed:
             raise UserError(_("Instance must be deployed first."))
+        host = self.host_id
+        # A server never read (``last_probed`` empty) has the field's 0,
+        # which says nothing of its disk: the check of the build
+        # (``_check_build_room``) is the one left to refuse it.
+        if pr_number and host.last_probed \
+                and host.disk_free_gb < host._MIN_DISK_FREE_GB:
+            # A preview goes to its production's server, past the rule the
+            # automatic placement applies: refused here, its request hears
+            # why (and the request may be public: the server is not
+            # named), instead of a deploy that would fail on a full disk
+            # (16-nov-2026).
+            raise UserError(_(
+                "The server has %(free).1f GB of disk free, under the"
+                " %(min)s GB a new instance needs: no preview is created"
+                " on it. Free space on the server or enlarge its disk.",
+                free=host.disk_free_gb, min=host._MIN_DISK_FREE_GB,
+            ))
 
         vals = {
             "name": staging_name,
@@ -3805,15 +3830,50 @@ class CloudInstance(models.Model):
             f'\n\n{self._pr_note_marker()}'
         )
 
-    def _pr_preview_body(self):
-        """Return what the request's comment or note says of its preview now.
+    def _pr_preview_rebuild_failed_body(self):
+        """Markdown of the request's comment or note for a failed rebuild.
 
-        That its modules could not be updated while ``pr_update_error``
-        says so, else that it is ready.
+        The last rebuild of the preview failed
+        (``pr_rebuild_failed_job``): what the request pushed is not in
+        it. The comment links to the rebuild's log, which says why; a
+        panel without ``web.base.url`` gives no link.
 
         :rtype: str
         """
         self.ensure_one()
+        request = 'merge request' if self.pr_provider_id else 'pull request'
+        base = (
+            self.env["ir.config_parameter"].sudo().get_param("web.base.url", "")
+            or ""
+        ).rstrip("/")
+        job = self.env["cloud.job"].sudo().browse(
+            self.pr_rebuild_failed_job,
+        ).exists()
+        log = f'| **Log** | {base}/cloud/log/{job.id} |\n' if base and job else ''
+        return (
+            f'❌ **IncubaCloud Preview** — rebuild failed\n\n'
+            f'| | |\n|---|---|\n'
+            f'| **Branch** | `{self.pr_head_branch}` |\n'
+            f'| **Instance** | `{self.name}` |\n'
+            f'{log}\n'
+            f'_The last push to the branch of the {request} is not in the'
+            f' preview.{" The log says why;" if log else ""} Push a fix to the'
+            f' branch, or rebuild the preview in the panel, to try again._'
+            f'\n\n{self._pr_note_marker()}'
+        )
+
+    def _pr_preview_body(self):
+        """Return what the request's comment or note says of its preview now.
+
+        That its last rebuild failed while ``pr_rebuild_failed_job``
+        says so, that its modules could not be updated while
+        ``pr_update_error`` does, else that it is ready.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        if self.pr_rebuild_failed_job:
+            return self._pr_preview_rebuild_failed_body()
         if self.pr_update_error:
             return self._pr_preview_update_failed_body()
         return self._pr_preview_ready_body()
@@ -3855,20 +3915,28 @@ class CloudInstance(models.Model):
         (``pr_update_error``) is updated and up: the restore's
         ``job_failed``, which held its queue, is resolved by this
         rebuild, and the request's comment or note says it is ready.
-        A preview without its comment or note gets it. A request closed,
-        or anything else, has nothing to settle here. Called on the
-        rebuild's durable cursor; what cannot be queued goes to the log,
-        and the rebuild keeps its outcome.
+        A preview whose last rebuild failed (``pr_rebuild_failed_job``)
+        has its comment or note say it is ready again. A preview without
+        its comment or note gets it. A request closed, or anything else,
+        has nothing to settle here. Called on the rebuild's durable
+        cursor; what cannot be queued goes to the log, and the rebuild
+        keeps its outcome.
 
         :param job: the ``cloud.job`` of the rebuild
         """
         self.ensure_one()
         if not self.pr_number or self.pr_state == "closed":
             return
-        if not (self.pr_update_error or not self.pr_comment_id):
+        if not (
+            self.pr_update_error or self.pr_rebuild_failed_job
+            or not self.pr_comment_id
+        ):
             return
         try:
             with self.env.cr.savepoint():
+                if self.pr_rebuild_failed_job:
+                    # The platform's field (``_PLATFORM_FIELDS``).
+                    self.sudo().write({"pr_rebuild_failed_job": 0})
                 if self.pr_update_error:
                     stale = self.env["cloud.alert"].sudo().search([
                         ("code", "=", "job_failed"),
@@ -3894,6 +3962,35 @@ class CloudInstance(models.Model):
                 raise
             _logger.exception(
                 "Rebuild of the preview %s: its comment was not queued", self.name,
+            )
+
+    def _preview_rebuild_failed(self, job):
+        """What a failed rebuild of a pull or merge request preview settles.
+
+        The request's comment or note says the rebuild failed, with a
+        link to its log (``pr_rebuild_failed_job``), instead of still
+        saying the preview is ready; the next rebuild that passes says it
+        is ready again (:meth:`_preview_rebuilt`). A request closed has
+        nothing to settle. Called on the rebuild's durable cursor; what
+        cannot be queued goes to the log, and the rebuild keeps its
+        outcome.
+
+        :param job: the ``cloud.job`` of the rebuild
+        """
+        self.ensure_one()
+        if not self.pr_number or self.pr_state == "closed":
+            return
+        try:
+            with self.env.cr.savepoint():
+                # The platform's field (``_PLATFORM_FIELDS``).
+                self.sudo().write({"pr_rebuild_failed_job": job.id})
+                self._enqueue_preview_note()
+        except Exception as exc:
+            if is_concurrency_error(exc):
+                raise
+            _logger.exception(
+                "Failed rebuild of the preview %s: its comment was not queued",
+                self.name,
             )
 
     def _pr_github_client(self):

@@ -24,6 +24,7 @@ from ..github.client import GitHubAppClient
 from ..net import real_ip
 from ..net.git_reader import GitReader, GitReaderError
 from ..github.http_utils import read_json_limited, safe_urlopen
+from ..restore_space import in_gib
 from ._backup_dst import (
     breaks_line,
     compose_env_breaks,
@@ -69,6 +70,11 @@ from .docker_prune_executor import (
     PROTECT_LABEL,
     build_cache_prune_if_low,
     build_context_prune,
+    build_room_command,
+    build_room_free_command,
+    build_room_needed,
+    build_room_refusal,
+    parse_build_room,
 )
 from .secret_key_escrow import SecretKeyEscrowMixin
 
@@ -2909,10 +2915,59 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             raise ValueError("deploy_instance job has no instance_id")
         inst._check_template_ref(self._copier_template()[1])
         self._preflight_tls_check()
+        # Before copier writes anything (16-nov-2026): the room a build
+        # needs, as a rebuild checks it. A refusal fails the deploy as any
+        # other abort does (``on_abort``).
+        await self._check_build_room(
+            transport, "Nothing was changed on the server.",
+        )
         self._sys(f"Preparing deployment for '{inst.name}'...")
         await self._upload_copier_files(transport)
         await self._ship_secret_key(transport)
         await self._stage_extra_env_files(transport)
+
+    async def _check_build_room(self, transport, what):
+        """Refuse the job before it changes anything when its build has no room.
+
+        Reads what is free on Docker's disk and the size of the
+        instance's current image (``build_room_command``), against
+        ``build_room_needed``. Short of it, the dangling images and the
+        build cache go (``build_room_free_command``) and the disk is read
+        again; still short, the job is refused with the figures
+        (16-nov-2026: a preview's build filled its server's disk half-way,
+        after copier had rewritten its files). A disk that cannot be read
+        lets the build go on, as ``build_cache_prune_if_low`` does. Not a
+        guarantee: another job may take the room between this and the
+        build, and a step that fails on a full disk says so.
+
+        :param transport: the job's open transport
+        :param str what: what the refusal says was not done
+        :raise JobRefused: when the room is short after the cleanup
+        """
+        d = self._inst_dir(self._inst())
+        result = await transport.run(build_room_command(d))
+        free, image = parse_build_room(result.stdout)
+        if free is None:
+            self._sys("Free disk unknown: the build goes on without its check.")
+            return
+        needed, share = build_room_needed(image)
+        if free < needed:
+            self._sys(
+                f"Docker's disk has {in_gib(free)} free, under the"
+                f" {in_gib(needed)} the build needs: removing the dangling"
+                " images and the build cache first."
+            )
+            result = await transport.run(build_room_free_command(d))
+            free = parse_build_room(result.stdout)[0]
+            if free is None:
+                self._sys("Free disk unknown: the build goes on without its check.")
+                return
+        if free < needed:
+            raise JobRefused(build_room_refusal(free, image, needed, share, what))
+        self._sys(
+            f"Docker's disk has {in_gib(free)} free; the build needs"
+            f" {in_gib(needed)}."
+        )
 
     def _addon_override_fragments(self):
         """Return what addons add to the stack's override, by service.

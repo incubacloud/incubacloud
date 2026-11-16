@@ -197,6 +197,63 @@ gestionado de copias* on a running panel too.
   outline when focused from the keyboard. The sign-in and its OAuth
   buttons are unchanged.
 
+- **A step that fails on a full disk says so.** A build that ran out of
+  disk on its server was reported as «neither ended nor runs on the
+  server: the server restarted»: the step's own log and exit status are
+  written on that disk, and could not be. A step apart that dies that way
+  is now reported with its cause, read from its log and the server's disk
+  («the server's disk is full», with the free space and the size of the
+  fullest disk), or as most likely the disk when it is under 3% free; a
+  step that ends with its own status and printed `no space left on device`
+  adds the same cause to its exit status, last of the job's errors. An
+  aborted rebuild writes its error after what it left on the server, so
+  the error is what its card shows.
+
+- **A preview whose rebuild failed says so on its pull or merge
+  request.** Its comment or note kept saying «ready» after a rebuild
+  that failed. It now says the rebuild failed, with a link to its log,
+  until a rebuild of it succeeds (`pr_rebuild_failed_job`, a new
+  column on instances, empty on update; the job's id as a number, so that
+  purging old jobs keeps the mark and only the link goes).
+
+- **A rebuild without room on its server is refused before it changes
+  anything.** A preview's build filled its server's disk half-way, after
+  copier had rewritten its files. A rebuild that builds an image now reads,
+  before copier, what is free on Docker's disk against what the build needs:
+  the size of the instance's current image (`docker compose images`) times
+  `BUILD_PEAK_FACTOR`, or `BUILD_IMAGE_ESTIMATE_GB` without one, plus the
+  5 GiB the server's other instances keep (`restore_space.RESERVE_BYTES`, as
+  a restore and the boot test leave them). Short of it, the dangling images
+  and the build cache go and the disk is read again; still short, the job is
+  refused with both figures, the instance left on its previous build and a
+  preview's request told. A disk that cannot be read lets the build go on.
+  Once the new image is in service, a step of its own, «Remove the previous
+  image», removes the dangling images and, under 10 GB free, caps the build
+  cache at 5 GB (`--reserved-space`, or `--keep-storage` where Docker does
+  not know it); it never fails. A flow that builds no image has neither. A
+  pull or merge request preview is no longer created on a server whose
+  measured free disk is under the 10 GB the automatic placement asks of a
+  server: its request hears why.
+  The figures are measured on a rebuild with the base image unchanged (it
+  writes 0.66-0.72 of the previous image in containerd's image store, 0.42-0.46
+  in overlay2; the factor is 1). A full rebuild (`--pull --no-cache`) after
+  Tecnativa republished the base image writes as a first build does (1.79 in
+  containerd), was not measured, and can take the reserve: with an image over
+  about 6.3 GiB the boot test stops it with its own message. Only the first
+  attempt of a job checks in full: a retry after busy crons or a lost connection finds
+  its first attempt's image already written, so it skips the check with the
+  build cache and, on a full rebuild, checks but does not say that nothing was
+  changed.
+
+- **A deploy without room on its server is refused before it writes
+  anything.** The same check as a rebuild's, before copier: the room a
+  build needs (the instance's current image, or `BUILD_IMAGE_ESTIMATE_GB`
+  for a new one, plus the 5 GiB reserve) against what is free on Docker's
+  disk, after removing the dangling images and the build cache when short.
+  A refused deploy fails as any other (the instance in error, a move undone).
+  Every deploy that builds passes there, a tenant's and a warm pool's
+  included; a claim of a warm instance builds nothing and does not.
+
 - **A Full Setup no longer hangs installing the host tools on Ubuntu.**
   After every apt run, needrestart restarts the services still on files
   that run replaced, and one of them can be cloud-init's hotplug hook
