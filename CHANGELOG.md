@@ -8,8 +8,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.233] — unreleased
 
-The assistant's Stop takes effect at once. The update adds no column and
-no data migration.
+Agents read an instance's metrics by the hour, and the assistant's Stop
+takes effect at once. The update adds no column and no data migration.
+
+### Added
+
+- **`read_metrics` in the MCP.** An instance's metrics by the hour over the
+  last 24 hours, or up to 168: CPU and memory of its services together,
+  requests and 5xx per second, the p50 and p95 of request time and the
+  database's connections, each hour with its average and highest point,
+  and each metric's peak of the window with how many times the average it
+  is and its share of the limit (for CPU and memory, the largest share of
+  any service against its own limit); an hour with a peak at least twice
+  the average says so. The points are read at a step that divides an hour
+  (300 s for 24 hours, 1800 s for 168), the pages of a reading share the
+  window of the first (`end`), `silence` comes only when it explains an
+  empty or silent reading, and a metric without readings says why. It is
+  read from the metrics central with the instance's Metrics tab's own
+  panels (`PANELS["instance_summary"]`), through the new route `/cloud/instance/metrics_summary`, for whoever sees that tab (the
+  `developer` role and the instance), and counts in the tab's twenty chart
+  reads a minute per user. Observability off, no central, or a central
+  that does not answer are said as the tab says them.
 
 ### Changed
 

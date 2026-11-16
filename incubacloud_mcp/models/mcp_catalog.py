@@ -42,8 +42,8 @@ _GIT_HOOKS = (
 
 _METRICS_BOARD = (
     "The charts and the on-demand readings of an instance's or a server's "
-    "Metrics tab and of Monitoring, drawn by the panel; no tool reads them "
-    "yet, read_access_log reads an instance's requests."
+    "Metrics tab and of Monitoring, drawn by the panel; read_metrics reads "
+    "an instance's by the hour, read_access_log its requests."
 )
 
 _SECURITY_LINES = (

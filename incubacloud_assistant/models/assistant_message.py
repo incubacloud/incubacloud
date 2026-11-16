@@ -129,6 +129,7 @@ class AssistantMessage(models.Model):
             "rebuild_instance": self.env._("Rebuilding"),
             "read_logs": self.env._("Reading the logs"),
             "get_job": self.env._("Reading the job"),
+            "read_metrics": self.env._("Reading the metrics"),
             "panel_overview": self.env._("Looking at the panel"),
         }
         return labels.get(name) or self.env._("Running %s", name or "?")

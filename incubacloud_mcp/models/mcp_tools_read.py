@@ -307,6 +307,40 @@ TOOLS = (
         untrusted=True,
         requires="a deployed instance behind the panel's proxy.",
     ),
+    ToolSpec(
+        "read_metrics",
+        "An instance's metrics by the hour, from the metrics central, as its "
+        "Metrics tab charts them: CPU (percent of one core) and memory (bytes) "
+        "of its services together, requests and 5xx per second, the p50 and "
+        "p95 of request time (seconds) and the database's connections. Each "
+        "hour (UTC) gives each one's avg and max; the answer's step is the "
+        "seconds each point averages (300 for 24 hours, 1800 for 168), so max "
+        "is the highest of those points: a spike shorter than step is "
+        "smoothed. peaks gives each one's highest point, how many times the "
+        "window's average it is and its share of the limit (for CPU and "
+        "memory, the largest share of any service against its own limit, "
+        "named in limit_service), and an hour where one is at least twice the "
+        "average lists it in peak. A metric without readings is named in "
+        "unanswered with the reason. silence, why the server may have sent "
+        "nothing, appears only when no hour has readings or the server or "
+        "instance is not reporting. hours is the window up to now (24 by "
+        "default, 168 at most); the hours come in pages: pass the first "
+        "answer's end as end in the next pages, so that they share its window.",
+        _DEVELOPER,
+        obj(
+            {
+                "instance_id": _INSTANCE,
+                "hours": integer("Hours up to now.", minimum=1, maximum=168),
+                "end": string("The end of the window, as a previous answer gave it."),
+                "offset": OFFSET,
+                "limit": LIMIT,
+            },
+            required=("instance_id",),
+        ),
+        handler="_tool_read_metrics",
+        read_only=True,
+        requires="observability on, with a metrics central.",
+    ),
 )
 
 ROUTES = {
@@ -338,6 +372,7 @@ ROUTES = {
     "/cloud/list_backups": "list_backups",
     "/cloud/get_backup_result": "list_backups",
     "/cloud/instance/access_log": "read_access_log",
+    "/cloud/instance/metrics_summary": "read_metrics",
 }
 
 
@@ -496,6 +531,33 @@ class McpToolsRead(models.AbstractModel):
         if result.get("ok") is False:
             return result
         return page_answer(result, "entries", args.get("offset"), args.get("limit"))
+
+    @api.model
+    def _tool_read_metrics(self, args):
+        """An instance's metrics by the hour, its hours in 20 KB pages.
+
+        The route answers the hours under ``hours``; they come under
+        ``items``, as every paged list, with the peaks and limits on each
+        page. Its ``timing`` is the panel's, not the agent's.
+        """
+        result = self._route(
+            "/cloud/instance/metrics_summary",
+            instance_id=args["instance_id"],
+            hours=args.get("hours") or 24,
+            end=args.get("end"),
+        )
+        if result.get("ok") is False:
+            return result
+        rest = {
+            key: value for key, value in result.items()
+            if key not in ("hours", "timing")
+        }
+        return page_answer(
+            {**rest, "items": result.get("hours") or []},
+            "items",
+            args.get("offset"),
+            args.get("limit"),
+        )
 
     @api.model
     def _tool_list_projects(self, args):

@@ -61,7 +61,8 @@ _READ_TIMEOUT = 20
 #: changing the range or zooming asks a few times a minute; each board is
 #: six to fourteen queries to the central, so this bounds what one user,
 #: or one script with a session, costs it (10-nov-2026; shared by the
-#: server and fleet boards since 12-nov-2026).
+#: server and fleet boards since 12-nov-2026, and by an instance's
+#: summary by the hour, five queries, since 15-nov-2026).
 _BOARD_READS_PER_MIN = 20
 
 #: The user and token of an https remote (``https://oauth2:<token>@host/…``),
@@ -397,6 +398,28 @@ class OpsMixin:
             return {"ok": False, "error": _("Instance not found")}
         return self._board_answer(
             began, lambda: instance._metrics_board(range_key, start, end),
+        )
+
+    @http.route(["/cloud/instance/metrics_summary"], type="jsonrpc",
+                auth="user")
+    def cloud_instance_metrics_summary(self, instance_id, hours=24, end=None):
+        """Return this instance's metrics by the hour, with their peaks.
+
+        What an agent reads instead of the charts (``read_metrics`` of the
+        MCP): ``cloud.instance._metrics_summary``. Gated as the Metrics
+        tab, and counted in the same reads a minute as its boards.
+
+        :param int instance_id: the instance to summarise.
+        :param int hours: the window up to now, 1 to 168.
+        :param str end: where the window ends, ISO 8601, as an earlier
+            answer gave it; now when omitted.
+        """
+        began = time.monotonic()
+        instance = self._metrics_instance(instance_id)
+        if not instance:
+            return {"ok": False, "error": _("Instance not found")}
+        return self._board_answer(
+            began, lambda: instance._metrics_summary(hours, end),
         )
 
     def _board_answer(self, began, read):
