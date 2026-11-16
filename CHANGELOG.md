@@ -117,12 +117,23 @@ gestionado de copias* on a running panel too.
 
 ### Fixed
 
-- **The show password button of the sign-in page has a name and a
-  focus.** A screen reader announced it as a button with no name, and
-  tabbing to it drew nothing. It is now named Show password (translated),
-  reports whether the password is shown (`aria-pressed`) and draws an
-  outline when focused from the keyboard. The sign-in and its OAuth
-  buttons are unchanged.
+- **A step that fails on a full disk says so.** A build that ran out of
+  disk on its server was reported as «neither ended nor runs on the
+  server: the server restarted»: the step's own log and exit status are
+  written on that disk, and could not be. A step apart that dies that way
+  is now reported with its cause, read from its log and the server's disk
+  («the server's disk is full», with the free space and the size of the
+  fullest disk), or as most likely the disk when it is under 3% free; a
+  step that ends with its own status and printed `no space left on device`
+  adds the same cause to its exit status, last of the job's errors. An
+  aborted rebuild writes its error after what it left on the server, so
+  the error is what its card shows.
+
+- **A preview whose rebuild failed says so on its pull or merge
+  request.** Its comment or note kept saying «ready» after a rebuild
+  that failed. It now says the rebuild failed, with a link to its log,
+  until a rebuild of it succeeds (`pr_rebuild_failed_job_id`, a new
+  column on instances, empty on update).
 
 - **A Full Setup no longer hangs installing the host tools on Ubuntu.**
   After every apt run, needrestart restarts the services still on files

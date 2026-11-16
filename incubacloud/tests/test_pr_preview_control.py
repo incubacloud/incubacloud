@@ -774,6 +774,106 @@ class TestPreviewUpdateFailedComment(_CommentCase):
         self.assertFalse(self._comment_jobs())
 
 
+class TestPreviewRebuildFailedComment(_CommentCase):
+    """A preview whose rebuild failed says so on its pull request.
+
+    The comment said «ready» after a rebuild that failed (16-nov-2026: a
+    build that filled its server's disk): it now says the rebuild failed,
+    with a link to its log, until a rebuild passes.
+    """
+
+    def _rebuild_job(self, preview):
+        """Return a rebuild job of *preview*."""
+        return self.env['cloud.job'].sudo().create({
+            'name': 'rebuild', 'host_id': self.host.id,
+            'instance_id': preview.id,
+            'job_type_id': self.env['cloud.job.type'].search(
+                [('code', '=', 'rebuild_instance')], limit=1,
+            ).id,
+        })
+
+    def _executor(self, job):
+        """Return the rebuild executor of *job*, its log kept in a list."""
+        from odoo.addons.incubacloud.models.rebuild_instance_executor import (
+            RebuildInstanceExecutor,
+        )
+        ex = object.__new__(RebuildInstanceExecutor)
+        ex.job = job
+        ex.env = self.env
+        ex.lines = []
+        return ex, patch.object(
+            RebuildInstanceExecutor, '_sys', autospec=True,
+            side_effect=lambda _self, line: _self.lines.append(line),
+        )
+
+    def test_a_failed_rebuild_is_kept_and_its_comment_queued(self):
+        preview = self._preview(pr_comment_id=31)
+        job = self._rebuild_job(preview)
+        ex, sys_patch = self._executor(job)
+        with sys_patch:
+            asyncio.run(ex.on_failure(
+                {'Rebuild Odoo image': {'exit_status': 1, 'stdout': ''}},
+                ["'Rebuild Odoo image' exited with status 1"],
+            ))
+        self.assertEqual(preview.pr_rebuild_failed_job_id, job)
+        self.assertEqual(len(self._comment_jobs()), 1)
+
+    def test_an_aborted_rebuild_says_its_error_last_and_is_kept(self):
+        preview = self._preview(pr_comment_id=31)
+        job = self._rebuild_job(preview)
+        ex, sys_patch = self._executor(job)
+        with sys_patch, patch.object(
+            type(ex), '_left_unapplied', autospec=True,
+            return_value='Rebuild Odoo image',
+        ):
+            asyncio.run(ex.on_abort(RuntimeError('the disk is full')))
+        self.assertEqual(ex.lines[-1], '✗ RuntimeError: the disk is full')
+        self.assertIn('rewrote the instance', ex.lines[0])
+        self.assertEqual(preview.pr_rebuild_failed_job_id, job)
+        self.assertEqual(len(self._comment_jobs()), 1)
+
+    def test_the_comment_says_the_rebuild_failed_with_its_log(self):
+        preview = self._preview(pr_comment_id=31)
+        job = self._rebuild_job(preview)
+        self.env['ir.config_parameter'].sudo().set_param(
+            'web.base.url', 'https://panel.example.com/',
+        )
+        preview._preview_rebuild_failed(job)
+        client, patcher = self._client()
+        with patcher:
+            preview._job_pr_comment()
+        body = client.patch_issue_comment.call_args.args[3]
+        self.assertIn('rebuild failed', body)
+        self.assertIn(f'https://panel.example.com/cloud/log/{job.id}', body)
+        self.assertNotIn('ready', body)
+        self.assertIn(preview._pr_note_marker(), body)
+
+    def test_a_rebuild_that_succeeds_says_ready_again(self):
+        preview = self._preview(pr_comment_id=31)
+        job = self._rebuild_job(preview)
+        preview._preview_rebuild_failed(job)
+        self._comment_jobs().unlink()
+        preview._preview_rebuilt(self._rebuild_job(preview))
+        self.assertFalse(preview.pr_rebuild_failed_job_id)
+        self.assertEqual(len(self._comment_jobs()), 1)
+        client, patcher = self._client()
+        with patcher:
+            preview._job_pr_comment()
+        self.assertIn('ready', client.patch_issue_comment.call_args.args[3])
+
+    def test_a_closed_request_hears_nothing_of_it(self):
+        preview = self._preview(pr_state='closed')
+        preview._preview_rebuild_failed(self._rebuild_job(preview))
+        self.assertFalse(preview.pr_rebuild_failed_job_id)
+        self.assertFalse(self._comment_jobs())
+
+    def test_an_instance_of_no_request_is_left_alone(self):
+        job = self._rebuild_job(self.prod)
+        self.prod._preview_rebuild_failed(job)
+        self.assertFalse(self.prod.pr_rebuild_failed_job_id)
+        self.assertFalse(self._comment_jobs())
+
+
 class TestPreviewRestoreClosedFromItsCheckpoint(_CommentCase):
     """A preview's restore closed by whoever adopts its checkpoint.
 
