@@ -1095,12 +1095,18 @@ export class HostDetail extends Component {
     }
 
     async deleteHost() {
-        const hasRemote = this.state.host.traefik_deployed;
+        const host = this.state.host;
+        // The route runs the teardown on a server the panel reached even
+        // with no proxy deployed there (``teardown_reaches_server``).
+        let message = _t("Remove \"%s\"? Nothing has been deployed so no remote cleanup is needed.");
+        if (host.traefik_deployed) {
+            message = _t("Remove \"%s\"? Traefik will be stopped and all remote files deleted.");
+        } else if (host.teardown_reaches_server) {
+            message = _t("Remove \"%s\"? Nothing has been deployed, but the panel's access will be taken off the server.");
+        }
         const confirmed = await this._confirm({
             title: _t("Delete Host"),
-            message: hasRemote
-                ? _t("Remove \"%s\"? Traefik will be stopped and all remote files deleted.").replace('%s', this.state.host.name)
-                : _t("Remove \"%s\"? Nothing has been deployed so no remote cleanup is needed.").replace('%s', this.state.host.name),
+            message: message.replace('%s', host.name),
             confirmLabel: _t("Delete"),
             isDanger: true,
         });

@@ -177,6 +177,19 @@ gestionado de copias* on a running panel too.
 
 ### Fixed
 
+- **Deleting a server whose proxy was never deployed takes the panel's
+  access off it.** `/cloud/delete_host` archived such a host at once, with
+  no teardown, so a server hardened before a Full Setup that failed kept
+  the operator user, its sudo grant and the panel's key. The teardown now
+  runs on any server the panel has logged in to and can log in to again
+  (`cloud.host._teardown_reaches_server`: a trusted server key, the
+  credentials of its login type, and `sshpass` for a password); a host the
+  panel never reached is archived or removed at once, as before. When that
+  teardown fails, a host with no proxy is archived all the same, so a
+  server that is gone does not keep it in the panel, and the job's log
+  says what to remove by hand; a teardown a person stops keeps the host.
+  The host page's confirmation says the panel's access will be taken off
+  such a server.
 - **A Full Setup no longer hangs installing the host tools on Ubuntu.**
   After every apt run, needrestart restarts the services still on files
   that run replaced, and one of them can be cloud-init's hotplug hook
@@ -315,6 +328,48 @@ gestionado de copias* on a running panel too.
 
 ### Security
 
+- **Deleting a server takes the panel's access off it.** The teardown
+  stopped the agents and the proxy but left the panel's key in the
+  server's `authorized_keys`, the operator account hardening creates and
+  its `NOPASSWD` grant in `/etc/sudoers.d/incubacloud-system`: the panel
+  could still log in as root on a server removed from it. Its last step
+  on the server (`ansible/playbooks/files/remove_panel_access.sh`) now
+  removes the panel's key from the `authorized_keys` of every account
+  (root, the connecting account, the operator account, and any other a
+  cloud image gave the same key), matched by its base64 whatever its
+  options or comment, with every other line, the owner and the mode
+  kept. The operator account goes, its home kept, only when the panel
+  made it: no other key is left in it, and without hardening's grant it
+  has no passwordless `sudo` (a user made by hand for the panel has a rule
+  of its own, and stays). With another key left (hardening copied root's
+  keys into it and turned root's SSH login off) it stays, as the way the
+  holders of those keys reach root. Hardening's grant goes when the
+  account it names is gone or still runs `sudo` without a password by a
+  rule of its own, and stays otherwise. Root's account, other accounts and
+  keys, sshd's configuration and the homes are left as they are. What
+  cannot be removed is said in the job's log and does not stop the
+  deletion.
+- **Hardening adds root's keys to the operator user instead of copying
+  root's file over its own.** On a server the panel connects to as a user
+  of the image's (`admin`, `ubuntu`), hardening reuses that user, and the
+  copy put root's `authorized_keys` in place of the user's. Cloud images
+  that let in that user only give root the same key behind a forced
+  command (`command="echo 'Please login as the user …'"`), so the user's
+  own line for the panel's key was gone: the panel could log in neither as
+  that user nor as root, and the keys the user had added were lost too.
+  Its step (`ansible/playbooks/files/copy_root_keys.sh`) now adds each key
+  of root's the operator user lacks, matched by its base64, at the end of
+  its file, and keeps every line it had; a line of root's with a forced
+  command is never copied, and the job's log says how many were left out.
+  Comments and lines that do not read as a key are not copied, a linked
+  file is left as it is, and root without `authorized_keys` no longer
+  fails the run. The recipe's fingerprint changes, and a host hardened
+  with the one before still reads as current: the change only matters on a
+  host whose panel connected as a user of its image, where the old copy
+  locked the panel out, and a host hardened from root holds what the new
+  step gives. Equivalent fingerprints are listed, with why, in
+  `host_hardening_executor._EQUIVALENT_RECIPES`, which
+  `host_hardening_outdated` reads.
 - **An instance's backup path is held to the grammar of the panel's
   destinations.** `custom_backup_dst` (written by an Administrator, by
   an import and by archiving) is accepted only as `boto3+s3://` or

@@ -11,10 +11,12 @@ Facts are injected straight into ``_facts`` (what ``playbook_facts()``
 returns), the same way the old executor tests fed a ``results`` dict:
 no host, no ansible-runner.
 """
+import base64
 import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import asyncssh
 import yaml
 
 from odoo.tests.common import TransactionCase
@@ -33,8 +35,15 @@ from odoo.addons.incubacloud.models.host_probe_executor import (
 from odoo.addons.incubacloud.models.docker_prune_executor import (
     DockerPruneExecutor,
 )
+from odoo.addons.incubacloud.models.abstract_executor import (
+    CANCELLED_WHILE_RUNNING,
+    JobCancelled,
+)
 from odoo.addons.incubacloud.models.delete_host_executor import (
     DeleteHostExecutor,
+)
+from odoo.addons.incubacloud.models.host_hardening_executor import (
+    DEFAULT_HARDENED_USER,
 )
 from odoo.addons.incubacloud.models.setup_whitelist_executor import (
     SetupWhitelistExecutor,
@@ -426,6 +435,126 @@ class TestDeleteHostArchive(HostStateCase):
         ex = self._executor(DeleteHostExecutor, host=host)
         _run(ex.on_success({}))
         self.assertFalse(host.active)
+
+    def test_a_failed_teardown_keeps_a_host_with_its_proxy(self):
+        """It can run again: the proxy and the agents are still there."""
+        host = self._host(traefik_deployed=True)
+        ex = self._executor(DeleteHostExecutor, host=host)
+        _run(ex.on_failure({}, ["unreachable"]))
+        self.assertTrue(host.active)
+
+    def test_a_failed_teardown_archives_a_host_without_a_proxy(self):
+        """Queued only because the panel had reached the server, which may
+        be gone: before, such a host was archived with no teardown, and it
+        must still leave the panel, saying what may be left there."""
+        host = self._host()
+        ex = self._executor(DeleteHostExecutor, host=host)
+        _run(ex.on_failure({}, ["unreachable"]))
+        self.assertFalse(host.active)
+        said = " ".join(line for line, _src in ex._log_buffer)
+        self.assertIn("✗ unreachable", said)
+        self.assertIn("archived all the same", said)
+        self.assertIn("/etc/sudoers.d/incubacloud-system", said)
+
+    def test_a_stopped_teardown_keeps_the_host(self):
+        """A person who stops the deletion does not get it all the same."""
+        host = self._host()
+        ex = self._executor(DeleteHostExecutor, host=host)
+        _run(ex.on_cancelled_running({}, JobCancelled(CANCELLED_WHILE_RUNNING)))
+        self.assertTrue(host.active)
+        said = " ".join(line for line, _src in ex._log_buffer)
+        self.assertIn("The host is kept.", said)
+
+
+_TEARDOWN = (
+    Path(__file__).resolve().parents[1] / "ansible" / "playbooks" / "host_teardown.yml"
+)
+_ACCESS_SCRIPT = _TEARDOWN.parent / "files" / "remove_panel_access.sh"
+
+
+class TestDeleteHostTakesThePanelsAccess(HostStateCase):
+    """Deleting a server takes the panel's key, the operator account and
+    its sudo grant off it, as the last step on the server: the panel kept
+    root on a server its owner had removed from it (16-nov-2026)."""
+
+    def _access_step(self):
+        """Return the playbook's last task, the access step."""
+        return yaml.safe_load(_TEARDOWN.read_text())[0]["tasks"][-1]
+
+    def test_the_playbook_gets_the_panels_key_and_the_operator(self):
+        host = self._host(
+            login_type="ssh_key",
+            key_file=base64.b64encode(
+                asyncssh.generate_private_key("ssh-ed25519")
+                .export_private_key("openssh"),
+            ).decode(),
+        )
+        ex = self._executor(DeleteHostExecutor, host=host)
+        extra = ex.get_extra_vars()
+        self.assertEqual(extra["ic_panel_key"], host._ssh_public_key())
+        self.assertTrue(extra["ic_panel_key"].startswith("ssh-ed25519 AAAA"))
+        self.assertEqual(extra["ic_operator_user"], DEFAULT_HARDENED_USER)
+
+    def test_a_host_without_a_key_it_can_read_hands_none(self):
+        """A password login, or a key the panel cannot read: the
+        playbook removes no key, and still the account and the grant."""
+        host = self._host(
+            login_type="ssh_key",
+            key_file=base64.b64encode(b"not a key").decode(),
+        )
+        extra = self._executor(DeleteHostExecutor, host=host).get_extra_vars()
+        self.assertEqual(extra["ic_panel_key"], "")
+        self.assertEqual(extra["ic_operator_user"], DEFAULT_HARDENED_USER)
+
+    def test_it_is_the_last_step_on_the_server(self):
+        """It takes away the login the play runs on: nothing may come
+        after it but what the controller says by itself."""
+        step = self._access_step()
+        self.assertEqual(step["name"], "Take the panel's access off the server")
+        run, said = step["block"]
+        self.assertIn("ansible.builtin.shell", run)
+        self.assertEqual(set(said), {"name", "ansible.builtin.debug"})
+        self.assertIn("ic_panel_access.stdout_lines", said["ansible.builtin.debug"]["msg"])
+
+    def test_one_session_runs_the_script_as_root(self):
+        run = self._access_step()["block"][0]
+        self.assertEqual(run["become"], "{{ ansible_user_id != 'root' }}")
+        # Pipelined: no temporary files to remove afterwards through a
+        # login that no longer works.
+        self.assertIs(run["vars"]["ansible_pipelining"], True)
+        shell = run["ansible.builtin.shell"]
+        self.assertIn("remove_panel_access.sh", shell["cmd"])
+        self.assertEqual(shell["executable"], "/bin/bash")
+        self.assertTrue(_ACCESS_SCRIPT.is_file())
+        self.assertEqual(run["environment"], {
+            "IC_PANEL_KEY": "{{ ic_panel_key | default('') }}",
+            "IC_CONNECT_USER": "{{ ansible_user_id }}",
+            "IC_OPERATOR_USER": "{{ ic_operator_user | default('') }}",
+        })
+        self.assertIn("Removed", run["changed_when"])
+
+    def test_what_it_leaves_never_stops_the_teardown(self):
+        step = self._access_step()
+        said = step["rescue"][0]["ansible.builtin.debug"]["msg"]
+        self.assertIn("ansible_failed_result", said)
+        self.assertIn("/etc/sudoers.d/incubacloud-system", said)
+        self.assertIn("exit 0", _ACCESS_SCRIPT.read_text().splitlines()[-1])
+
+    def test_the_script_removes_what_hardening_puts_in(self):
+        """The grant's file and the operator's name are hardening's."""
+        hardening = yaml.safe_load(
+            (_TEARDOWN.parent / "host_hardening.yml").read_text(),
+        )[0]
+        grant = next(
+            t for t in hardening["tasks"]
+            if t["name"] == "Grant passwordless sudo to the operator user"
+        )
+        self.assertIn(
+            f"IC_SUDOERS_FILE:-{grant['ansible.builtin.copy']['dest']}}}",
+            _ACCESS_SCRIPT.read_text(),
+        )
+        self.assertEqual(grant["ansible.builtin.copy"]["content"],
+                         "{{ hardened_user }} ALL=(ALL) NOPASSWD: ALL\n")
 
 
 class TestSetupWhitelistExtraVars(HostStateCase):

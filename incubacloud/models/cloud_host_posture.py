@@ -214,7 +214,10 @@ class CloudHost(models.Model):
                 "host page with Re-apply Hardening.",
                 host=self.name,
             )
-        if self.hardening_recipe != recipe:
+        # Here, not at the top: the executor's module imports this one.
+        from .host_hardening_executor import _recipe_is_current
+
+        if not _recipe_is_current(self.hardening_recipe, recipe):
             return _(
                 "Host %(host)s was hardened with an older recipe "
                 "(%(applied)s) than the one this panel ships (%(current)s), "

@@ -128,6 +128,47 @@ class TestHardeningPreflight(TransactionCase):
         self.assertEqual(play["vars"]["supported_ubuntu"], ["22.04", "24.04"])
         self.assertEqual(play["vars"]["debian_min_major"], 12)
 
+    def test_root_s_keys_are_added_to_the_operator_s_never_copied_over(self):
+        """A reused user (an image's ``admin``) kept its own line for the
+        panel's key: a plain copy of root's file put root's line for the
+        same key over it, whose forced command only says to log in as that
+        user, and the panel could log in neither as it nor as root
+        (16-nov-2026). The script, tested in copy_root_keys.bats, adds what
+        is missing and leaves those lines out."""
+        tasks = self._playbook()["tasks"]
+        names = [task.get("name") for task in tasks]
+        for task in tasks:
+            copy = task.get("ansible.builtin.copy") or {}
+            self.assertNotEqual(
+                copy.get("dest"), "/home/{{ hardened_user }}/.ssh/authorized_keys",
+            )
+        add = tasks[names.index("Add root's keys to the operator user")]
+        shell = add["ansible.builtin.shell"]
+        self.assertIn("copy_root_keys.sh", shell["cmd"])
+        self.assertEqual(shell["executable"], "/bin/bash")
+        self.assertEqual(add["environment"], {
+            "IC_OPERATOR_USER": "{{ hardened_user }}",
+            "IC_OPERATOR_KEYS": "/home/{{ hardened_user }}/.ssh/authorized_keys",
+        })
+        self.assertIn("Added", add["changed_when"])
+        said = tasks[names.index("Say what was done with root's keys")]
+        self.assertIn("ic_operator_keys.stdout_lines", said["ansible.builtin.debug"]["msg"])
+        # After the user and its ~/.ssh, before its sudo grant, and before
+        # anything moves sshd.
+        self.assertLess(
+            names.index("Ensure the operator user's ~/.ssh exists"),
+            names.index(add["name"]),
+        )
+        self.assertLess(
+            names.index(add["name"]),
+            names.index("Grant passwordless sudo to the operator user"),
+        )
+        script = Path(
+            get_module_path("incubacloud"),
+            "ansible/playbooks/files/copy_root_keys.sh",
+        ).read_text(encoding="utf-8")
+        self.assertIn("IC_ROOT_KEYS:-/root/.ssh/authorized_keys", script)
+
     def test_apt_is_bounded_in_time_and_retried(self):
         """A stalled download times out and is retried, rather than waited
         on: a new host's cache update hung 17 minutes on a connection the

@@ -2820,6 +2820,28 @@ class CloudHost(models.Model):
         """
         return self.browse(self.sudo().search(self._ssh_ready_domain()).ids)
 
+    def _teardown_reaches_server(self):
+        """Whether deleting this host runs its teardown on the server.
+
+        Whenever the panel has reached the server (it trusts the server's
+        key, captured on its first connection) and can log in again (it
+        holds the credentials): its key, and the operator account and sudo
+        grant hardening made, may be there although no proxy was ever
+        deployed, as on a server whose Full Setup failed after hardening.
+        A host the panel never reached, or cannot log in to (a password
+        login where this panel's server has no sshpass, which the playbook
+        needs), is archived or removed without one.
+
+        :return: True when ``/cloud/delete_host`` queues ``delete_host``
+        :rtype: bool
+        """
+        self.ensure_one()
+        if self.login_type == "password" and not self._password_login_available():
+            return False
+        return bool(self.sudo().with_context(active_test=False).search_count(
+            [("id", "=", self.id)] + self._ssh_ready_domain(), limit=1,
+        ))
+
     # Private: ``ir.cron`` runs it as the platform; nothing calls it
     # through ``call_kw``.
     @api.private
