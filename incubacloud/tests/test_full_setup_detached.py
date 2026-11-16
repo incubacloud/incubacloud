@@ -116,7 +116,10 @@ class TestFullSetupInstallsItsToolsApart(_FullSetupCase):
                 await executor._discard_staging(transport)
 
         results, _skipped = asyncio.run(_go())
-        self.assertEqual(results[_INSTALL], {"stdout": "ok", "exit_status": 0})
+        install_result = dict(results[_INSTALL])
+        # What the step took (``seconds``) is not compared.
+        install_result.pop("seconds", None)
+        self.assertEqual(install_result, {"stdout": "ok", "exit_status": 0})
         self.assertIn(
             install, [call.args[0] for call in transport.execute.await_args_list],
         )

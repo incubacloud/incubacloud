@@ -476,7 +476,9 @@ class TestStepsApart(TransactionCase):
         )
         self._run(executor)
         self.assertEqual(executor.closed[0], "success")
-        self.assertEqual(executor.closed[1]["Apart"], {"stdout": "apart", "exit_status": 0})
+        self.assertEqual(
+            _answer(executor.closed[1]["Apart"]), {"stdout": "apart", "exit_status": 0},
+        )
         self.assertFalse(self._row())
         self.env.cr.execute(
             "SELECT count(*) FROM cloud_job_outcome WHERE job_id = %s", (self.job.id,),
