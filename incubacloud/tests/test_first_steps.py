@@ -18,11 +18,29 @@ from odoo.addons.incubacloud.models.cloud_first_step import CloudFirstSteps
 T0 = datetime(2026, 11, 1, 9, 0, 0)
 
 
+def _keep_first_steps_on(case):
+    """Keep the first steps on for *case*, whatever layer the database has.
+
+    A layer may turn them off (the master's does): these tests are of
+    core's marks, so ``_enabled`` is patched on the registry's own class,
+    for the test only. A test that turns them off patches that class too.
+
+    :param case: the running test case
+    :return: the registry's ``cloud.first.steps`` class
+    """
+    cls = type(case.env["cloud.first.steps"])
+    patcher = patch.object(cls, "_enabled", return_value=True)
+    patcher.start()
+    case.addCleanup(patcher.stop)
+    return cls
+
+
 class _FirstStepsBase(TransactionCase):
     """A clean slate of marks and the records the steps look at."""
 
     def setUp(self):
         super().setUp()
+        self.StepsClass = _keep_first_steps_on(self)
         self.Steps = self.env["cloud.first.steps"]
         # What the database of the test held before: only what each test
         # creates counts.
@@ -273,7 +291,7 @@ class TestFirstStepMarks(_FirstStepsBase):
         self.assertTrue(self._row("clicked").attempted_at)
 
     def test_disabled_writes_nothing(self):
-        with patch.object(CloudFirstSteps, "_enabled", return_value=False):
+        with patch.object(self.StepsClass, "_enabled", return_value=False):
             self._host()
             self.assertEqual(self.Steps._reconcile(), [])
             self.assertFalse(self.Steps._mark("clicked", attempted=True))
@@ -527,6 +545,7 @@ class TestFirstStepsRoutes(HttpCase):
 
     def setUp(self):
         super().setUp()
+        _keep_first_steps_on(self)
         new_test_user(
             self.env, login="fs-route-manager", password="fs-route-manager-pw",
             groups="base.group_user,incubacloud.group_cloud_manager",
