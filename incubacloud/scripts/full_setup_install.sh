@@ -23,29 +23,17 @@ source "$(dirname "$0")/lib/common.sh"
 export PATH="$HOME/.local/bin:$PATH"
 
 # needrestart (Ubuntu) restarts, at the end of every apt run, the services
-# still on files that run replaced. One of them can be cloud-init's hotplug
-# hook (cloud-init-hotplugd, Ubuntu on Hetzner): Docker's interfaces start
-# it when their MAC begins with 86:, as Hetzner's private networks' do, and
-# it spends seconds to minutes on the metadata service. It is a oneshot unit
-# fed by a FIFO, so restarted by hand it waits on the FIFO for good, and the
-# apt run that restarted it waits with it: a Full Setup on Ubuntu 24.04 hung
-# at the pip/venv install until its 3600 s (QA, 15-nov-2026). Our apt runs
-# only list what needs restarting, and the drop-in below keeps any other
-# apt run on the host (unattended upgrades among them) off that unit.
+# still on files that run replaced, and a restart of cloud-init's hotplug
+# hook waits for good, and the apt run with it: a Full Setup on Ubuntu 24.04
+# hung at the pip/venv install until its 3600 s (QA, 15-nov-2026; see
+# ic_needrestart_keep_hotplug in lib/common.sh). Our apt runs only list what
+# needs restarting, and the drop-in written below, before the first of them,
+# keeps any other apt run on the host (unattended upgrades among them) off
+# that unit.
 APT="sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get"
 
 ic_log "Keeping needrestart off cloud-init's hotplug hook..."
-needrestart_dir="${IC_NEEDRESTART_CONF_DIR:-/etc/needrestart/conf.d}"
-if sudo test -d "$needrestart_dir"; then
-    # SC2016: the single quotes are intentional: Perl reads ``$nrconf``.
-    # shellcheck disable=SC2016
-    printf '%s\n' \
-        '# Written by IncubaCloud Full Setup: restarted by hand, this oneshot' \
-        '# unit waits on its FIFO for good, and so does the apt run.' \
-        '$nrconf{override_rc}{qr(^cloud-init-hotplugd)} = 0;' \
-        | sudo tee "$needrestart_dir/50-incubacloud-hotplug.conf" >/dev/null \
-        || ic_warn "could not keep needrestart off cloud-init's hotplug hook"
-fi
+ic_needrestart_keep_hotplug || :
 
 ic_log "Updating package index..."
 $APT update -qq || ic_die "apt-get update failed"

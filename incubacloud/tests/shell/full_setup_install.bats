@@ -15,6 +15,8 @@ setup() {
     mkdir -p "$TMP/bin"
     export APT_CALLS="$TMP/apt_calls"
     export IC_DOCKER_DAEMON_JSON="$TMP/daemon.json"
+    # No needrestart unless a test makes the directory.
+    export IC_NEEDRESTART_CONF_DIR="$TMP/needrestart"
     export TMP
     : > "$APT_CALLS"
 
@@ -22,8 +24,9 @@ setup() {
         printf '#!/usr/bin/env bash\n%s\n' "$2" > "$TMP/bin/$1"
         chmod +x "$TMP/bin/$1"
     }
-    # sudo → run the rest (env handles a VAR=val prefix then the command).
-    _stub sudo 'exec env "$@"'
+    # sudo → run the rest (env handles a VAR=val prefix then the command;
+    # ``-n``, never asking for a password, is dropped).
+    _stub sudo '[ "$1" = -n ] && shift; exec env "$@"'
     _stub apt-get 'echo "apt-get $*" >> "$APT_CALLS"; exit 0'
     _stub curl 'exit 0'
     _stub dpkg 'exit 0'
@@ -181,7 +184,6 @@ _path_without() {
 }
 
 @test "a host with needrestart gets told to leave cloud-init's hotplug hook alone" {
-    export IC_NEEDRESTART_CONF_DIR="$TMP/needrestart"
     mkdir -p "$IC_NEEDRESTART_CONF_DIR"
     # Written before any apt run: Docker's installer is the first to start the hook.
     _stub apt-get '[ -e "$IC_NEEDRESTART_CONF_DIR/50-incubacloud-hotplug.conf" ] || echo "apt before the drop-in" >> "$APT_CALLS"'
@@ -197,7 +199,6 @@ _path_without() {
 }
 
 @test "a host without needrestart gets no drop-in" {
-    export IC_NEEDRESTART_CONF_DIR="$TMP/needrestart"
     run bash "$SCRIPT"
     [ "$status" -eq 0 ]
     [ ! -e "$IC_NEEDRESTART_CONF_DIR" ]

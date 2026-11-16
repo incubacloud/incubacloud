@@ -592,3 +592,78 @@ ic_unapplied_clear() {
     fi
     return 0
 }
+
+# Keep needrestart off cloud-init's hotplug hook, where needrestart is
+# installed (Ubuntu).
+#
+# At the end of every apt run, needrestart restarts the services still on
+# files that run replaced. One of them can be cloud-init's hotplug hook
+# (cloud-init-hotplugd, Ubuntu on Hetzner): Docker's interfaces start it
+# when their MAC begins with 86:, as Hetzner's private networks' do, and it
+# spends seconds to minutes on the metadata service. It is a oneshot unit
+# fed by a FIFO, so restarted by hand it waits on the FIFO for good, and the
+# apt run that restarted it waits with it, holding apt's lock: a Full Setup
+# on Ubuntu 24.04 hung at the pip/venv install until its 3600 s (QA,
+# 15-nov-2026), and an unattended upgrade would stop the patches the same
+# way. Ubuntu's own rule, ``qr(^cloud-(init-local|init|config|final)\.service$)``,
+# does not cover that unit.
+#
+# Writes the drop-in ``50-incubacloud-hotplug.conf`` in needrestart's
+# ``conf.d`` (IC_NEEDRESTART_CONF_DIR in the tests), as root (directly, or
+# through ``sudo -n``), and only when that directory is there. needrestart
+# dies on a drop-in it cannot parse, in every apt run, so the text is first
+# read in a scratch file the way needrestart reads it, and checked to keep
+# the unit out; only then it replaces the drop-in, in one move. A drop-in
+# already saying the same is left as it is. Never prints on stdout.
+#
+# Usage: ic_needrestart_keep_hotplug
+# Returns 0 when the drop-in is in place or needrestart is not installed;
+# 1, after a warning saying why, when the drop-in could not be checked or
+# written (an earlier one, if any, is left as it was).
+ic_needrestart_keep_hotplug() {
+    local dir="${IC_NEEDRESTART_CONF_DIR:-/etc/needrestart/conf.d}"
+    local conf tmp
+    local -a root=()
+    conf="$dir/50-incubacloud-hotplug.conf"
+    [ "$(id -u)" -eq 0 ] || root=(sudo -n)
+    "${root[@]}" test -d "$dir" || return 0
+    tmp="$(mktemp -t ic-needrestart.XXXXXXXX)" || {
+        ic_warn "needrestart: no scratch file for the hotplug drop-in"
+        return 1
+    }
+    # SC2016: the single quotes are intentional: Perl reads ``$nrconf``.
+    # shellcheck disable=SC2016
+    printf '%s\n' \
+        '# Written by IncubaCloud: restarted by hand, this oneshot unit waits' \
+        '# on its FIFO for good, and so does the apt run.' \
+        '$nrconf{override_rc}{qr(^cloud-init-hotplugd)} = 0;' >"$tmp"
+    if "${root[@]}" cmp -s "$tmp" "$conf"; then
+        rm -f "$tmp"
+        return 0
+    fi
+    # As needrestart.conf loads each drop-in: eval of its whole text, and
+    # ``die`` on an error.
+    # shellcheck disable=SC2016
+    if ! perl -e '
+        our %nrconf;
+        my $fn = shift;
+        eval do { local (@ARGV, $/) = $fn; <> };
+        die "Error parsing $fn: $@" if $@;
+        my ($re) = grep { "cloud-init-hotplugd.service" =~ $_ }
+            keys %{ $nrconf{override_rc} || {} };
+        exit(defined $re && !$nrconf{override_rc}{$re} ? 0 : 1);
+    ' "$tmp" >/dev/null 2>&1; then
+        rm -f "$tmp"
+        ic_warn "needrestart: the hotplug drop-in did not read as needrestart reads it; $conf left as it was"
+        return 1
+    fi
+    if ! "${root[@]}" install -m 0644 "$tmp" "$conf.tmp" \
+            || ! "${root[@]}" mv -f "$conf.tmp" "$conf"; then
+        "${root[@]}" rm -f "$conf.tmp" 2>/dev/null || true
+        rm -f "$tmp"
+        ic_warn "needrestart: could not write $conf"
+        return 1
+    fi
+    rm -f "$tmp"
+    return 0
+}

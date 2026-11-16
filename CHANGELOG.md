@@ -89,10 +89,17 @@ paths that their new checks refuse, keeping them.
   unattended upgrades included
   (`/etc/needrestart/conf.d/50-incubacloud-hotplug.conf`, only where
   needrestart is installed). cloud-init's hotplug itself is untouched.
-  The hardening recipe changes, so hardened servers show their hardening
-  as outdated until it is applied again; a server already set up gets
-  the needrestart setting with its next Full Setup. A host stuck there
-  now comes back with `systemctl kill cloud-init-hotplugd.service`.
+  needrestart stops every apt run on a drop-in it cannot parse, so the
+  text is read the way needrestart reads it before it replaces the file,
+  and one that does not read is never left in place. The server's
+  restart check (`host_reboot.sh check`, every 30 minutes on every
+  server the panel reaches) writes the same drop-in, so the servers set
+  up before it get it within half an hour of the update, with no new
+  Full Setup and no new hardening. The hardening's own apt task is left
+  as it was, with the recipe's fingerprint, so no hardened server shows
+  its hardening as outdated: it installs nothing on a hardened server,
+  and the drop-in covers it. A host stuck there now comes back with
+  `systemctl kill cloud-init-hotplugd.service`.
 
 - **A backup retention other than three months applies.** With the
   duplicity cron owning the retention, the doodba template renders
