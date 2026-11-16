@@ -326,13 +326,6 @@ gestionado de copias* on a running panel too.
   installs the timer `incubacloud-reboot-when-away`; once the panel checks
   it again, the panel decides (owner's decision, 15-nov-2026).
 
-- **The agents install on a new server again (#61).** With the central on
-  its single name, the install wrote the central's authority before it
-  created its directory, and failed on every server that did not have it
-  yet with «Destination directory ... does not exist»; servers installed
-  before were not affected. The directories are created first, and a test
-  fails when a play writes into one of its directories before creating it.
-
 - **The one-page instance form reads right.** The footer's error text
   («N fields need attention») shows in the error colour instead of grey,
   a section after a folded bar keeps the usual gap before its title, and
@@ -622,6 +615,24 @@ columns: Odoo keeps what each holds as its English text.
   credential until the next sync puts the new one there, instead of a 401
   on every server. The installs, the reconciliation's revision pass and
   the read credential's rotation decide by the same check.
+- **The central's Loki splits a query by day and queues 2 048 per account
+  (#84).** As Loki 2.9 comes, it splits every 30 minutes and queues 100
+  subqueries: a week of a server's sign-ins was 336 and answered 429, so
+  the Security view's 7-day tables said the central was busy. The panel
+  also reads the last lines of a long window in tranches of 12 hours,
+  newest first, so those tables answer on a central not yet deployed
+  again. The central's revision is 3: the reconciliation cron deploys it
+  again, which restarts Loki alone, about 20 seconds, the agents keeping
+  their lines.
+
+### Fixed
+
+- **The agents install on a new server again (#61).** With the central on
+  its single name, the install wrote the central's authority before it
+  created its directory, and failed on every server that did not have it
+  yet with «Destination directory ... does not exist»; servers installed
+  before were not affected. The directories are created first, and a test
+  fails when a play writes into one of its directories before creating it.
 
 ### Documentation
 

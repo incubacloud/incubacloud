@@ -57,6 +57,9 @@ _ALLOWED_TOKENS = {
     # Settings. Renaming it needs an alias in those modules in the same
     # release, so it goes on its own.
     "rl-saas-fsec": "a shared CSS class, renamed together with its users",
+    # Loki's own key: its account (the X-Scope-OrgID header) is what Loki
+    # calls a tenant, not a customer of anyone's.
+    "max_outstanding_requests_per_tenant": "a key of Loki's configuration, in its own words",
 }
 
 #: Folders whose files may use some of the words, and why.

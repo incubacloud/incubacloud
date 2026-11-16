@@ -11,7 +11,9 @@ half: it reads them over LogQL and turns each line into a record.
 and the transport of the metrics reads (``_promql_get``: one retry after
 a transport failure or a 5xx, one after a pause on a 429). Pages are
 taken by time: each starts at the last instant of the one before,
-included, and a line read twice counts once.
+included, and a line read twice counts once. The last lines of a long
+window are read in tranches of :data:`TRANCHE_SECONDS`, newest first, so
+no request makes Loki queue more subqueries than it holds.
 
 **Parsing.** Every parser is anchored at the start of the line and
 returns ``None`` for a shape it does not know. Users tried and commands
@@ -54,6 +56,16 @@ QUERY_TIMEOUT = 8
 
 #: Lines one page asks for.
 PAGE_LIMIT = 500
+
+#: Seconds of a window one request of :func:`read_last_lines` reaches at
+#: most. Loki splits a request into subqueries and answers 429 to an
+#: account whose subqueries fill its queue: as it comes (2.9), every 30
+#: minutes and 100 queued, so seven days in one request (336) were
+#: refused, even alone (QA of 15-nov-2026). Twelve hours are 24 there,
+#: and a board's four reads at once (``metrics_security._READ_WORKERS``)
+#: stay under 100; on a central this version deploys, which splits by
+#: day, one or two. Measured on Loki 2.9.8 with a week of lines.
+TRANCHE_SECONDS = 12 * 3600
 
 #: Pages one read takes at most before it stops and says so.
 MAX_PAGES = 10
@@ -920,15 +932,20 @@ def read_last_lines(
 ):
     """Read the last lines of a window, newest page first, by time.
 
-    Each page ends at the first instant of the one after it, included
-    (Loki's window leaves its end out, so it ends one nanosecond later);
-    a line read twice, the same server, instant and text, counts once.
+    The window is read in tranches of :data:`TRANCHE_SECONDS` (the oldest
+    up to a second longer), the newest first, each from its end back; a tranche read whole hands
+    over to the one before it. Each page ends at the first instant of
+    the one after it, included (Loki's window leaves its end out, so it
+    ends one nanosecond later); a line read twice, the same server,
+    instant and text, counts once. *pages* full pages and *pages* ×
+    *limit* lines are of the whole window: past them, the newest lines
+    are kept.
 
     :param str base_url: the log read root (:func:`loki_base`).
     :param str expression: LogQL selecting lines.
     :param int start_ns: first instant, nanoseconds, included.
     :param int end_ns: last instant, nanoseconds, left out.
-    :param int pages: pages at most.
+    :param int pages: full pages at most.
     :param int limit: lines a page asks for.
     :returns: the lines, oldest first, and whether the window held more.
     :rtype: tuple[list[LogLine], bool]
@@ -937,25 +954,42 @@ def read_last_lines(
     """
     seen = set()
     lines = []
-    end = int(end_ns)
-    for _page in range(pages):
-        page = logql_query_range(
-            base_url, expression, start_ns, end, limit=limit,
-            timeout=timeout, token=token, user=user, verify=verify,
-            direction="backward",
-        )
-        fresh = [item for item in page if item[:3] not in seen]
-        for item in fresh:
-            seen.add(item[:3])
-        lines.extend(fresh)
-        if len(page) < limit:
-            return _read(lines, complete=True).lines, False
-        if not fresh:
-            # More lines at one instant than a page holds: what is left
-            # is older than what a sample takes.
-            break
-        end = page[0].ns + 1
-    return _read(lines, complete=False).lines, True
+    wanted = pages * limit
+    full = 0
+    start = int(start_ns)
+    upper = int(end_ns)
+    tranche = TRANCHE_SECONDS * 1_000_000_000
+    while upper > start:
+        lower = upper - tranche
+        if lower - start < 1_000_000_000:
+            # The callers' window ends a nanosecond past its instant: a
+            # remainder that small is the oldest tranche's, not one more.
+            lower = start
+        end = upper
+        while True:
+            page = logql_query_range(
+                base_url, expression, lower, end, limit=limit,
+                timeout=timeout, token=token, user=user, verify=verify,
+                direction="backward",
+            )
+            fresh = [item for item in page if item[:3] not in seen]
+            for item in fresh:
+                seen.add(item[:3])
+            lines.extend(fresh)
+            if len(page) < limit:
+                break
+            full += 1
+            if not fresh or full >= pages or len(lines) >= wanted:
+                # The sample is taken, or more lines at one instant than
+                # a page holds: what is left is older than it takes.
+                return _read(lines, complete=False).lines[-wanted:], True
+            end = page[0].ns + 1
+        if len(lines) >= wanted:
+            # Read whole down to here; older tranches are left unread.
+            cut = len(lines) > wanted or lower > start
+            return _read(lines, complete=not cut).lines[-wanted:], cut
+        upper = lower
+    return _read(lines, complete=True).lines, False
 
 
 class LogReader:

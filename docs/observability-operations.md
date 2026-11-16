@@ -30,7 +30,13 @@
    that changes the central converges this way even when its first
    deployment ran on older code, failed, or never ran. Not with
    observability off: the deployment switches it on, so it waits for the
-   operator (12-nov-2026: revision 1, the central without Grafana).
+   operator (12-nov-2026: revision 1, the central without Grafana;
+   14-nov-2026: revision 2, Loki's series per query and its restart when
+   its configuration changes; 15-nov-2026: revision 3, Loki splitting a
+   query by day). A change of Loki's configuration restarts Loki alone:
+   about 20 s in which a log read says the central does not answer and
+   the agents keep their lines and send them again (Loki 2.9.8, its
+   write-ahead log on the volume).
 
 There is no per-host button, and no step to remember. There never should
 have been: there is no host to which observability does not apply, so
@@ -308,7 +314,13 @@ Loki when its configuration changed (until 1.0.230 nothing did, and a new
 value never applied). Loki returns up to `ic_loki_max_query_series`
 series a query (5000, provisional until step M of plan #84 measures the
 top source addresses under a distributed attack; Loki's default, 500,
-breaks them). A host's credential reaches only the push routes above —
+breaks them). It splits a query by day and queues 2 048 subqueries per
+account (`ic_loki_split_queries_by_interval`,
+`ic_loki_max_outstanding_per_account`, 15-nov-2026): as it comes (2.9) it
+splits every 30 minutes and queues 100, so a week of a server's sign-ins
+was 336 subqueries and answered 429 even alone, and the Security view's
+7-day tables said the central was busy. A host's credential reaches only
+the push routes above —
 Loki's delete API is not routed — so a host that is compromised cannot
 erase what it already sent. The proxy's access log stays on each host, in
 `/var/log/traefik/access.log` (rotated daily or past 100 MB, 30 days),
@@ -403,7 +415,12 @@ itself and its counters never expire).
   charts (8 s, one retry, a 429 asked again after a pause and never
   counted as the central down), 500 lines a page, pages taken by time from
   the last instant of the one before, included, and a line read twice
-  counted once. Its parsers are anchored at the start of the line; the
+  counted once. The last lines of a long window (the Security view's
+  7-day tables, "see lines") are read in tranches of 12 hours, newest
+  first (`logs.TRANCHE_SECONDS`), its pages and lines shared by the whole
+  window: 24 subqueries each on a Loki with its own limits, so a board's
+  four reads at once fit its queue of 100 before the central is deployed
+  again with its own, and one or two after. Its parsers are anchored at the start of the line; the
   user names and commands an attacker writes are cut to 32 and 64
   characters of a closed set before they can reach a message, a sudo
   record keeps the program without its arguments, and no record carries
