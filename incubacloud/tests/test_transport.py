@@ -12,6 +12,7 @@ Covers:
 """
 
 import asyncio
+import logging
 import shlex
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -88,6 +89,36 @@ class TestBaseTransportIsAbstract(BaseCase):
         r = CommandResult(stdout="hello", exit_status=0)
         self.assertEqual(r.stdout, "hello")
         self.assertEqual(r.exit_status, 0)
+
+
+class TestTheCommandsStayOutOfTheLog(BaseCase):
+    """asyncssh logs every command it runs, whole, at INFO."""
+
+    def test_a_command_asyncssh_logs_reaches_no_handler(self):
+        """A channel's ``Command:`` line, as asyncssh writes it, is dropped
+        before any handler, the root logger's at INFO included."""
+        from odoo.addons.incubacloud.models import transport  # noqa: F401
+
+        seen = []
+
+        class _Keep(logging.Handler):
+            """Keep every record that reaches the handler."""
+
+            def emit(self, record):
+                """Record *record*'s message."""
+                seen.append(record.getMessage())
+
+        handler = _Keep(level=logging.DEBUG)
+        pkg = logging.getLogger("asyncssh")
+        pkg.addHandler(handler)
+        try:
+            channel = asyncssh.logger.get_child("channel", "chan=0")
+            channel.info("  Command: %s", "bash push.sh not-for-the-log")
+            channel.warning("a warning still reaches the log")
+        finally:
+            pkg.removeHandler(handler)
+        self.assertEqual(seen, ["[chan=0] a warning still reaches the log"])
+        self.assertFalse(pkg.isEnabledFor(logging.INFO))
 
 
 # ---------------------------------------------------------------------------

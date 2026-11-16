@@ -266,6 +266,15 @@ refuse, and the backup paths two records share (raising
   above refuse is left out and the import says why, instead of «An
   internal error occurred»; any other value refused is named the same
   way.
+- **The SSH library no longer writes the commands the panel runs to its
+  log.** asyncssh's logger is kept at WARNING whatever level the
+  deployment sets, so a command's text stays out of the server's log.
+- **A secret a command needs goes in a file, not on its command line.**
+  Executors queue it as an owner-only file of the job's directory
+  (`_queue_private_file`), uploaded before the first step and removed with
+  the directory; the reading of a staging's last login takes its database
+  password that way, and hands it to the container through the
+  environment.
 
 ## [1.0.231] — unreleased
 
