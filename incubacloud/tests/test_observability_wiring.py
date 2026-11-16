@@ -1067,3 +1067,105 @@ class TestMonitoringExplainsAnEmptyFleet(BaseCase):
         board = next(i for i, el in enumerate(branches) if el.find(".//FleetBoard") is not None)
         self.assertLess(empty, board)
         self.assertIn("No servers yet", ElementTree.tostring(branches[empty], encoding="unicode"))
+
+
+class TestTheDirectoriesComeBeforeTheirFiles(BaseCase):
+    """A play writes a file only once it has made the file's directory.
+
+    16-nov-2026: the agents' install wrote the central's authority into
+    ``ic_obs_dir`` before the task that creates it, and failed on every
+    new server with "Destination directory ... does not exist"; a server
+    installed before kept the directory and never showed it.
+
+    The two plays that may start on a server with none of their
+    directories. The account sync is not one: it refuses a host the
+    central was never deployed on.
+    """
+
+    _PLAYBOOKS = _ROOT / "ansible" / "playbooks"
+    _PLAYS = ("host_observability.yml", "observability_central.yml")
+    #: The modules that write a file, and the argument naming it.
+    _WRITERS = {
+        "copy": "dest", "template": "dest", "get_url": "dest",
+        "lineinfile": "path", "blockinfile": "path",
+    }
+
+    def _module(self, task):
+        """Return the short name and arguments of *task*'s module.
+
+        :param dict task: a task.
+        :return: ``(name, args)``, ``(None, None)`` for a block.
+        :rtype: tuple
+        """
+        for key, args in task.items():
+            name = key.rsplit(".", 1)[-1]
+            if name in self._WRITERS or name in ("file", "include_tasks", "import_tasks"):
+                return name, args
+        return None, None
+
+    def _walk(self, tasks):
+        """Yield every task of *tasks* in the order the play runs them.
+
+        Blocks, rescues and always sections are entered, and an included
+        file's tasks take the place of the include.
+
+        :param list tasks: a task list.
+        :rtype: Iterator[dict]
+        """
+        for task in tasks or []:
+            yield task
+            for key in ("block", "rescue", "always"):
+                yield from self._walk(task.get(key))
+            name, args = self._module(task)
+            if name in ("include_tasks", "import_tasks"):
+                path = args if isinstance(args, str) else args["file"]
+                yield from self._walk(
+                    yaml.safe_load((self._PLAYBOOKS / path).read_text()),
+                )
+
+    def _misplaced_writes(self, playbook):
+        """Return the writes of *playbook* that come before their directory.
+
+        Only a file under one of the play's own directories (a variable
+        ending in ``_dir``) is checked: the system's exist on any server.
+
+        :param str playbook: the playbook's file name.
+        :return: ``(task name, path)`` of each misplaced write, and how
+            many writes were checked.
+        :rtype: tuple[list, int]
+        """
+        play = yaml.safe_load((self._PLAYBOOKS / playbook).read_text())[0]
+        made, misplaced, checked = set(), [], 0
+        for task in self._walk(play["tasks"]):
+            name, args = self._module(task)
+            if name == "file" and args.get("state") == "directory":
+                items = task.get("loop")
+                for item in items if isinstance(items, list) else [None]:
+                    made.add(args["path"].replace("{{ item }}", item or "{{ item }}"))
+            elif name in self._WRITERS:
+                path = args.get(self._WRITERS[name]) or ""
+                if not re.match(r"\{\{ \w+_dir \}\}/", path):
+                    continue
+                checked += 1
+                if path.rsplit("/", 1)[0] not in made:
+                    misplaced.append((task["name"], path))
+        return misplaced, checked
+
+    def test_no_play_writes_into_a_directory_it_has_not_made(self):
+        for playbook in self._PLAYS:
+            with self.subTest(playbook=playbook):
+                misplaced, checked = self._misplaced_writes(playbook)
+                self.assertTrue(checked, "the walk found no write to check")
+                self.assertEqual(misplaced, [])
+
+    def test_the_central_authority_is_written_after_its_directory(self):
+        """The write that broke the install of a new server."""
+        names = [
+            t.get("name") for t in self._walk(yaml.safe_load(
+                (self._PLAYBOOKS / "host_observability.yml").read_text(),
+            )[0]["tasks"])
+        ]
+        self.assertLess(
+            names.index("Create the observability directories"),
+            names.index("Write the central's authority"),
+        )
