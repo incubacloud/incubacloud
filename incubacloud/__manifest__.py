@@ -84,6 +84,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         "views/host_terminal_page.xml",
         "views/cloud_instance_logs.xml",
         "views/cloud_github_event.xml",
+        "views/login_templates.xml",
     ],
     "installable": True,
     "application": True,
@@ -135,8 +136,15 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
             ("include", "incubacloud._assets_cloud"),
             "incubacloud/static/src/app/main.js",
         ],
+        # The show password button of /web/login, named for a screen
+        # reader and with a visible focus.
+        "web.assets_frontend": [
+            "incubacloud/static/src/public/show_password.scss",
+            "incubacloud/static/src/public/show_password_pressed.js",
+        ],
         # JS unit tests (Hoot framework)
         "web.assets_unit_tests": [
+            "incubacloud/static/src/public/show_password_pressed.js",
             "incubacloud/static/src/utils/**/*.js",
             "incubacloud/static/src/toast/**/*.js",
             "incubacloud/static/src/store/**/*.js",

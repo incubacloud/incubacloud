@@ -190,6 +190,13 @@ gestionado de copias* on a running panel too.
   says what to remove by hand; a teardown a person stops keeps the host.
   The host page's confirmation says the panel's access will be taken off
   such a server.
+- **The show password button of the sign-in page has a name and a
+  focus.** A screen reader announced it as a button with no name, and
+  tabbing to it drew nothing. It is now named Show password (translated),
+  reports whether the password is shown (`aria-pressed`) and draws an
+  outline when focused from the keyboard. The sign-in and its OAuth
+  buttons are unchanged.
+
 - **A Full Setup no longer hangs installing the host tools on Ubuntu.**
   After every apt run, needrestart restarts the services still on files
   that run replaced, and one of them can be cloud-init's hotplug hook

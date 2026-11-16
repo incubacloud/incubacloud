@@ -15901,6 +15901,11 @@ msgid "Show last 7 days"
 msgstr "Mostrar últimos 7 días"
 
 #. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.login_show_password_name
+msgid "Show password"
+msgstr "Mostrar contraseña"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
 msgid "Show secret"
