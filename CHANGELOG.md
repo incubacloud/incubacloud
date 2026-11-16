@@ -15,7 +15,8 @@ the record behind it is deleted.
 
 The update adds a table and a column. Its one data migration, 1.0.232's
 `end-first-steps`, fills the marks of what a running panel already holds,
-marked as backfilled.
+marked as backfilled; each mark in a savepoint of its own, and what fails is
+logged without breaking the update.
 
 ### Added
 
@@ -25,17 +26,21 @@ marked as backfilled.
   changed (`INSERT … ON CONFLICT` with `COALESCE`). `cloud.first.steps` is
   the one definition of each mark: tried by the oldest server, backup
   destination, deploy asked for, own domain (a name outside its server's
-  wildcard domain) or instance with a mail relay; achieved by the oldest Full
+  wildcard domain; one whose instance has no server left, archived after its
+  server was deleted, does not count) or instance with a mail relay; achieved by the oldest Full
   Setup done, backup made, project, deploy done, rebuild done that a push
   asked for on an instance that tests its image, deploy or rebuild done after
   an own domain was added (no DNS or certificate check), or relay delivering.
   Archived records count. The creation of a server, a destination, a project
   or a domain, a change to an instance's relay, the end of the jobs of those
-  types and every read of the steps write the marks; each in a savepoint,
-  logged, so a mark never makes the operation fail. A layer turns them off
-  (`_enabled`), narrows the servers that count (`_first_step_host_domain`),
-  adds marks (`_marks`, `_mark`, `_job_types`) and hears every change
-  (`_on_marks_changed`).
+  types and every read of the steps write the marks; each mark in a savepoint
+  of its own, logged, so a mark never makes the operation fail nor keeps the
+  others from being written. A layer turns them off (`_enabled`), narrows the
+  servers that count (`_first_step_host_domain`) and the jobs whose failure
+  counts (`_failure_domain`), adds marks (`_marks`, `_mark`, `_job_types`),
+  leaves a try out of a step's started (`_started`) and hears every change
+  (`_on_marks_changed`). See what failed leads to the last failed job of the
+  type its mark keeps, among those that count.
 - **`/cloud/first_steps`,** for whoever manages servers: each step's state
   (done, started, to do, last attempt failed), the next one, its actions
   and guide, whether the card shows and the counts; and
