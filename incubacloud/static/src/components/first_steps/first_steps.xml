@@ -17,7 +17,7 @@
 
             <t t-if="folded">
                 <button type="button" class="ic-fs-fold" aria-expanded="false"
-                        aria-controls="ic-fs-steps" t-on-click="() => this.toggleExpanded()">
+                        t-on-click="() => this.toggleExpanded()">
                     <span class="ic-fs-fold-icon" aria-hidden="true">▸</span>
                     <span aria-live="polite" t-esc="foldText"/>
                 </button>

@@ -39,7 +39,7 @@ function stateOf(over = {}) {
               optional: false, state: "todo", failed: false,
               actions: [
                   { code: "connect_server", label: "Connect a server", route: "new_host", params: {} },
-                  { code: "rent", label: "Rent a server", client: true },
+                  { code: "open_dialog", label: "Open a dialog", client: true },
               ],
               guide_url: "https://docs.incubacloud.io/hosts/connect/" },
             { code: "backups", title: "Set up backups", help: "Backups go to a destination.",
@@ -107,12 +107,12 @@ describe("FirstSteps — the card", () => {
     test("a page action navigates, a client action runs what a layer registered", async () => {
         const navigated = [];
         const ran = [];
-        registerFirstStepAction("rent", (env, action) => ran.push(action.code));
+        registerFirstStepAction("open_dialog", (env, action) => ran.push(action.code));
         await mountCard(stateOf(), { navigate: (route, params) => navigated.push([route, params]) });
         await click(".ic-fs-action:contains(Connect a server)");
-        await click(".ic-fs-action:contains(Rent a server)");
+        await click(".ic-fs-action:contains(Open a dialog)");
         expect(navigated).toEqual([["new_host", {}]]);
-        expect(ran).toEqual(["rent"]);
+        expect(ran).toEqual(["open_dialog"]);
     });
 
     test("× closes it for this user", async () => {

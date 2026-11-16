@@ -213,6 +213,39 @@ class TestFirstStepMarks(_FirstStepsBase):
         self.Steps._reconcile()
         self.assertTrue(self._row("server").attempted_at)
 
+    def test_an_archived_instance_whose_server_was_deleted_breaks_no_mark(self):
+        host = self._host()
+        instance = self._instance(host)
+        self.env["cloud.instance.domain"].create({
+            "instance_id": instance.id, "hostname": "fs-inst.fs.example.com",
+        })
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET active = FALSE WHERE id = %s", [instance.id],
+        )
+        self.env.invalidate_all()
+        host.unlink()
+        self.assertFalse(instance.with_context(active_test=False).host_id)
+        self.env.cr.execute("DELETE FROM cloud_first_step")
+        self.env.invalidate_all()
+        self.assertIn("project", self.Steps._reconcile())
+        self.assertTrue(self._row("project").achieved_at)
+        self.assertFalse(self._row("domain"), "without its server it is not counted")
+
+    def test_a_mark_that_fails_to_derive_leaves_the_others(self):
+        host = self._host()
+        self._job("full_setup", host)
+        self.env.cr.execute("DELETE FROM cloud_first_step")
+        self.env.invalidate_all()
+        with patch.object(
+            CloudFirstSteps, "_derive_backups", side_effect=RuntimeError("boom"),
+        ), self.assertLogs(
+            "odoo.addons.incubacloud.models.cloud_first_step", level="ERROR",
+        ):
+            changed = self.Steps._reconcile()
+        self.assertIn("server", changed)
+        self.assertNotIn("backups", changed)
+        self.assertTrue(self._row("server").achieved_at)
+
     def test_the_job_end_writes_the_mark(self):
         host = self._host()
         job = self._job("full_setup", host, state="started")
@@ -329,6 +362,26 @@ class TestFirstStepsState(_FirstStepsBase):
         self.assertEqual(server["actions"][0]["route"], "host_detail")
         self.assertEqual(server["actions"][0]["params"], {"host_id": host.id})
 
+    def test_the_failure_leads_to_a_server_the_mark_counts(self):
+        host = self._host()
+        other = self._host(name="fs-other", ip_address="10.0.12.9")
+        self._job("full_setup", host, state="failed")
+        self._job("full_setup", other, state="failed")
+        with patch.object(
+            CloudFirstSteps, "_first_step_host_domain",
+            return_value=[("id", "=", host.id)],
+        ):
+            server = self._step(self._state(), "server")
+        self.assertTrue(server["failed"])
+        self.assertEqual(server["actions"][0]["params"], {"host_id": host.id})
+
+    def test_a_try_a_layer_leaves_out_does_not_start_the_step(self):
+        self._host()
+        with patch.object(CloudFirstSteps, "_started", return_value=False):
+            server = self._step(self._state(), "server")
+        self.assertEqual(server["state"], "todo")
+        self.assertTrue(self._row("server").attempted_at, "kept all the same")
+
     def test_required_done_collapses_then_all_done_is_gone(self):
         host = self._host()
         instance = self._instance(host, state="deployed")
@@ -433,6 +486,33 @@ class TestFirstStepsMigration(_FirstStepsBase):
             self.migration.migrate(self.env.cr, "1.0.231")
         heard.assert_not_called()
         self.assertTrue(self._row("server").backfilled)
+
+    def test_an_archived_instance_without_its_server_does_not_break_it(self):
+        host = self._host()
+        instance = self._instance(host)
+        self.env["cloud.instance.domain"].create({
+            "instance_id": instance.id, "hostname": "erp.acme.test",
+        })
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET active = FALSE WHERE id = %s", [instance.id],
+        )
+        self.env.invalidate_all()
+        host.unlink()
+        self.env.cr.execute("DELETE FROM cloud_first_step")
+        self.env.invalidate_all()
+        self.migration.migrate(self.env.cr, "1.0.231")
+        self.env.invalidate_all()
+        self.assertTrue(self._row("project").backfilled)
+        self.assertFalse(self._row("domain"))
+
+    def test_a_backfill_that_fails_does_not_break_the_update(self):
+        self._host()
+        self.env.cr.execute("DELETE FROM cloud_first_step")
+        with patch.object(
+            CloudFirstSteps, "_backfill", side_effect=RuntimeError("boom"),
+        ), self.assertLogs(level="ERROR"):
+            self.migration.migrate(self.env.cr, "1.0.231")
+        self.assertFalse(self.env["cloud.first.step"].search([]))
 
     def test_a_fresh_install_runs_nothing(self):
         self._host()
