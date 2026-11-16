@@ -187,7 +187,6 @@ class TestReadMetrics(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             },
         )
         self.assertEqual(answer["unanswered"], {})
-        self.assertNotIn("silence", answer)
         self.assertNotIn("timing", answer)
 
     def test_the_peak_is_marked_on_its_hour(self):
@@ -197,7 +196,8 @@ class TestReadMetrics(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual(peak["value"], 95.0)
         self.assertEqual(peak["hour"], self.central.spike_hour())
         self.assertGreaterEqual(peak["times_average"], PEAK_FACTOR)
-        self.assertNotIn("share_of_limit", peak)
+        self.assertEqual(peak["share_of_limit"], 45.0)
+        self.assertEqual(peak["limit_service"], "odoo")
         marked = [row for row in answer["items"] if row.get("peak")]
         self.assertEqual([row["hour"] for row in marked], [peak["hour"]])
         self.assertEqual(marked[0]["peak"], ["cpu_percent"])
@@ -230,8 +230,15 @@ class TestReadMetrics(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertTrue(bad["isError"])
 
     def test_silence_comes_only_when_it_explains_something(self):
-        """With readings, none; with an empty central, why."""
-        self.assertNotIn("silence", self._ok())
+        """With readings and a server that reports, none; with a server that
+        does not, or an empty central, why."""
+        self.assertEqual(self._ok()["silence"]["code"], "agents_missing")
+        Instance = type(self.production)
+        with patch.object(
+            Instance, "_metrics_silence", autospec=True,
+            return_value={"code": "window", "since": None},
+        ):
+            self.assertNotIn("silence", self._ok())
 
         def empty(url, params=None, **_kwargs):
             """A central that has nothing on the instance."""
@@ -271,9 +278,12 @@ class TestReadMetrics(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
 
     def test_too_many_reads_a_minute_are_refused_in_words(self):
         """The tab's budget: the 21st read is an error and asks nothing."""
-        with patch.object(
-            CloudRateLimit, "hit", autospec=True, return_value=False
-        ):
+
+        def hit(_self, bucket, **_kwargs):
+            """Refuse the tab's bucket only, not the agent's own."""
+            return not bucket.startswith("metrics_board_user")
+
+        with patch.object(CloudRateLimit, "hit", autospec=True, side_effect=hit):
             result = self._read()
         self.assertTrue(result["isError"])
         self.assertIn("Too many chart reads", result["content"][-1]["text"])
