@@ -390,6 +390,63 @@ class TestSSHTransportRun(BaseCase):
         process.wait.assert_awaited_once_with(check=False)
 
 
+class TestSSHTransportRunWithStdin(BaseCase):
+    """A command fed its input whole (the scripts' tar, 16-nov-2026)."""
+
+    def _conn(self, stdout, exit_status, write_error=None):
+        """A connection whose process takes the input and ends at once.
+
+        :param write_error: what writing the input raises, or None
+        :return: ``(connection mock, process mock)``
+        """
+        conn, process = _conn_answering(stdout, exit_status)
+        process.stdin = MagicMock(spec=asyncssh.SSHWriter)
+        if write_error is not None:
+            process.stdin.write.side_effect = write_error
+        return conn, process
+
+    def test_the_input_is_written_whole_and_closed(self):
+        from odoo.addons.incubacloud.models.transport import SSHTransport
+
+        conn, process = self._conn(b"done\n", 0)
+        result = _run(SSHTransport(conn).run_with_stdin("tar -x", b"data"))
+
+        self.assertEqual(result.stdout, "done")
+        self.assertEqual(result.exit_status, 0)
+        process.stdin.write.assert_called_once_with(b"data")
+        process.stdin.write_eof.assert_called_once_with()
+        conn.create_process.assert_awaited_once_with(
+            "tar -x", encoding=None, stderr=asyncssh.STDOUT,
+        )
+        process.wait.assert_awaited_once_with(check=False)
+
+    def test_a_command_that_exits_unread_is_judged_by_its_status(self):
+        """No ``tar`` on the host: the channel closes under the write."""
+        from odoo.addons.incubacloud.models.transport import SSHTransport
+
+        conn, _process = self._conn(
+            b"sh: tar: not found\n", 127, write_error=BrokenPipeError(),
+        )
+        result = _run(SSHTransport(conn).run_with_stdin("tar -x", b"data"))
+
+        self.assertEqual(result.exit_status, 127)
+        self.assertEqual(result.stdout, "sh: tar: not found")
+
+    def test_the_base_transport_does_not_have_it(self):
+        """Not abstract: a transport of a layer still instantiates, and
+        whoever calls it falls back (``_upload_scripts_as_tar``)."""
+        from odoo.addons.incubacloud.models.transport import (
+            BaseTransport,
+            SSHTransport,
+        )
+
+        self.assertNotIn("run_with_stdin", BaseTransport.__abstractmethods__)
+        with self.assertRaises(NotImplementedError):
+            _run(BaseTransport.run_with_stdin(
+                MagicMock(spec=SSHTransport), "cmd", b"",
+            ))
+
+
 # ---------------------------------------------------------------------------
 # 4. SSHTransport file operations
 # ---------------------------------------------------------------------------

@@ -110,6 +110,15 @@ async def _local_upload(files, mode=None):
             os.chmod(path, mode)
 
 
+def _answer(result):
+    """Return a step's result without what it took (``seconds``).
+
+    :param dict result: an entry of ``_run_steps``'s results
+    :rtype: dict
+    """
+    return {key: value for key, value in result.items() if key != "seconds"}
+
+
 def _local_transport(start_answer=None):
     """Return a transport whose commands run on this machine.
 
@@ -275,8 +284,8 @@ class TestStepsApart(TransactionCase):
         )
         results, skipped = self._steps(executor)
         self.assertEqual(skipped, [])
-        self.assertEqual(results["Apart"], results["Attached"])
-        self.assertEqual(results["Apart"], {"stdout": "one\ntwo", "exit_status": 3})
+        self.assertEqual(_answer(results["Apart"]), _answer(results["Attached"]))
+        self.assertEqual(_answer(results["Apart"]), {"stdout": "one\ntwo", "exit_status": 3})
         executor._flush_logs()
         log = self._log()
         for line in ("one", "two", "warn"):
@@ -386,7 +395,7 @@ class TestStepsApart(TransactionCase):
         ))
         executor = self._executor(("Apart", _STEP, {"detached": True}))
         results, _skipped = self._steps(executor, transport)
-        self.assertEqual(results["Apart"], {"stdout": "one\ntwo", "exit_status": 3})
+        self.assertEqual(_answer(results["Apart"]), {"stdout": "one\ntwo", "exit_status": 3})
         transport.execute.assert_called_once()
         self.assertEqual(transport.execute.call_args.args[0], _STEP)
         self.assertTrue(executor._detached_attached)
@@ -406,7 +415,7 @@ class TestStepsApart(TransactionCase):
         ))
         executor = self._executor(("Apart", _STEP, {"detached": True}))
         results, _skipped = self._steps(executor, transport)
-        self.assertEqual(results["Apart"], {"stdout": "one\ntwo", "exit_status": 3})
+        self.assertEqual(_answer(results["Apart"]), {"stdout": "one\ntwo", "exit_status": 3})
         transport.execute.assert_called_once()
         self.assertTrue(executor._detached_attached)
         executor._flush_logs()

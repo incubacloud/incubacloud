@@ -54,14 +54,17 @@ and first done: a server, backups, a project, the first deploy, a push
 that rebuilds, a domain of its own and outgoing mail. A date once written
 stays, also when the record behind it is deleted. Agents read an
 instance's metrics by the hour, and the assistant's Stop takes effect at
-once.
+once. A move's cut is measured from the drain and broken down by part, a
+job hands its scripts to the server in one exchange, and the cutover sees
+the destination healthy within half a second.
 
 The update adds the SFTP columns of backup destinations (`sftp_host`,
 `sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
 `sftp_public_key`, `sftp_known_hosts`, `sftp_host_key_fingerprint`,
 `sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
 destinations there are, the table `cloud_host_reboot`, seven columns on
-hosts for their restart and `backup_path_suffix` on instances. Its data
+hosts for their restart and `backup_path_suffix`, `move_cut_parts` and
+`move_last_cut_breakdown` on instances. Its data
 migration, 1.0.232's post-migrate, writes each backup destination's
 retention in the form it must now have (spaces gone, the unit in capitals,
 an empty one as `3M`) and names in the log any it leaves invalid, the
@@ -114,6 +117,117 @@ gestionado de copias* on a running panel too.
   stopped) reads as stale on its first listing, before its first night.
   A real stop is told a day later. Nothing told the operator before that
   the copies had stopped.
+
+- **The first steps' marks.** `cloud.first.step` keeps, per mark, the first
+  try, the first success, the type of the last job that failed while it was
+  not achieved and whether the dates were backfilled; a written date is never
+  changed (`INSERT … ON CONFLICT` with `COALESCE`). `cloud.first.steps` is
+  the one definition of each mark: tried by the oldest server, backup
+  destination, deploy asked for, own domain (a name outside its server's
+  wildcard domain; one whose instance has no server left, archived after its
+  server was deleted, does not count) or instance with a mail relay; achieved by the oldest Full
+  Setup done, backup made, project, deploy done, rebuild done that a push
+  asked for on an instance that tests its image, deploy or rebuild done after
+  an own domain was added (no DNS or certificate check), or relay delivering.
+  Archived records count. The creation of a server, a destination, a project
+  or a domain, a change to an instance's relay, the end of the jobs of those
+  types and every read of the steps write the marks; each mark in a savepoint
+  of its own, logged, so a mark never makes the operation fail nor keeps the
+  others from being written. A layer turns them off (`_enabled`), narrows the
+  servers that count (`_first_step_host_domain`) and the jobs whose failure
+  counts (`_failure_domain`), adds marks (`_marks`, `_mark`, `_job_types`),
+  leaves a try out of a step's started (`_started`) and hears every change
+  (`_on_marks_changed`). See what failed leads to the last failed job of the
+  type its mark keeps, among those that count.
+- **`/cloud/first_steps`,** for whoever manages servers: each step's state
+  (done, started, to do, last attempt failed), the next one, its actions
+  and guide, whether the card shows and the counts; and
+  `/cloud/first_steps/set_hidden`, which closes the card for the user who
+  asks or opens it again (`res.users.cloud_first_steps_display`). It shows
+  by itself while a required step is left, or optional ones are and the
+  first deploy was not backfilled.
+- **The first steps card on Projects.** Under the page's title, in the place
+  of «No projects yet» or over the projects: First steps with its sentence,
+  the steps in a list (Get a server, Set up backups, Deploy Odoo, and Use your
+  own domain and Send mail from Odoo, optional), each with its state in an
+  icon and words, one help line, its buttons and its guide; only the next
+  step's first button is primary, a failed attempt says so and leads to the
+  page of the job, the optional ones wait for the first deployment. Folded to
+  one line once the required steps are done; `×` closes it for the user, and
+  First steps beside the number of projects or in the user menu opens it
+  again. The page loads as before when the card's call fails, and its header
+  keeps New Project and Import from GitHub. A layer adds actions of its own
+  (`registerFirstStepAction`) and a header over the steps
+  (`registerFirstStepsHeader`). An instance's address takes `?tab=`, which
+  opens that tab.
+- **The assistant's `get_first_steps`.** A read of its own, for every role:
+  the same steps as the card, in English whatever the person's language,
+  with each button's label and the screen it is on, the guide and the next
+  step, and no name or id of a server, project or instance. Absent where a
+  layer turns the steps off. The prompt tells the model to call it when the
+  person asks what to do next or how to start.
+
+- **`read_metrics` in the MCP.** An instance's metrics by the hour over the
+  last 24 hours, or up to 168: CPU and memory of its services together,
+  requests and 5xx per second, the p50 and p95 of request time and the
+  database's connections, each hour with its average and highest point,
+  and each metric's peak of the window with how many times the average it
+  is and its share of the limit (for CPU and memory, the largest share of
+  any service against its own limit); an hour with a peak at least twice
+  the average says so. The points are read at a step that divides an hour
+  (300 s for 24 hours, 1800 s for 168), the pages of a reading share the
+  window of the first (`end`), `silence` comes only when it explains an
+  empty or silent reading, and a metric without readings says why. It is
+  read from the metrics central with the instance's Metrics tab's own
+  panels (`PANELS["instance_summary"]`), through the new route `/cloud/instance/metrics_summary`, for whoever sees that tab (the
+  `developer` role and the instance), and counts in the tab's twenty chart
+  reads a minute per user. Observability off, no central, or a central
+  that does not answer are said as the tab says them.
+
+### Changed
+
+- **Stop stops the assistant at once.** The chat says *Stopping…* the
+  moment Stop is pressed. A task waiting for the AI provider, between two
+  attempts, queued or between two tools stops in that same request: the
+  step still waiting for the provider is no longer the conversation's,
+  so the answer that comes later is set aside, and what it cost still
+  counts in the conversation and the month's usage. While an action runs
+  (a tool, a command on a server), the chat says *Stopping… finishing the
+  current action* and the task stops once the action ends: it waits for no
+  job the action started, which goes on, and shows no card the action
+  asked for, whose approval is withdrawn. What the person wrote meanwhile
+  enters the conversation instead of staying queued, and Retry answers it.
+  The state's bus event and the conversation's format carry `stopping`.
+- **A call the provider billed counts whoever's step it is now.** A
+  summary, a billed failure or an answer of another model that comes once
+  the conversation was stopped or deleted is counted in the month's usage
+  (and in the conversation, when it is still there); it went uncounted
+  before. A cost met by a concurrent change is written again, not lost.
+- **Stop withdraws what was confirmed and not yet run.** A card the person
+  confirmed whose call had not run when Stop was pressed loses its approval:
+  if the assistant repeats the call after Retry, it asks again. A call that
+  was running when its step died is answered *Outcome unknown* instead of
+  *Not run*. The panel keeps the state the bus delivered while Stop was on
+  its way, instead of replacing it with the older answer.
+- **A move's cut, measured by part.** The source's stop uploads its
+  scripts before it stamps the start of the cut, so the cut no longer
+  counts the seconds the instance was still serving. Each job of the cut
+  notes when it started, connected, prepared and uploaded, when it ended
+  and what each step took (a step's result carries `seconds`), and the
+  cutover keeps `move_last_cut_breakdown`: drain, dns, fingerprint, dump,
+  relay, restore, start, health, overhead, queue and other, with the
+  total, and `incomplete` when a part is missing. A note that cannot be
+  written is logged and the job goes on.
+- **Scripts reach the server in one exchange.** A job hands its scripts
+  to the server as one tar on the input of `mkdir … && tar -x` instead of
+  an SFTP round trip per file, 2-3 s less per job between regions. When
+  the tar fails on the server, or the transport cannot feed a command's
+  input (`run_with_stdin`, new and not abstract), the job uploads them file
+  by file as before. The files unpack 0600 in 0700 directories.
+- **The cutover's health check every half second.** It finds the Odoo
+  container once and probes it with `docker exec` every 0.5 s, `curl`
+  allowed 2 s, up to 120 s in all; a container recreated meanwhile is found
+  again. It probed every 3 s through `docker compose exec`.
 
 ### Fixed
 

@@ -476,6 +476,8 @@ class TestAStopThatCameTooLate(_DeployJobCase):
         executor = DeployInstanceExecutor(self.job, self.host, sleep_interval=0.01)
         with self._finishing_run(_slow_success) as (_success, failure):
             executor.run()
+        self.assertEqual(len(reached), 1)
+        reached[0]["Initialize database"].pop("seconds", None)
         self.assertEqual(
             reached, [{"Initialize database": {"stdout": "", "exit_status": 0}}],
         )

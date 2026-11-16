@@ -1,3 +1,5 @@
+import time
+
 from odoo import fields
 
 from .abstract_executor import AbstractSSHExecutor
@@ -23,16 +25,27 @@ class StopInstanceExecutor(AbstractSSHExecutor):
         destination's cutover, which measures the cut from this stamp.
         Written on a cursor of its own, so the stamp is there whatever
         becomes of this job's transaction.
+
+        The scripts go up first (the pattern ``_upload_scripts``
+        documents; ``_async_entry``'s call is then a no-op), and anything
+        a layer stages goes before this method: the stamp is followed by
+        the drain itself. Stamped before the upload, the cut counted ~4.5 s
+        the instance was still serving (4-nov-2026). The cut's parts
+        (``move_cut_parts``) start over with it, so a chain that failed
+        without a rollback leaves none to the next.
         """
         await super().before_execute(transport)
         if not (self.job.payload or {}).get("move_cut"):
             return
+        list(self.get_commands())
+        await self._upload_scripts(transport)
         inst = self._inst()
         with self._durable_env() as env:
             # With ``sudo``: the stamp is the platform's
             # (``cloud.instance._check_guarded_vals``).
             env["cloud.instance"].browse(inst.id).sudo().write({
                 "move_cut_started_at": fields.Datetime.now(),
+                "move_cut_parts": {"started": time.time(), "jobs": {}},
             })
 
     def get_commands(self):
