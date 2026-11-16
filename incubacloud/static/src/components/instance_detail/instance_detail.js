@@ -284,6 +284,9 @@ export class InstanceDetail extends JobsMixin(
     // ``{name}``: open the Dependencies tab with that package selected
     // (the pip conflict dialog's "Edit Manually").
     pipFocus: {type: Object, optional: true},
+    // A tab to open, by its key (``?tab=``: the first steps' Add a domain
+    // opens Networking); one this page does not show is ignored.
+    tab: {type: String, optional: true},
   };
   static template = "incubacloud.InstanceDetail";
   static components = {
@@ -608,6 +611,7 @@ export class InstanceDetail extends JobsMixin(
     onMounted(() => {
       if (!this.isCreate) {
         this._busService.subscribe("cloud_jobs", this._onJobUpdate);
+        this._openAskedTab();
       }
     });
     onWillUnmount(() => {
@@ -1063,6 +1067,14 @@ export class InstanceDetail extends JobsMixin(
     if (!field) return;
     field.focus();
     field.scrollIntoView?.({block: "center"});
+  }
+
+  /** Open the tab the address asks for (``tab``), when this page shows it. */
+  _openAskedTab() {
+    const {tabs, more} = this.instanceTabs;
+    if (this.props.tab && [...tabs, ...more].some((t) => t.key === this.props.tab)) {
+      this.setTab(this.props.tab);
+    }
   }
 
   setTab(tab) {

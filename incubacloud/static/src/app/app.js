@@ -65,7 +65,11 @@ export function _parseRoute(pathname) {
                     return { route: "create_instance", params: { project_id: pid, ...(env ? { environment: env } : {}) } };
                 }
                 const iid = parseInt(parts[3]);
-                if (!isNaN(iid)) return { route: "instance_detail", params: { project_id: pid, instance_id: iid } };
+                if (!isNaN(iid)) {
+                    // ?tab= opens one of its tabs (the first steps link to Networking).
+                    const tab = new URLSearchParams(window.location.search).get("tab") || undefined;
+                    return { route: "instance_detail", params: { project_id: pid, instance_id: iid, ...(tab ? { tab } : {}) } };
+                }
             }
             return { route: "project_detail", params: { project_id: pid } };
         }
@@ -129,7 +133,10 @@ export function _buildUrl(route, params = {}) {
             const qs = params.environment ? `?env=${params.environment}` : "";
             return `${_BASE}/projects/${params.project_id}/instances/new${qs}`;
         }
-        case "instance_detail":   return `${_BASE}/projects/${params.project_id}/instances/${params.instance_id}`;
+        case "instance_detail": {
+            const qs = params.tab ? `?tab=${encodeURIComponent(params.tab)}` : "";
+            return `${_BASE}/projects/${params.project_id}/instances/${params.instance_id}${qs}`;
+        }
         case "hosts":             return `${_BASE}/hosts`;
         case "new_host":          return `${_BASE}/hosts/new`;
         case "host_detail": {

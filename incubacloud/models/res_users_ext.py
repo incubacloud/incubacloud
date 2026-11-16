@@ -137,6 +137,23 @@ class ResUsers(models.Model):
         ),
     )
 
+    # Closing the first steps card is a choice of whoever closes it, not
+    # of the panel (``cloud.first.steps._state``).
+    cloud_first_steps_display = fields.Selection(
+        selection=[
+            ('auto', 'While Steps Are Left'),
+            ('hidden', 'Closed'),
+            ('shown', 'Opened Again'),
+        ],
+        string='First Steps Card',
+        default='auto',
+        help=(
+            'Whether the first steps card shows on the home page: by itself '
+            'while steps are left, closed by the user, or opened again by '
+            'the user while anything is left.'
+        ),
+    )
+
     # The bot token and the signing secret are for system administrators
     # only: ``res.users`` is readable by every internal user, so without a
     # group anyone read anyone's through ``/web/dataset/call_kw`` (read,

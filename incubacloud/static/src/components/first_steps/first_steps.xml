@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates>
+
+    <t t-name="incubacloud.FirstSteps">
+        <section t-if="shown" class="rl-card ic-fs" aria-labelledby="ic-fs-title">
+            <div class="ic-fs-head">
+                <div class="ic-fs-htext">
+                    <h2 class="ic-fs-title" id="ic-fs-title">First steps</h2>
+                    <p class="ic-fs-sub">What it takes to run Odoo here, in order.</p>
+                </div>
+                <button type="button" class="ic-fs-close"
+                        aria-label="Hide first steps" title="Hide first steps"
+                        t-on-click="() => this.hide()">
+                    <span aria-hidden="true">×</span>
+                </button>
+            </div>
+
+            <t t-if="folded">
+                <button type="button" class="ic-fs-fold" aria-expanded="false"
+                        t-on-click="() => this.toggleExpanded()">
+                    <span class="ic-fs-fold-icon" aria-hidden="true">▸</span>
+                    <span aria-live="polite" t-esc="foldText"/>
+                </button>
+            </t>
+            <t t-else="">
+                <p class="ic-fs-count" aria-live="polite">
+                    <t t-esc="countText"/>
+                    <t t-if="data.collapsed">
+                        <span aria-hidden="true"> · </span><button type="button" class="ic-fs-fold-link" aria-expanded="true"
+                                  aria-controls="ic-fs-steps"
+                                  t-on-click="() => this.toggleExpanded()">Show less</button>
+                    </t>
+                </p>
+
+                <t t-if="headerComponent">
+                    <t t-component="headerComponent" header="data.header || {}"/>
+                </t>
+
+                <ol class="ic-fs-steps" id="ic-fs-steps">
+                    <t t-foreach="data.steps || []" t-as="step" t-key="step.code">
+                        <li t-att-class="'ic-fs-step ic-fs-step--' + step.state + (step.code === data.next ? ' ic-fs-step--next' : '')"
+                            t-att-aria-current="step.code === data.next ? 'step' : undefined">
+                            <span t-att-class="'ic-fs-state ic-fs-state--' + step.state">
+                                <t t-if="step.state === 'done'"><t t-out="env.icon('check', 14)"/></t>
+                                <t t-elif="step.failed"><t t-out="env.icon('alert', 14)"/></t>
+                                <t t-elif="step.state === 'started'"><span class="ic-fs-dot ic-fs-dot--half" aria-hidden="true"/></t>
+                                <t t-else=""><span class="ic-fs-dot" aria-hidden="true"/></t>
+                                <span class="ic-fs-state-text" t-esc="stateLabel(step.state)"/>
+                            </span>
+                            <div class="ic-fs-body">
+                                <h3 class="ic-fs-step-title">
+                                    <t t-esc="step.title"/>
+                                    <span t-if="step.optional" class="ic-fs-optional" t-esc="optionalMark"/>
+                                </h3>
+                                <p t-att-class="'ic-fs-help' + (step.failed ? ' ic-fs-help--failed' : '')"
+                                   t-esc="step.help"/>
+                            </div>
+                            <div class="ic-fs-actions" t-if="step.state !== 'done'">
+                                <t t-foreach="step.actions" t-as="action" t-key="action.code">
+                                    <button type="button" t-att-class="actionClass(step, action_index)"
+                                            t-on-click="() => this.runAction(action)"
+                                            t-esc="action.label"/>
+                                </t>
+                                <a t-if="step.guide_url" class="ic-fs-guide" t-att-href="step.guide_url"
+                                   target="_blank" rel="noopener">Guide</a>
+                            </div>
+                        </li>
+                    </t>
+                </ol>
+            </t>
+        </section>
+    </t>
+
+</templates>

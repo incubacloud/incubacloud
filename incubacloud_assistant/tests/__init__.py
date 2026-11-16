@@ -21,3 +21,4 @@ from . import test_changes_that_ask
 from . import test_assistant_prompt
 from . import test_mcp_settings_tools
 from . import test_auto_approval
+from . import test_first_steps_tool

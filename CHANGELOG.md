@@ -6,12 +6,128 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.0.233] — unreleased
+## [1.0.232] — unreleased
 
-Agents read an instance's metrics by the hour, and the assistant's Stop
-takes effect at once. The update adds no column and no data migration.
+A backup destination can be an SFTP server (#93): the panel generates its
+key, you trust the server's key once, and backups, listings, restores and
+purges go there. A backup retention other than three months applies, and
+it must be a count followed by D, W, M or Y. A production instance whose
+scheduled backups stopped raises `backup_stale`. An account notice no
+longer waits for the hourly pass of the mail queue when a pass fails. A
+backup path and the rest of a backup destination reach the servers as
+data, and a purge empties only its own instance's copies. A server no
+longer restarts by itself for its updates: the panel restarts it inside
+its window. The panel keeps when each of its first steps was first tried
+and first done: a server, backups, a project, the first deploy, a push
+that rebuilds, a domain of its own and outgoing mail. A date once written
+stays, also when the record behind it is deleted. Agents read an
+instance's metrics by the hour, and the assistant's Stop takes effect at
+once.
+
+The update adds the SFTP columns of backup destinations (`sftp_host`,
+`sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
+`sftp_public_key`, `sftp_known_hosts`, `sftp_host_key_fingerprint`,
+`sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
+destinations there are, the table `cloud_host_reboot`, seven columns on
+hosts for their restart and `backup_path_suffix` on instances. Its data
+migration, 1.0.232's post-migrate, writes each backup destination's
+retention in the form it must now have (spaces gone, the unit in capitals,
+an empty one as `3M`) and names in the log any it leaves invalid, the
+backup paths outside their new grammar, the backup destinations' values
+and instances' backup paths that their new checks refuse, and the backup
+paths two records share (raising `backup_path_shared` for each), keeping
+them. For the first steps it adds a table and a column, and a second data
+migration, 1.0.232's `end-first-steps`, fills the marks of what a running
+panel already holds, marked as backfilled; each mark in a savepoint of its
+own, and what fails is logged without breaking the update.
 
 ### Added
+
+- **SFTP backup destinations (#93).** A destination's type is S3
+  compatible or SFTP, chosen when it is created. An SFTP one names a
+  server, port, user and folder; the panel generates its Ed25519 key pair
+  (the private half kept encrypted and read by the panel's own code only,
+  never by a user over the ORM, a route, the MCP or the assistant; on a
+  host it sits in the instance's backup service, as the S3 secret and the
+  passphrase do, where a terminal on that service reads it) and shows the
+  `authorized_keys` line. The server is kept in lower case. Read the
+  server key shows the fingerprint the server presents with the key
+  exchange alone, and Trust this key stores it only if the server still
+  presents it; another server or port drops it. Deploy and rebuild ship
+  the key, the trusted server key and `~/.ssh/config` to the backup
+  service as files of their own (0600, 0700 directory, mounted read-only
+  over its cache), refuse to build without a trusted key or with a backup
+  path off the destination's server, and remove them when the instance
+  stops backing up to SFTP. Test, the usage measure, the archived copy's
+  check, the listing's sizes and both purges work over SFTP; the purge
+  checks the server's clock before it trusts file times. A server
+  presenting another key raises the critical alert
+  `backup_sftp_host_key_changed`, from the daily usage measure and the
+  daily backup listing. A module installed on top can limit the panel's
+  connections to public addresses. Continuous recovery stays on S3. A
+  neutralized copy of the panel loses the private keys.
+
+- **`backup_stale` alert: scheduled backups that stopped.** The daily
+  backup listing of a production instance raises it when the newest
+  duplicity set is older than 48 hours (one missed night plus the hours
+  until the listing; an instance with no set yet counts from its
+  creation), and closes it on the first listing that sees a fresh set, or
+  once the instance no longer has a backup service. Two listings in a row
+  raise it (`alert_policy_backup_stale`: two sightings, 36 hours apart at
+  most): measured from the creation, an instance whose backups started
+  later (a destination added to an old one, or one started after days
+  stopped) reads as stale on its first listing, before its first night.
+  A real stop is told a day later. Nothing told the operator before that
+  the copies had stopped.
+
+- **The first steps' marks.** `cloud.first.step` keeps, per mark, the first
+  try, the first success, the type of the last job that failed while it was
+  not achieved and whether the dates were backfilled; a written date is never
+  changed (`INSERT … ON CONFLICT` with `COALESCE`). `cloud.first.steps` is
+  the one definition of each mark: tried by the oldest server, backup
+  destination, deploy asked for, own domain (a name outside its server's
+  wildcard domain; one whose instance has no server left, archived after its
+  server was deleted, does not count) or instance with a mail relay; achieved by the oldest Full
+  Setup done, backup made, project, deploy done, rebuild done that a push
+  asked for on an instance that tests its image, deploy or rebuild done after
+  an own domain was added (no DNS or certificate check), or relay delivering.
+  Archived records count. The creation of a server, a destination, a project
+  or a domain, a change to an instance's relay, the end of the jobs of those
+  types and every read of the steps write the marks; each mark in a savepoint
+  of its own, logged, so a mark never makes the operation fail nor keeps the
+  others from being written. A layer turns them off (`_enabled`), narrows the
+  servers that count (`_first_step_host_domain`) and the jobs whose failure
+  counts (`_failure_domain`), adds marks (`_marks`, `_mark`, `_job_types`),
+  leaves a try out of a step's started (`_started`) and hears every change
+  (`_on_marks_changed`). See what failed leads to the last failed job of the
+  type its mark keeps, among those that count.
+- **`/cloud/first_steps`,** for whoever manages servers: each step's state
+  (done, started, to do, last attempt failed), the next one, its actions
+  and guide, whether the card shows and the counts; and
+  `/cloud/first_steps/set_hidden`, which closes the card for the user who
+  asks or opens it again (`res.users.cloud_first_steps_display`). It shows
+  by itself while a required step is left, or optional ones are and the
+  first deploy was not backfilled.
+- **The first steps card on Projects.** Under the page's title, in the place
+  of «No projects yet» or over the projects: First steps with its sentence,
+  the steps in a list (Get a server, Set up backups, Deploy Odoo, and Use your
+  own domain and Send mail from Odoo, optional), each with its state in an
+  icon and words, one help line, its buttons and its guide; only the next
+  step's first button is primary, a failed attempt says so and leads to the
+  page of the job, the optional ones wait for the first deployment. Folded to
+  one line once the required steps are done; `×` closes it for the user, and
+  First steps beside the number of projects or in the user menu opens it
+  again. The page loads as before when the card's call fails, and its header
+  keeps New Project and Import from GitHub. A layer adds actions of its own
+  (`registerFirstStepAction`) and a header over the steps
+  (`registerFirstStepsHeader`). An instance's address takes `?tab=`, which
+  opens that tab.
+- **The assistant's `get_first_steps`.** A read of its own, for every role:
+  the same steps as the card, in English whatever the person's language,
+  with each button's label and the screen it is on, the guide and the next
+  step, and no name or id of a server, project or instance. Absent where a
+  layer turns the steps off. The prompt tells the model to call it when the
+  person asks what to do next or how to start.
 
 - **`read_metrics` in the MCP.** An instance's metrics by the hour over the
   last 24 hours, or up to 168: CPU and memory of its services together,
@@ -55,72 +171,6 @@ takes effect at once. The update adds no column and no data migration.
   was running when its step died is answered *Outcome unknown* instead of
   *Not run*. The panel keeps the state the bus delivered while Stop was on
   its way, instead of replacing it with the older answer.
-
-## [1.0.232] — unreleased
-
-A backup destination can be an SFTP server (#93): the panel generates its
-key, you trust the server's key once, and backups, listings, restores and
-purges go there. A backup retention other than three months applies, and
-it must be a count followed by D, W, M or Y. A production instance whose
-scheduled backups stopped raises `backup_stale`. An account notice no
-longer waits for the hourly pass of the mail queue when a pass fails.
-A backup path and the rest of a backup destination reach the servers as
-data, and a purge empties only its own instance's copies. A server no
-longer restarts by itself for its updates: the panel restarts it inside
-its window.
-
-The update adds the SFTP columns of backup destinations (`sftp_host`,
-`sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
-`sftp_public_key`, `sftp_known_hosts`, `sftp_host_key_fingerprint`,
-`sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
-destinations there are, the table `cloud_host_reboot`, seven columns
-on hosts for their restart and `backup_path_suffix` on instances. Its
-data migration, 1.0.232's post-migrate, writes each backup destination's
-retention in the form it must now have (spaces gone, the unit in
-capitals, an empty one as `3M`) and names in the log any it leaves
-invalid, the backup paths outside their new grammar, the backup
-destinations' values and instances' backup paths that their new checks
-refuse, and the backup paths two records share (raising
-`backup_path_shared` for each), keeping them.
-
-### Added
-
-- **SFTP backup destinations (#93).** A destination's type is S3
-  compatible or SFTP, chosen when it is created. An SFTP one names a
-  server, port, user and folder; the panel generates its Ed25519 key pair
-  (the private half kept encrypted and read by the panel's own code only,
-  never by a user over the ORM, a route, the MCP or the assistant; on a
-  host it sits in the instance's backup service, as the S3 secret and the
-  passphrase do, where a terminal on that service reads it) and shows the
-  `authorized_keys` line. The server is kept in lower case. Read the
-  server key shows the fingerprint the server presents with the key
-  exchange alone, and Trust this key stores it only if the server still
-  presents it; another server or port drops it. Deploy and rebuild ship
-  the key, the trusted server key and `~/.ssh/config` to the backup
-  service as files of their own (0600, 0700 directory, mounted read-only
-  over its cache), refuse to build without a trusted key or with a backup
-  path off the destination's server, and remove them when the instance
-  stops backing up to SFTP. Test, the usage measure, the archived copy's
-  check, the listing's sizes and both purges work over SFTP; the purge
-  checks the server's clock before it trusts file times. A server
-  presenting another key raises the critical alert
-  `backup_sftp_host_key_changed`, from the daily usage measure and the
-  daily backup listing. A module installed on top can limit the panel's
-  connections to public addresses. Continuous recovery stays on S3. A
-  neutralized copy of the panel loses the private keys.
-
-- **`backup_stale` alert: scheduled backups that stopped.** The daily
-  backup listing of a production instance raises it when the newest
-  duplicity set is older than 48 hours (one missed night plus the hours
-  until the listing; an instance with no set yet counts from its
-  creation), and closes it on the first listing that sees a fresh set, or
-  once the instance no longer has a backup service. Two listings in a row
-  raise it (`alert_policy_backup_stale`: two sightings, 36 hours apart at
-  most): measured from the creation, an instance whose backups started
-  later (a destination added to an old one, or one started after days
-  stopped) reads as stale on its first listing, before its first night.
-  A real stop is told a day later. Nothing told the operator before that
-  the copies had stopped.
 
 ### Fixed
 
@@ -354,6 +404,19 @@ refuse, and the backup paths two records share (raising
   the directory; the reading of a staging's last login takes its database
   password that way, and hands it to the container through the
   environment.
+
+### Documentation
+
+- *Get started* explains the first steps list: who sees it, folding, closing
+  and bringing it back.
+
+### Migration
+
+- 1.0.232's `end-first-steps` writes the marks the database shows, as
+  backfilled; for what has no job left: a server with its proxy deployed, at
+  the server's creation, a deployed instance, at the instance's, and the
+  oldest backup listed. Nothing is written where a layer turns the steps
+  off.
 
 ## [1.0.231] — unreleased
 

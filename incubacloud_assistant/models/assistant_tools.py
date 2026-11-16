@@ -1,9 +1,9 @@
 """Which tools the model sees, the assistant's rules on top, and its own tools.
 
 The MCP's tools as they are (``incubacloud.mcp.catalog``), each run through
-``incubacloud.mcp.server._tools_call`` like an agent's call, and three of
-the assistant's own: searching the user documentation, and searching and
-reading core's public code. On top of the MCP's rules, the assistant's
+``incubacloud.mcp.server._tools_call`` like an agent's call, and four of
+the assistant's own: searching the user documentation, searching and
+reading core's public code, and the panel's first steps. On top of the MCP's rules, the assistant's
 (spec, «Seguridad»), by an open list rather than a closed one:
 
 * code and staging deployments need a developer (:data:`_MIN_GROUP`);
@@ -162,7 +162,22 @@ LOCAL_TOOLS = (
         handler="_tool_read_code",
         read_only=True,
     ),
+    ToolSpec(
+        "get_first_steps",
+        "The panel's first steps, in English: each step with its state (done, "
+        "started, todo), whether it is optional, whether its last attempt failed, "
+        "its help, the buttons that do it (their exact label and the screen they "
+        "are on) and its guide's link, and which step comes next. Names no "
+        "server, project or instance.",
+        _USER,
+        obj({}),
+        handler="_tool_get_first_steps",
+        read_only=True,
+    ),
 )
+#: The assistant's tools that the panel may turn off: the first steps',
+#: absent while ``cloud.first.steps._enabled`` is false.
+_FIRST_STEPS_TOOL = "get_first_steps"
 
 
 def _ids(value):
@@ -212,7 +227,13 @@ class AssistantTools(models.AbstractModel):
 
     @api.model
     def _allowed(self, spec):
-        """Return whether the current user may call *spec* through the assistant."""
+        """Return whether the current user may call *spec* through the assistant.
+
+        ``get_first_steps`` is not there at all while the panel keeps no
+        first steps (``cloud.first.steps._enabled``).
+        """
+        if spec.name == _FIRST_STEPS_TOOL and not self.env["cloud.first.steps"]._enabled():
+            return False
         return self.env["cloud.security.mixin"]._has_cloud_group(self._min_group(spec))
 
     @api.model
@@ -615,6 +636,11 @@ class AssistantTools(models.AbstractModel):
         return search_code(
             self._root(), args["text"], args.get("path") or "", args.get("limit") or 30
         )
+
+    @api.model
+    def _tool_get_first_steps(self, args):
+        """The panel's first steps, in English and without a record's name or id."""
+        return self.env["cloud.first.steps"]._state_for_assistant()
 
     @api.model
     def _tool_read_code(self, args):
