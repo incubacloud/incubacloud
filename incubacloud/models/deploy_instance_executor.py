@@ -2915,6 +2915,12 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             raise ValueError("deploy_instance job has no instance_id")
         inst._check_template_ref(self._copier_template()[1])
         self._preflight_tls_check()
+        # Before copier writes anything (16-nov-2026): the room a build
+        # needs, as a rebuild checks it. A refusal fails the deploy as any
+        # other abort does (``on_abort``).
+        await self._check_build_room(
+            transport, "Nothing was changed on the server.",
+        )
         self._sys(f"Preparing deployment for '{inst.name}'...")
         await self._upload_copier_files(transport)
         await self._ship_secret_key(transport)

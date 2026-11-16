@@ -263,3 +263,47 @@ class TestTheRebuildRefusesBeforeCopier(TransactionCase):
         upload, transport = self._before(builds=False)
         upload.assert_awaited_once()
         transport.run.assert_not_awaited()
+
+
+class TestTheDeployRefusesBeforeCopier(TransactionCase):
+    """A deploy short of room fails before it writes anything, as any abort."""
+
+    def setUp(self):
+        super().setUp()
+        host = self.env["cloud.host"].create({
+            "name": "room-host-d", "ip_address": "192.0.2.98", "user": "root",
+            "wildcard_domain": "roomd.example.com",
+        })
+        project = self.env["cloud.project"].create({"name": "Room Deploy"})
+        self.inst = self.env["cloud.instance"].create({
+            "name": "roomdep", "project_id": project.id,
+            "environment": "production", "host_id": host.id,
+            "state": "deploying", "status": "ok",
+        })
+        job = self.env["cloud.job"].create({
+            "name": "deploy", "host_id": host.id, "instance_id": self.inst.id,
+            "job_type_id": self.env["cloud.job.type"].search(
+                [("code", "=", "deploy_instance")], limit=1,
+            ).id,
+        })
+        self.executor = executor_registry.get("deploy_instance")(job, host)
+
+    def test_a_deploy_without_room_writes_nothing(self):
+        cls = type(self.executor)
+        # A new instance: no image to read, the estimate counts.
+        transport = _transport(f"free_kb {1024 * 1024}\n", f"free_kb {1024 * 1024}\n")
+        with patch.object(cls, "_upload_copier_files", new_callable=AsyncMock) as upload:
+            with self.assertRaises(JobRefused) as caught:
+                asyncio.run(self.executor.before_execute(transport))
+        upload.assert_not_called()
+        self.assertIn("estimated, as the instance has none yet", str(caught.exception))
+        self.assertIn("Nothing was changed on the server.", str(caught.exception))
+
+    def test_a_deploy_with_room_goes_on(self):
+        cls = type(self.executor)
+        transport = _transport(f"free_kb {100 * 1024 * 1024}\n")
+        with patch.object(cls, "_upload_copier_files", new_callable=AsyncMock) as upload, \
+                patch.object(cls, "_ship_secret_key", new_callable=AsyncMock), \
+                patch.object(cls, "_stage_extra_env_files", new_callable=AsyncMock):
+            asyncio.run(self.executor.before_execute(transport))
+        upload.assert_awaited_once()
