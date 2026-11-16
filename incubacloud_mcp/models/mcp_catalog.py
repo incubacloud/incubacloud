@@ -62,6 +62,8 @@ _SESSIONS = (
     "their access (#48)."
 )
 
+)
+
 _FIRST_STEPS = (
     "The first steps card of the home page and whether a person closed it; "
     "the assistant's get_first_steps reads the same steps."
