@@ -51,10 +51,21 @@ The update adds the SFTP columns of backup destinations (`sftp_host`,
 `sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
 `sftp_public_key`, `sftp_known_hosts`, `sftp_host_key_fingerprint`,
 `sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
-destinations there are. Its one data migration, 1.0.232's
-`post-backup-retention`, writes each backup destination's retention in
-the form it must now have (spaces gone, the unit in capitals, an empty
-one as `3M`) and names in the log any it leaves invalid.
+destinations there are, the table `cloud_host_reboot`, seven columns on
+hosts for their restart and `backup_path_suffix` on instances. Its data
+migration, 1.0.232's post-migrate, writes each backup destination's
+retention in the form it must now have (spaces gone, the unit in capitals,
+an empty one as `3M`) and names in the log any it leaves invalid, the
+backup paths outside their new grammar, the backup destinations' values
+and instances' backup paths that their new checks refuse, and the backup
+paths two records share (raising `backup_path_shared` for each), keeping
+them. For the first steps it adds a table and a column, and a second data
+migration, 1.0.232's `end-first-steps`, fills the marks of what a running
+panel already holds, marked as backfilled; each mark in a savepoint of its
+own, and what fails is logged without breaking the update. A third,
+1.0.232's `post-translations`, reloads the module's translations, so the
+Spanish name of the cron of unused managed backends says *almacenamiento
+gestionado de copias* on a running panel too.
 
 ### Added
 
