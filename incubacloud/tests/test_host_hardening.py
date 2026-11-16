@@ -1906,12 +1906,17 @@ class TestTheMovedPortOutlivesTheFailedJob(JobEndAssertions, TransactionCase):
 
 
 class TestAptLeavesTheServicesAlone(TransactionCase):
-    """Every apt task of the host playbooks has needrestart only list.
+    """Every apt task of the agents' install has needrestart only list.
 
     Restarted by hand, cloud-init's hotplug hook (a oneshot unit fed by a
     FIFO) waits on the FIFO for good, and the apt run that restarted it
     waits with it: a Full Setup on Ubuntu 24.04 hung there until its
     3600 s (QA, 15-nov-2026). See ``scripts/full_setup_install.sh``.
+
+    The hardening's apt task is left as it was: any line of its own would
+    change the recipe's fingerprint and read every hardened server as
+    behind, for a task that installs nothing there. The needrestart
+    drop-in (``ic_needrestart_keep_hotplug``) covers it.
     """
 
     def _apt_tasks(self, playbook):
@@ -1942,14 +1947,11 @@ class TestAptLeavesTheServicesAlone(TransactionCase):
         return found
 
     def test_every_apt_task_has_needrestart_only_list(self):
-        """Hardening and the agents' install, the playbooks that install packages."""
-        for playbook, count in (
-            ("host_hardening.yml", 1), ("host_observability.yml", 2),
-        ):
-            tasks = self._apt_tasks(playbook)
-            self.assertEqual(len(tasks), count, playbook)
-            for task in tasks:
-                with self.subTest(playbook=playbook, task=task.get("name")):
-                    self.assertEqual(
-                        (task.get("environment") or {}).get("NEEDRESTART_MODE"), "l",
-                    )
+        """The agents' install, both its apt tasks."""
+        tasks = self._apt_tasks("host_observability.yml")
+        self.assertEqual(len(tasks), 2)
+        for task in tasks:
+            with self.subTest(task=task.get("name")):
+                self.assertEqual(
+                    (task.get("environment") or {}).get("NEEDRESTART_MODE"), "l",
+                )
