@@ -211,6 +211,15 @@ own, and what fails is logged without breaking the update.
   measured free disk is under the 10 GB the automatic placement asks of a
   server: its request hears why.
 
+- **A deploy without room on its server is refused before it writes
+  anything.** The same check as a rebuild's, before copier: the room a
+  build needs (the instance's current image, or `BUILD_IMAGE_ESTIMATE_GB`
+  for a new one, plus the 5 GiB reserve) against what is free on Docker's
+  disk, after removing the dangling images and the build cache when short.
+  A refused deploy fails as any other (the instance in error, a move undone).
+  Every deploy that builds passes there, a tenant's and a warm pool's
+  included; a claim of a warm instance builds nothing and does not.
+
 - **A Full Setup no longer hangs installing the host tools on Ubuntu.**
   After every apt run, needrestart restarts the services still on files
   that run replaced, and one of them can be cloud-init's hotplug hook
