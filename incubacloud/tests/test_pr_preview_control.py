@@ -415,6 +415,43 @@ class TestPreviewFailureIsVisible(_PreviewBase):
         self.assertTrue(self._alert())
 
 
+class TestPreviewOnAFullServer(_PreviewBase):
+    """A preview is not created on a server short of disk (16-nov-2026).
+
+    It goes to its production's server, past the rule of the automatic
+    placement: under ``_MIN_DISK_FREE_GB`` free the clone is refused with
+    a ``UserError``, which the pull request hears as any refusal.
+    """
+
+    def _clone(self, free_gb, pr_number=7):
+        """Clone production with the host at *free_gb*; return the result."""
+        self.host.disk_free_gb = free_gb
+        with patch.object(
+            type(self.env['cloud.job']), 'enqueue_chain', return_value=[1, 2, 3],
+        ):
+            return self.prod.clone_to_staging(
+                f'pr-{pr_number}', pr_number=pr_number, pr_repo=REPO_FULL,
+                pr_head_branch='feature-x',
+            )
+
+    def test_a_server_short_of_disk_gets_no_preview(self):
+        with self.assertRaisesRegex(UserError, 'no preview is created'):
+            self._clone(self.host._MIN_DISK_FREE_GB - 7)
+        self.assertFalse(self.env['cloud.instance'].search([('pr_number', '=', 7)]))
+
+    def test_a_server_with_room_or_unread_gets_it(self):
+        for number, free in ((8, self.host._MIN_DISK_FREE_GB), (9, 0)):
+            with self.subTest(free=free):
+                self.assertTrue(self._clone(free, number)['staging_id'])
+
+    def test_a_staging_by_hand_is_not_held_to_it(self):
+        self.host.disk_free_gb = 1
+        with patch.object(
+            type(self.env['cloud.job']), 'enqueue_chain', return_value=[1, 2, 3],
+        ):
+            self.assertTrue(self.prod.clone_to_staging('stg')['staging_id'])
+
+
 class TestPreviewAddress(_PreviewBase):
 
     def _clone(self):

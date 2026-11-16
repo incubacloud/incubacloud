@@ -2,6 +2,7 @@ import contextlib
 import re
 import shlex
 
+from ..restore_space import GIB, RESERVE_BYTES, in_gib
 from .abstract_executor import (
     DETACHED_GIVE_UP_AFTER_CAP_S,
     DETACHED_PREFIX,
@@ -127,6 +128,171 @@ def build_cache_prune_if_low(min_free_gb=BUILD_CACHE_MIN_FREE_GB):
         " 2>&1 || true"
     )
 
+
+#: What the build cache keeps when ``after_build_prune`` caps it, a
+#: BuildKit size. 5 GB (16-nov-2026): more than one build writes, so what
+#: a deploy building beside it has just written (the most recent records,
+#: kept first) stays; the space a rebuild leaves behind is mostly the
+#: previous image, which the same step removes.
+BUILD_CACHE_RESERVED = "5GB"
+
+#: What an instance's image is taken to weigh when there is none to read
+#: (a first deploy), in GiB, for ``build_room_needed``. Measured on
+#: 16-nov-2026, Docker 29.10: a Doodba image of 18.0 or 19.0 weighs
+#: 3.1-3.2 GiB in the overlay2 image store and 4.5-4.7 GiB in containerd's,
+#: the default of a new Docker 29. 4 keeps a first deploy's need (9 GiB with
+#: the reserve) under the 10 GB the automatic placement asks of a server
+#: (``cloud.host._MIN_DISK_FREE_GB``), so a server it chose is not refused.
+#: A first build on a server that lacks the Doodba base image too writes
+#: more (8.1-8.5 GiB in containerd, 3.6-3.7 GiB in overlay2): the reserve
+#: takes the difference there.
+BUILD_IMAGE_ESTIMATE_GB = 4
+
+#: The most a build writes, as a multiple of the image it rebuilds: the
+#: peak of the disk's use while it runs against the size ``docker image
+#: inspect`` gives of the previous image. Applied to the image, never to
+#: the reserve. Measured on 16-nov-2026, Docker 29.10, a rebuild without
+#: cache of 18.0 and 19.0 with the previous image kept: 0.66-0.72 of it in
+#: containerd's image store, 0.42-0.46 in overlay2, and no peak above what
+#: stays once the build ends. 1 covers both.
+BUILD_PEAK_FACTOR = 1
+
+
+def build_room_command(directory):
+    """The command that reads the room a build of the instance in *directory* has.
+
+    Prints ``free_kb <n>``, what is free on the disk Docker keeps its data
+    on (``DockerRootDir``, ``/var/lib/docker`` when it cannot be read), and
+    ``image <bytes>``, the size of the image of the instance's ``odoo``
+    container (``docker compose images``), each only when it can be read.
+    Not ``docker compose config --images``: it lists every service's
+    image, in no fixed order, whatever service it is given (Compose 5.7,
+    16-nov-2026). An instance without its container has no image read.
+    POSIX shell: a self-hosted user's login shell may be dash. It never
+    fails.
+
+    :param str directory: the instance's directory, as the steps name it
+        (it may start with ``~``, unquoted)
+    :rtype: str
+    """
+    return (
+        "{ root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null);"
+        ' df -Pk "${root:-/var/lib/docker}" 2>/dev/null'
+        " | awk 'NR == 2 { print \"free_kb\", $4 }';"
+        f" img=$(cd {directory} 2>/dev/null"
+        " && docker compose images -q odoo 2>/dev/null | head -n 1);"
+        ' if [ -n "$img" ]; then'
+        " docker image inspect --format 'image {{.Size}}' \"$img\" 2>/dev/null; fi;"
+        " } 2>/dev/null; true"
+    )
+
+
+def build_room_free_command(directory):
+    """The command that frees room for a build, then reads it again.
+
+    The dangling images first, whatever their age (``docker image prune
+    -f``: what several pushes in the last hour left), then
+    ``build_cache_prune``; then ``build_room_command``. It never fails.
+
+    :param str directory: as ``build_room_command`` takes it
+    :rtype: str
+    """
+    return (
+        "{ docker image prune -f; } >/dev/null 2>&1;"
+        f" {build_cache_prune()} >/dev/null; {build_room_command(directory)}"
+    )
+
+
+def parse_build_room(stdout):
+    """Return ``(free_bytes, image_bytes)`` from ``build_room_command``'s answer.
+
+    :param str stdout: what it printed
+    :return: each in bytes, or None when it was not read
+    :rtype: tuple
+    """
+    free = image = None
+    for line in (stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            continue
+        if parts[0] == "free_kb":
+            free = int(parts[1]) * 1024
+        elif parts[0] == "image":
+            image = int(parts[1])
+    return free, image
+
+
+def build_room_needed(image_bytes):
+    """Return what must be free for a build, and the image's share of it.
+
+    The image times ``BUILD_PEAK_FACTOR`` (the current one's size, or
+    ``BUILD_IMAGE_ESTIMATE_GB`` without one), plus
+    ``restore_space.RESERVE_BYTES``, what the server's other instances
+    keep, as a restore and the boot test leave them.
+
+    :param int image_bytes: the current image's size, or None
+    :return: ``(needed, image_share)``, in bytes
+    :rtype: tuple
+    """
+    image = image_bytes or BUILD_IMAGE_ESTIMATE_GB * GIB
+    share = int(image * BUILD_PEAK_FACTOR)
+    return share + RESERVE_BYTES, share
+
+
+def build_room_refusal(free, image_bytes, needed, share, what):
+    """Return why a build is refused with *free* bytes free.
+
+    :param int free: bytes free on Docker's disk
+    :param int image_bytes: the current image's size, or None
+    :param int needed: ``build_room_needed``'s total
+    :param int share: ``build_room_needed``'s image share
+    :param str what: what was not done, as the message ends it
+    :rtype: str
+    """
+    image = (
+        "as large as its current one" if image_bytes
+        else "estimated, as the instance has none yet"
+    )
+    return (
+        f"No room on the server to build the image: Docker's disk has"
+        f" {in_gib(free)} free, and the build needs {in_gib(needed)}"
+        f" ({in_gib(share)} for the image, {image}, and"
+        f" {in_gib(RESERVE_BYTES)} the server's other instances keep)."
+        f" {what} Free space on the server (remove the instances or"
+        " previews it no longer needs) or enlarge its disk, then try again."
+    )
+
+
+def after_build_prune(min_free_gb=BUILD_CACHE_MIN_FREE_GB):
+    """The command a rebuild runs once its new image is in service.
+
+    Removes the dangling images (``docker image prune -f``: the previous
+    image, untagged by the build and freed by the restart; an image a
+    container uses, stopped or not, and every tagged one stay). Under
+    *min_free_gb* free after that, it caps the build cache at
+    ``BUILD_CACHE_RESERVED`` (``--reserved-space``, ``--keep-storage``
+    where Docker does not know it): on a disk with room, the cache serves
+    the next cached rebuilds and the daily prune empties it anyway. POSIX
+    shell; it never fails, as any status but 0 fails a job's step.
+
+    :param int min_free_gb: under this many GB free, the cache is capped
+    :return: the shell command, which always exits 0
+    :rtype: str
+    """
+    need_kb = int(min_free_gb) * 1024 * 1024
+    cap = BUILD_CACHE_RESERVED
+    return (
+        "{ docker image prune -f;"
+        " root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null);"
+        ' free=$(df -Pk "${root:-/var/lib/docker}" 2>/dev/null'
+        " | awk 'NR==2 {print $4}');"
+        f' if [ -n "$free" ] && [ "$free" -lt {need_kb} ]; then'
+        f' echo "Free disk $((free / 1048576)) GB, under {int(min_free_gb)} GB:'
+        f' the build cache is capped at {cap}.";'
+        f" docker builder prune -f --reserved-space {cap} 2>/dev/null"
+        f" || docker builder prune -f --keep-storage {cap};"
+        ' else echo "The build cache stays."; fi; } 2>&1 || true'
+    )
 
 # Alert raised when the post-prune inventory shows that a container the
 # panel manages is gone. With every managed resource labelled this

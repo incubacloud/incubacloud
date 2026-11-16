@@ -2974,6 +2974,21 @@ class CloudInstance(models.Model):
             raise UserError(_("Only production instances can be cloned."))
         if not self.deployed:
             raise UserError(_("Instance must be deployed first."))
+        host = self.host_id
+        if pr_number and host.disk_free_gb \
+                and host.disk_free_gb < host._MIN_DISK_FREE_GB:
+            # A preview goes to its production's server, past the rule the
+            # automatic placement applies: refused here, its request hears
+            # why, instead of a deploy that would fail on a full disk
+            # (16-nov-2026).
+            raise UserError(_(
+                "The server %(host)s has %(free).1f GB of disk free, under"
+                " the %(min)s GB a new instance needs: no preview is"
+                " created on it. Free space on the server or enlarge its"
+                " disk.",
+                host=host.name, free=host.disk_free_gb,
+                min=host._MIN_DISK_FREE_GB,
+            ))
 
         vals = {
             "name": staging_name,
