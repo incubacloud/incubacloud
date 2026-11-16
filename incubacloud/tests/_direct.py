@@ -22,3 +22,25 @@ def make_host(env, name, ip, **vals):
     }
     values.update(vals)
     return env["cloud.host"].create(values)
+
+
+
+def central_names_as_new(settings):
+    """Clear the central's public and direct names, as a new database has them.
+
+    A copy of production may have the central on its single name, with
+    both names set; without the public name the single path is off
+    whatever its switch says, and the tests that set neither read the
+    paths of before. By SQL, so that no write queues the central's
+    deployment or its sync, nothing a test is about.
+
+    :param settings: the system's ``cloud.settings`` record.
+    """
+    settings.env.cr.execute(
+        "UPDATE cloud_settings SET metrics_central_public_host = NULL, "
+        "metrics_central_direct_host = NULL WHERE id = %s",
+        [settings.id],
+    )
+    settings.invalidate_recordset([
+        "metrics_central_public_host", "metrics_central_direct_host",
+    ])
