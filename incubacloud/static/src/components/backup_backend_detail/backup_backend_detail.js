@@ -89,7 +89,7 @@ export class BackupBackendDetail extends Component {
         when(isSftp, required(_t("Server is required"))),
         when(isSftp, hostname(_t("Enter a host name or an IPv4 address"))),
       ],
-      sftp_port: [when(isSftp, portRange(_t("Port must be between 1 and 65535")))],
+      sftp_port: [when(isSftp, portRange(_t("Use a port between 1 and 65535.")))],
       sftp_user: [when(isSftp, required(_t("User is required")))],
       email_from: [email(_t("Sender email is invalid"))],
       email_to: [email(_t("Recipient email is invalid"))],

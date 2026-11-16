@@ -564,7 +564,7 @@ export class InstanceDetail extends JobsMixin(
           required(_t("Host is required when auto-assign is disabled"))
         ),
       ],
-      smtp_relay_port: [portRange()],
+      smtp_relay_port: [portRange(_t("Use a port between 1 and 65535."))],
     }));
     this._busService = useService("bus_service");
     // Shared guard for every recursive setTimeout(poll, …) in this

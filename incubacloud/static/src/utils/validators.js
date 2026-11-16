@@ -32,7 +32,7 @@ export const email = (msg = "Invalid email address") =>
             ? null : msg;
     };
 
-export const portRange = (msg = "Port must be between 1 and 65535") =>
+export const portRange = (msg = "Use a port between 1 and 65535.") =>
     (v) => {
         if (v == null || String(v).trim() === "") return null;
         const n = Number(v);

@@ -326,6 +326,13 @@ gestionado de copias* on a running panel too.
   before were not affected. The directories are created first, and a test
   fails when a play writes into one of its directories before creating it.
 
+- **The one-page instance form reads right.** The footer's error text
+  («N fields need attention») shows in the error colour instead of grey,
+  a section after a folded bar keeps the usual gap before its title, and
+  every port field (instance SMTP relay, host connection, SFTP backup
+  destination) shows the same translated message, «Use a port between 1
+  and 65535.», where the default one came out in English in Spanish.
+
 ### Security
 
 - **Deleting a server takes the panel's access off it.** The teardown
