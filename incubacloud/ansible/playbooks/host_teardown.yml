@@ -1,8 +1,11 @@
 ---
 # Tear a host down: stop the metrics agents and the shared Traefik
-# reverse proxy and remove their directories. Driven by
-# DeleteHostExecutor; the executor archives the cloud.host record
-# afterwards.
+# reverse proxy and remove their directories, then take the panel's own
+# access off the server: its key, and the operator account and sudo
+# grant hardening made for it (files/remove_panel_access.sh says when
+# each one stays). Driven by DeleteHostExecutor, which hands the
+# panel's key and the operator account's name; the executor archives
+# the cloud.host record afterwards.
 #
 # Idempotent: a host whose agents or Traefik were never deployed (or
 # already removed) converges without error, so a half-finished teardown
@@ -139,3 +142,36 @@
       ansible.builtin.file:
         path: "{{ traefik_dir }}"
         state: absent
+
+    # Last: it takes away the access this play runs on. Root, the other
+    # accounts and keys, and sshd's configuration are left as they are.
+    - name: Take the panel's access off the server
+      block:
+        - name: Remove the panel's key, operator account and sudo grant
+          become: "{{ ansible_user_id != 'root' }}"
+          vars:
+            # One SSH session runs the whole step, and nothing is left to
+            # clean up afterwards through a login that no longer works.
+            ansible_pipelining: true
+          ansible.builtin.shell:
+            cmd: "{{ lookup('ansible.builtin.file', 'remove_panel_access.sh') }}"
+            executable: /bin/bash
+          environment:
+            IC_PANEL_KEY: "{{ ic_panel_key | default('') }}"
+            IC_CONNECT_USER: "{{ ansible_user_id }}"
+            IC_OPERATOR_USER: "{{ ic_operator_user | default('') }}"
+          register: ic_panel_access
+          changed_when: "'Removed' in ic_panel_access.stdout"
+
+        - name: Say what was done with the panel's access
+          ansible.builtin.debug:
+            msg: "{{ ic_panel_access.stdout_lines }}"
+      rescue:
+        - name: Say the panel's access was left on the server
+          ansible.builtin.debug:
+            msg: >-
+              The panel's access could not be taken off the server
+              ({{ (ansible_failed_result.msg | default('') | string)[:300] }}).
+              As root on this server, remove the panel's key from the
+              authorized_keys of {{ ansible_user_id }} and of root, and
+              /etc/sudoers.d/incubacloud-system.

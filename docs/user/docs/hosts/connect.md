@@ -220,6 +220,27 @@ Before you apply it:
 Afterwards the panel reaches the host as the operator user on the new port.
 Re-running it is safe: every step checks the host before it changes anything.
 
+## Deleting the host from the panel
+
+Deleting a host with no instances left stops the panel's agents and proxy on
+it, and then takes the panel's own access off the server:
+
+- the panel's key leaves the `authorized_keys` of every user on the server
+  (`root`, the user the panel connects as, the operator user); your keys
+  stay;
+- the operator user that hardening created goes, its home kept, when no other
+  key logs in with it. If you added your own key to `root` before hardening,
+  hardening copied it to that user and turned root's SSH login off: the user
+  then stays, with its `sudo`, as your way in. A user you made yourself for
+  the panel, as [above](#the-user-the-panel-connects-as), stays too;
+- the `sudo` grant hardening wrote (`/etc/sudoers.d/incubacloud-system`) goes
+  when the user it names still runs `sudo` without a password by a rule of
+  its own, or no longer exists.
+
+Root's account, your other users and keys, and the SSH, firewall and update
+settings that hardening applied stay as they are. The job's log lists what was
+removed and what was kept.
+
 ## Security logs
 
 With observability on, each server sends its security logs to the metrics
