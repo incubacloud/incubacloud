@@ -9921,6 +9921,18 @@ msgstr "La instancia debe estar desplegada antes de poder trasladarla."
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"The server %(host)s has %(free).1f GB of disk free, under the %(min)s GB a "
+"new instance needs: no preview is created on it. Free space on the server or"
+" enlarge its disk."
+msgstr ""
+"El servidor %(host)s tiene %(free).1f GB de disco libres, por debajo de los "
+"%(min)s GB que necesita una instancia nueva: no se crea en él ninguna vista "
+"previa. Libere espacio en el servidor o amplíe su disco."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
 msgid "Instance must be deployed first."
 msgstr "La instancia debe estar desplegada primero."
 

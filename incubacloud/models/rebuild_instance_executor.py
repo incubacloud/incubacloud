@@ -30,7 +30,7 @@ from .deploy_instance_executor import (
     _build_retried_once,
     _then_context_prune,
 )
-from .docker_prune_executor import build_cache_prune_if_low
+from .docker_prune_executor import after_build_prune, build_cache_prune_if_low
 from .restore_instance_executor import LABEL_NEUTRALIZE_AGAIN
 
 # ``cron_guard.sh`` exits with this when the instance still had crons
@@ -54,6 +54,9 @@ _LABEL_BUILD = "Rebuild Odoo image"
 #: return (``_no_return_from``).
 _LABEL_UPDATE = "Update changed modules"
 _LABEL_RESTART = "Restart instance"
+#: The step after the restart of a rebuild that builds: the previous image,
+#: and the build cache on a disk short of room (``after_build_prune``).
+_LABEL_AFTER_BUILD_PRUNE = "Remove the previous image"
 #: The step that boots the new image on a copy of the database first.
 _LABEL_BOOT_TEST = "Test new image (safe boot check)"
 #: The boot test's cap, in seconds (13-nov-2026, #91). The step runs apart
@@ -107,6 +110,13 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             raise ValueError("rebuild_instance job has no instance_id")
         inst._check_template_ref(self._copier_template()[1])
         self._preflight_tls_check()
+        if self._builds_image:
+            # Before copier rewrites anything: a refusal leaves the
+            # instance as it was, on its previous build.
+            await self._check_build_room(
+                transport, "Nothing was changed: the instance runs its"
+                " previous build.",
+            )
         self._sys(f"Preparing rebuild for '{inst.name}'...")
         await self._upload_copier_files(transport)
         await self._ship_secret_key(transport)
@@ -442,6 +452,15 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 self._clearing_unapplied(
                     f"cd {d} && docker compose up -d --remove-orphans", d,
                 ),
+            ),
+            # 13a. The previous image, which the restart freed, and the
+            #      build cache where the disk is short (16-nov-2026): until
+            #      the daily prune they filled a small disk. Its own step,
+            #      so a layer that replaces the restart's command keeps it;
+            #      never fails.
+            *(
+                [(_LABEL_AFTER_BUILD_PRUNE, after_build_prune())]
+                if self._builds_image else []
             ),
             # 13. Set web.base.url and report.url in ir.config_parameter
             #     (shared with deploy via the same script; base_url arrives

@@ -192,6 +192,25 @@ own, and what fails is logged without breaking the update.
   until a rebuild of it succeeds (`pr_rebuild_failed_job_id`, a new
   column on instances, empty on update).
 
+- **A rebuild without room on its server is refused before it changes
+  anything.** A preview's build filled its server's disk half-way, after
+  copier had rewritten its files. A rebuild that builds an image now reads,
+  before copier, what is free on Docker's disk against what the build needs:
+  the size of the instance's current image (`docker compose images`) times
+  `BUILD_PEAK_FACTOR`, or `BUILD_IMAGE_ESTIMATE_GB` without one, plus the
+  5 GiB the server's other instances keep (`restore_space.RESERVE_BYTES`, as
+  a restore and the boot test leave them). Short of it, the dangling images
+  and the build cache go and the disk is read again; still short, the job is
+  refused with both figures, the instance left on its previous build and a
+  preview's request told. A disk that cannot be read lets the build go on.
+  Once the new image is in service, a step of its own, «Remove the previous
+  image», removes the dangling images and, under 10 GB free, caps the build
+  cache at 5 GB (`--reserved-space`, or `--keep-storage` where Docker does
+  not know it); it never fails. A flow that builds no image has neither. A
+  pull or merge request preview is no longer created on a server whose
+  measured free disk is under the 10 GB the automatic placement asks of a
+  server: its request hears why.
+
 - **A Full Setup no longer hangs installing the host tools on Ubuntu.**
   After every apt run, needrestart restarts the services still on files
   that run replaced, and one of them can be cloud-init's hotplug hook
