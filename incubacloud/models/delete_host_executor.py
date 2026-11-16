@@ -1,9 +1,11 @@
 """
 Delete Host Executor
 --------------------
-Stops Traefik and removes the ~/traefik directory via
-``ansible/playbooks/host_teardown.yml``, then archives the host record
-so it disappears from the dashboard while preserving job history.
+Stops the metrics agents and Traefik and removes their directories via
+``ansible/playbooks/host_teardown.yml``, then takes the panel's access
+off the server: its key, and the operator account and sudo grant that
+hardening made for it. Then it archives the host record so it
+disappears from the dashboard while preserving job history.
 
 Prerequisites (enforced at the controller level):
   - Host must have zero active instances.
@@ -13,6 +15,7 @@ Prerequisites (enforced at the controller level):
 
 from .abstract_executor import JobRefused
 from .ansible_executor import AnsibleExecutor
+from .host_hardening_executor import DEFAULT_HARDENED_USER
 
 
 class DeleteHostExecutor(AnsibleExecutor):
@@ -21,6 +24,26 @@ class DeleteHostExecutor(AnsibleExecutor):
 
     def _host(self):
         return self.job.host_id
+
+    def get_extra_vars(self):
+        """Hand the playbook what it needs to take the panel's access off.
+
+        ``ic_panel_key`` is the public half of the key the panel logs in
+        with (empty for a password login, or a key it cannot read), the
+        line the playbook removes from every ``authorized_keys`` of the
+        server.
+        ``ic_operator_user`` is the account hardening creates when the
+        panel connected as root, which the playbook removes only when the
+        panel made it (``files/remove_panel_access.sh``).
+
+        :return: the playbook's extra-vars
+        :rtype: dict
+        """
+        host = self._host()
+        return {
+            "ic_panel_key": host._ssh_public_key() if host else "",
+            "ic_operator_user": DEFAULT_HARDENED_USER,
+        }
 
     def pre_run_checks(self):
         """Refuse to tear down the server the metrics central runs on.

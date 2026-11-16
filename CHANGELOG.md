@@ -185,6 +185,27 @@ gestionado de copias* on a running panel too.
 The assistant's Stop takes effect at once. The update adds no column and
 no data migration.
 
+- **Deleting a server takes the panel's access off it.** The teardown
+  stopped the agents and the proxy but left the panel's key in the
+  server's `authorized_keys`, the operator account hardening creates and
+  its `NOPASSWD` grant in `/etc/sudoers.d/incubacloud-system`: the panel
+  could still log in as root on a server removed from it. Its last step
+  on the server (`ansible/playbooks/files/remove_panel_access.sh`) now
+  removes the panel's key from the `authorized_keys` of every account
+  (root, the connecting account, the operator account, and any other a
+  cloud image gave the same key), matched by its base64 whatever its
+  options or comment, with every other line, the owner and the mode
+  kept. The operator account goes, its home kept, only when the panel
+  made it: no other key is left in it, and without hardening's grant it
+  has no passwordless `sudo` (a user made by hand for the panel has a rule
+  of its own, and stays). With another key left (hardening copied root's
+  keys into it and turned root's SSH login off) it stays, as the way the
+  holders of those keys reach root. Hardening's grant goes when the
+  account it names is gone or still runs `sudo` without a password by a
+  rule of its own, and stays otherwise. Root's account, other accounts and
+  keys, sshd's configuration and the homes are left as they are. What
+  cannot be removed is said in the job's log and does not stop the
+  deletion.
 ### Changed
 
 - **Stop stops the assistant at once.** The chat says *Stopping…* the
