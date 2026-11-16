@@ -190,6 +190,9 @@
     &--fold .ic-new-sec__body { padding-block-start: 12px; }
 }
 
+// A section with its title after a folded one keeps the usual gap.
+.ic-new-sec--fold + .ic-new-sec:not(.ic-new-sec--fold) { margin-block-start: 26px; }
+
 .ic-new-sec__title {
     font-family: var(--rl-fd);
     font-size: 19px;
@@ -249,7 +252,8 @@
     background: var(--rl-bg);
 }
 
-.rl-ff-hint.ic-new-foot__err {
+// As specific as the footer's own hint, which sets it grey.
+.rl-formfoot.ic-new-foot .rl-ff-hint.ic-new-foot__err {
     display: inline-flex;
     align-items: center;
     gap: 6px;

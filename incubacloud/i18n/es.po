@@ -348,11 +348,6 @@ msgstr "Solo un destino SFTP tiene clave."
 msgid "Only an SFTP destination has a server key."
 msgstr "Solo un destino SFTP tiene clave de servidor."
 
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
-msgid "Port must be between 1 and 65535"
-msgstr "El puerto debe estar entre 1 y 65535"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -28273,3 +28268,11 @@ msgstr "Primeros pasos · %(count)s · %(optional)s"
 #: code:addons/incubacloud/static/src/components/first_steps/first_steps.js:0
 msgid "· optional"
 msgstr "· opcional"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "Use a port between 1 and 65535."
+msgstr "Use un puerto entre 1 y 65535."

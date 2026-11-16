@@ -303,6 +303,13 @@ own, and what fails is logged without breaking the update.
   installs the timer `incubacloud-reboot-when-away`; once the panel checks
   it again, the panel decides (owner's decision, 15-nov-2026).
 
+- **The one-page instance form reads right.** The footer's error text
+  («N fields need attention») shows in the error colour instead of grey,
+  a section after a folded bar keeps the usual gap before its title, and
+  every port field (instance SMTP relay, host connection, SFTP backup
+  destination) shows the same translated message, «Use a port between 1
+  and 65535.», where the default one came out in English in Spanish.
+
 ### Security
 
 - **An instance's backup path is held to the grammar of the panel's
