@@ -306,6 +306,13 @@ gestionado de copias* on a running panel too.
   installs the timer `incubacloud-reboot-when-away`; once the panel checks
   it again, the panel decides (owner's decision, 15-nov-2026).
 
+- **The agents install on a new server again (#61).** With the central on
+  its single name, the install wrote the central's authority before it
+  created its directory, and failed on every server that did not have it
+  yet with «Destination directory ... does not exist»; servers installed
+  before were not affected. The directories are created first, and a test
+  fails when a play writes into one of its directories before creating it.
+
 ### Security
 
 - **An instance's backup path is held to the grammar of the panel's
