@@ -27966,6 +27966,9 @@ msgstr ""
 "El servidor %(host)s volvió de su reinicio, pero %(what)s. El panel no "
 "arrancó nada a mano: revise el servidor y después arranque lo que falte "
 "desde las páginas de sus instancias."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_first_step.py:0
 msgid "Create a project"
 msgstr "Crear un proyecto"
