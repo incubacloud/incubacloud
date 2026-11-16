@@ -74,7 +74,7 @@ class FakeCentral:
 
         def role(name, **labels):
             """The labels of one role's series."""
-            return {"ic_role": name, **labels}
+            return {"ic_role": name} | labels
 
         if "request_duration_seconds_bucket" in query:
             result = [
@@ -146,7 +146,7 @@ class TestReadMetrics(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
 
         :param str key: the credential, the developer's by default
         """
-        arguments = {"instance_id": self.production.id, **args}
+        arguments = {"instance_id": self.production.id} | args
         with patch(_CENTRAL, side_effect=self.central):
             result = self._call_tool(key or self.key, "read_metrics", arguments)
         return result
