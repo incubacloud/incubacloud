@@ -81,8 +81,8 @@ class _FirstStepsBase(TransactionCase):
         return self.env["cloud.host"].create({
             "name": name, "ip_address": "10.0.12.1", "port": 22,
             "user": "root", "login_type": "ssh_key",
-            "wildcard_domain": "fs.example.com", **vals,
-        })
+            "wildcard_domain": "fs.example.com",
+        } | vals)
 
     def _backend(self):
         """A backup destination."""
@@ -98,8 +98,8 @@ class _FirstStepsBase(TransactionCase):
         return self.env["cloud.instance"].create({
             "name": "fs-inst", "project_id": project.id,
             "environment": "production", "host_id": host.id, "state": state,
-            "backup_backend_id": self._backend().id, **vals,
-        })
+            "backup_backend_id": self._backend().id,
+        } | vals)
 
     def _job(self, code, host, instance=None, state="done", payload=None):
         """A job of type *code* created in *state*, without any of its hooks."""
