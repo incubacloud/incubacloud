@@ -9922,13 +9922,13 @@ msgstr "La instancia debe estar desplegada antes de poder trasladarla."
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
-"The server %(host)s has %(free).1f GB of disk free, under the %(min)s GB a "
-"new instance needs: no preview is created on it. Free space on the server or"
-" enlarge its disk."
+"The server has %(free).1f GB of disk free, under the %(min)s GB a new "
+"instance needs: no preview is created on it. Free space on the server or "
+"enlarge its disk."
 msgstr ""
-"El servidor %(host)s tiene %(free).1f GB de disco libres, por debajo de los "
-"%(min)s GB que necesita una instancia nueva: no se crea en él ninguna vista "
-"previa. Libere espacio en el servidor o amplíe su disco."
+"El servidor tiene %(free).1f GB de disco libres, por debajo de los %(min)s GB"
+" que necesita una instancia nueva: no se crea en él ninguna vista previa. "
+"Libere espacio en el servidor o amplíe su disco."
 
 #. module: incubacloud
 #. odoo-python
@@ -23400,19 +23400,23 @@ msgid "When the step at next_index started on the server."
 msgstr "Cuándo empezó en el servidor el paso de next_index."
 
 #. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pr_rebuild_failed_job_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pr_rebuild_failed_job
 msgid "Preview Rebuild Failed"
 msgstr "Reconstrucción fallida de la vista previa"
 
 #. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_rebuild_failed_job_id
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_rebuild_failed_job
 msgid ""
-"The last rebuild of a preview, when it failed: its comment or note says so, "
-"with a link to its log. Cleared when a rebuild of it succeeds."
+"The id of the last rebuild of a preview, when it failed: its comment or note"
+" says so, with a link to its log while the job exists. A number and not a "
+"link, so that purging old jobs keeps the mark. Cleared (0) when a rebuild of "
+"it succeeds."
 msgstr ""
-"La última reconstrucción de una vista previa, cuando falló: su comentario o "
-"nota lo dice, con un enlace a su registro. Se vacía cuando una "
-"reconstrucción de la vista previa termina bien."
+"El id de la última reconstrucción de una vista previa, cuando falló: su "
+"comentario o nota lo dice, con un enlace a su registro mientras la tarea "
+"exista. Es un número y no un enlace, para que purgar las tareas antiguas "
+"conserve la marca. Se vacía (0) cuando una reconstrucción de la vista previa"
+" termina bien."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pr_update_cut_off

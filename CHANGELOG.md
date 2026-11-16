@@ -189,8 +189,9 @@ own, and what fails is logged without breaking the update.
 - **A preview whose rebuild failed says so on its pull or merge
   request.** Its comment or note kept saying «ready» after a rebuild
   that failed. It now says the rebuild failed, with a link to its log,
-  until a rebuild of it succeeds (`pr_rebuild_failed_job_id`, a new
-  column on instances, empty on update).
+  until a rebuild of it succeeds (`pr_rebuild_failed_job`, a new
+  column on instances, empty on update; the job's id as a number, so that
+  purging old jobs keeps the mark and only the link goes).
 
 - **A rebuild without room on its server is refused before it changes
   anything.** A preview's build filled its server's disk half-way, after
