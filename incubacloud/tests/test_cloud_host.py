@@ -443,8 +443,7 @@ class TestCloudDeleteHostRoute(TransactionCase):
             "known_hosts_key": "10.0.0.99 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFake",
             "login_type": "ssh_key",
             "key_file": "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n",
-            **vals,
-        })
+        } | vals)
 
     def _teardowns(self):
         """Return the ``delete_host`` jobs queued for the host."""
