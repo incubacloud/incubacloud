@@ -148,13 +148,20 @@ BUILD_CACHE_RESERVED = "5GB"
 #: takes the difference there.
 BUILD_IMAGE_ESTIMATE_GB = 4
 
-#: The most a build writes, as a multiple of the image it rebuilds: the
-#: peak of the disk's use while it runs against the size ``docker image
-#: inspect`` gives of the previous image. Applied to the image, never to
-#: the reserve. Measured on 16-nov-2026, Docker 29.10, a rebuild without
-#: cache of 18.0 and 19.0 with the previous image kept: 0.66-0.72 of it in
-#: containerd's image store, 0.42-0.46 in overlay2, and no peak above what
-#: stays once the build ends. 1 covers both.
+#: What a build writes, as a multiple of the image it rebuilds: the peak of
+#: the disk's use while it runs against the size ``docker image inspect``
+#: gives of the previous image. Applied to the image, never to the reserve.
+#: Measured on 16-nov-2026, Docker 29.10, a rebuild of 18.0 and 19.0 with
+#: the previous image kept and the base image unchanged (with or without
+#: cache): 0.66-0.72 of it in containerd's image store, 0.42-0.46 in
+#: overlay2, and no peak above what stays once the build ends. 1 covers
+#: both. Not covered, and not measured: a full rebuild (``--pull
+#: --no-cache``) when Tecnativa has republished the base image, which pulls
+#: it again and writes as a first build does (1.79 in containerd, 1.16 in
+#: overlay2, measured on a server without the base image). With the factor
+#: 1 the extra 0.79 of the image comes out of the 5 GiB reserve, so it fits
+#: while the image stays under about 6.3 GiB; past that the disk can fill,
+#: and the boot test stops the rebuild with its own message.
 BUILD_PEAK_FACTOR = 1
 
 
@@ -199,7 +206,8 @@ def build_room_free_command(directory):
     """
     return (
         "{ docker image prune -f; } >/dev/null 2>&1;"
-        f" {build_cache_prune()} >/dev/null; {build_room_command(directory)}"
+        f" {{ {build_cache_prune()}; }} >/dev/null 2>&1;"
+        f" {build_room_command(directory)}"
     )
 
 

@@ -26,6 +26,7 @@ from ..models.docker_prune_executor import (
     BUILD_PEAK_FACTOR,
     after_build_prune,
     build_room_command,
+    build_room_free_command,
     build_room_needed,
     build_room_refusal,
     parse_build_room,
@@ -66,6 +67,7 @@ def _run_with_fake_docker(command, fails_on=None):
             'if [ "$1 $2" = "compose images" ]; then echo 0123abcd; exit 0; fi\n'
             'if [ "$1 $2" = "image inspect" ]; then echo "image 123"; exit 0; fi\n'
             f'echo "$*" >> {log}\n'
+            'echo "noise $*"; echo "noise $*" >&2\n'
             f"{fail}exit 0\n",
             encoding="utf-8",
         )
@@ -111,6 +113,27 @@ class TestTheRoomOfABuild(BaseCase):
         self.assertIn("as large as its current one", text)
         self.assertIn("5.0 GiB the server's other instances keep", text)
         self.assertIn("Nothing.", text)
+
+
+class TestTheCleanupBeforeABuild(BaseCase):
+
+    def test_it_prunes_both_and_answers_only_the_room(self):
+        status, out, calls = _run_with_fake_docker(build_room_free_command("."))
+        self.assertEqual(status, 0)
+        self.assertEqual(calls[0], "image prune -f")
+        self.assertEqual(calls[1], 'builder prune -af --filter until=1h')
+        self.assertEqual(len(calls), 3)
+        self.assertNotIn("noise", out)
+        free, image = parse_build_room(out)
+        self.assertGreater(free, 0)
+        self.assertEqual(image, 123)
+
+    def test_it_never_fails(self):
+        status, out, _calls = _run_with_fake_docker(
+            build_room_free_command("."), fails_on="",
+        )
+        self.assertEqual(status, 0)
+        self.assertNotIn("noise", out)
 
 
 class TestTheCleanupAfterABuild(BaseCase):
@@ -263,6 +286,86 @@ class TestTheRebuildRefusesBeforeCopier(TransactionCase):
         upload, transport = self._before(builds=False)
         upload.assert_awaited_once()
         transport.run.assert_not_awaited()
+
+
+class TestALaterAttemptOfTheRebuild(TransactionCase):
+    """The retry after «Update changed modules» answered 75 (crons busy).
+
+    Its first attempt already wrote the image and rewrote the files, so
+    the free space is lower and the check would refuse, falsely, a job
+    that finishes if left alone.
+    """
+
+    def setUp(self):
+        super().setUp()
+        host = self.env["cloud.host"].create({
+            "name": "room-host-r", "ip_address": "192.0.2.99", "user": "root",
+            "wildcard_domain": "roomr.example.com",
+        })
+        project = self.env["cloud.project"].create({"name": "Room Retry"})
+        self.inst = self.env["cloud.instance"].create({
+            "name": "roomretry", "project_id": project.id,
+            "environment": "production", "host_id": host.id,
+            "state": "deployed", "status": "ok",
+        })
+        self.job = self.env["cloud.job"].create({
+            "name": "rebuild", "host_id": host.id, "instance_id": self.inst.id,
+            "job_type_id": self.env["cloud.job.type"].search(
+                [("code", "=", "rebuild_instance")], limit=1,
+            ).id,
+        })
+        self.executor = executor_registry.get("rebuild_instance")(self.job, host)
+
+    def _first_attempt_ended_in_the_update(self):
+        """Log what the first attempt started, up to the update it left at 75."""
+        self.env["cloud.job.log.chunk"].create([
+            {"job_id": self.job.id, "source": "system", "content": f"Running: {label}"}
+            for label in (
+                "Update with copier", "Rebuild Odoo image", "Update changed modules",
+            )
+        ])
+        self.env.flush_all()
+
+    def _before(self, full):
+        """Run ``before_execute`` of a second attempt on a full disk.
+
+        :param bool full: whether the rebuild is a full one
+        :return: the transport, and the refusal or None
+        """
+        cls = type(self.executor)
+        transport = _transport(
+            f"free_kb {1024 * 1024}\nimage {5 * GIB}\n", f"free_kb {1024 * 1024}\n",
+        )
+        refusal = None
+        with patch.object(cls, "_needs_full_rebuild", return_value=full), \
+                patch.object(cls, "_upload_copier_files", new_callable=AsyncMock), \
+                patch.object(cls, "_ship_secret_key", new_callable=AsyncMock), \
+                patch.object(cls, "_stage_extra_env_files", new_callable=AsyncMock):
+            try:
+                asyncio.run(self.executor.before_execute(transport))
+            except JobRefused as exc:
+                refusal = exc
+        return transport, refusal
+
+    def test_the_first_attempt_is_checked(self):
+        transport, refusal = self._before(full=False)
+        self.assertIsNotNone(refusal)
+        self.assertIn("Nothing was changed", str(refusal))
+        self.assertEqual(transport.run.await_count, 2)
+
+    def test_a_cached_second_attempt_is_not_refused_nor_read(self):
+        self._first_attempt_ended_in_the_update()
+        transport, refusal = self._before(full=False)
+        self.assertIsNone(refusal)
+        transport.run.assert_not_awaited()
+
+    def test_a_full_second_attempt_is_checked_without_saying_nothing_changed(self):
+        self._first_attempt_ended_in_the_update()
+        transport, refusal = self._before(full=True)
+        self.assertIsNotNone(refusal)
+        self.assertIn("No room on the server to build the image", str(refusal))
+        self.assertNotIn("Nothing was changed", str(refusal))
+        self.assertIn("An earlier attempt of this job had begun", str(refusal))
 
 
 class TestTheDeployRefusesBeforeCopier(TransactionCase):

@@ -111,16 +111,55 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         inst._check_template_ref(self._copier_template()[1])
         self._preflight_tls_check()
         if self._builds_image:
-            # Before copier rewrites anything: a refusal leaves the
-            # instance as it was, on its previous build.
-            await self._check_build_room(
-                transport, "Nothing was changed: the instance runs its"
-                " previous build.",
-            )
+            await self._check_room_for_this_attempt(transport)
         self._sys(f"Preparing rebuild for '{inst.name}'...")
         await self._upload_copier_files(transport)
         await self._ship_secret_key(transport)
         await self._stage_extra_env_files(transport)
+
+    async def _check_room_for_this_attempt(self, transport):
+        """Check the room of the build, as this attempt of the job can be refused.
+
+        The job's first attempt checks it before copier rewrites anything:
+        a refusal leaves the instance as it was, on its previous build. A
+        later attempt (a retry after the crons were busy or the connection
+        was lost) starts from scratch with the earlier one's work behind
+        it: its image is written, which lowered the free space the check
+        measures, and its files are rewritten. With the build cache the
+        new build writes nothing more, so it is not checked: a refusal
+        would fail a job whose collision resolves itself. A full rebuild
+        writes its image again, so it is checked, but its refusal does not
+        say that nothing was changed.
+
+        :param transport: the job's open transport
+        :raise JobRefused: when the room is short
+        """
+        if self._left_unapplied(None) is None:
+            await self._check_build_room(
+                transport, "Nothing was changed: the instance runs its"
+                " previous build.",
+            )
+        elif self._needs_full_rebuild():
+            await self._check_build_room(
+                transport, "An earlier attempt of this job had begun the"
+                " rebuild: the log says what it left on the server.",
+            )
+        else:
+            self._sys(
+                "A later attempt of the rebuild, with the build cache: the"
+                " room is not checked again."
+            )
+
+    def _needs_full_rebuild(self):
+        """Whether the rebuild is a full one (``--pull --no-cache``).
+
+        The instance's configuration changed since its last rebuild
+        (``rebuild_fingerprint``); otherwise the Docker cache serves it.
+
+        :rtype: bool
+        """
+        inst = self._inst()
+        return inst.rebuild_fingerprint != inst.last_rebuild_fingerprint
 
     def get_commands(self):
         inst = self._inst()
@@ -142,9 +181,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
         has_smtp = bool(inst.smtp_relay_host)
-        needs_full_rebuild = (
-            inst.rebuild_fingerprint != inst.last_rebuild_fingerprint
-        )
+        needs_full_rebuild = self._needs_full_rebuild()
         if needs_full_rebuild:
             self._sys(
                 "Full rebuild: configuration changed since last deploy."

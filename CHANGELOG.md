@@ -211,6 +211,16 @@ own, and what fails is logged without breaking the update.
   pull or merge request preview is no longer created on a server whose
   measured free disk is under the 10 GB the automatic placement asks of a
   server: its request hears why.
+  The figures are measured on a rebuild with the base image unchanged (it
+  writes 0.66-0.72 of the previous image in containerd's image store, 0.42-0.46
+  in overlay2; the factor is 1). A full rebuild (`--pull --no-cache`) after
+  Tecnativa republished the base image writes as a first build does (1.79 in
+  containerd), was not measured, and can take the reserve: with an image over
+  about 6.3 GiB the boot test stops it with its own message. Only the first
+  attempt of a job checks in full: a retry after busy crons or a lost connection finds
+  its first attempt's image already written, so it skips the check with the
+  build cache and, on a full rebuild, checks but does not say that nothing was
+  changed.
 
 - **A deploy without room on its server is refused before it writes
   anything.** The same check as a rebuild's, before copier: the room a
