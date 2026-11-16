@@ -263,6 +263,11 @@ weblogin_lines() {
     [ "$(counter 'ic_weblogin_failed_total{instance_id="45"}')" = 1 ]
     # 24 failed, at most 16 a minute sent (both halves of a minute that
     # turned in the middle would let more through: rare, and said here).
+    # The lines of one address in the log carry different seconds on
+    # purpose: Loki keeps one of two identical lines in a stream with the
+    # same timestamp, and Fluent Bit stamps a burst read together within
+    # the same few hundred nanoseconds, so identical ones lost a line now
+    # and then.
     sent=$(weblogin_lines | grep -c .)
     [ "$sent" -ge 16 ]
     [ "$sent" -lt 24 ]
