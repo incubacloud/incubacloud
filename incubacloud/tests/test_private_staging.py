@@ -85,6 +85,7 @@ from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
 from odoo.addons.incubacloud.restore_space import disks_command
 
 from ._certs import make_pair
+from ._transport import take_the_tar, uploaded_scripts
 
 _BACKUP_ENV = "AWS_SECRET_ACCESS_KEY=not-for-other-accounts\n"
 _STORE = '{"le": {"Certificates": []}}'
@@ -184,6 +185,7 @@ class _StagingCase(TransactionCase):
     def _transport(self):
         """Return the host link: every command answers 0, with no output."""
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.run.return_value = CommandResult("", 0)
         transport.execute.return_value = CommandResult("", 0)
         return transport
@@ -199,6 +201,8 @@ class _StagingCase(TransactionCase):
             mode = upload.kwargs.get("mode")
             self.assertIn(mode, (None, 0o600))
             (private if mode == 0o600 else public).update(upload.args[0])
+        # The scripts, which go up as one tar: 0600 too, but no secret.
+        public.update(uploaded_scripts(transport))
         return private, public
 
     def _removed(self, transport):
@@ -278,6 +282,8 @@ class TestEachJobStagesInItsOwnDirectory(_StagingCase):
         for upload in transport.upload_text_files.await_args_list:
             for path in upload.args[0]:
                 self.assertInJobDir(executor, path)
+        for path in uploaded_scripts(transport):
+            self.assertInJobDir(executor, path)
 
     def test_a_path_already_taken_stops_the_job_before_any_upload(self):
         """Something is at the path: the job uploads nothing at all."""
@@ -809,6 +815,7 @@ class TestTheArchivesAndTheirCredentialsStayInIt(_StagingCase):
         ):
             agreed = Path(tmp, "agreed.zip")
             transport = MagicMock(spec=SSHTransport)
+            take_the_tar(transport)
             transport.run.side_effect = _bash
             agreed.write_bytes(b"PK-ok")
             executor = self._rsync_restore()
@@ -1111,6 +1118,7 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
     def _lab_transport(self):
         """Return a host link whose commands run here, for real."""
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.run.side_effect = _bash
         return transport
 
@@ -1303,6 +1311,7 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
             executor._job_dir_path = f"{tmp}/job"
             os.mkfifo(self.grant._remote_path("restore.zip"))
             transport = MagicMock(spec=SSHTransport)
+            take_the_tar(transport)
             transport.run.side_effect = lambda command, *_a, **_kw: (
                 lambda done: CommandResult(done.stdout, done.returncode)
             )(subprocess.run(

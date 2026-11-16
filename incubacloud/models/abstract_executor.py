@@ -482,9 +482,18 @@ OUTCOME_ROOM_MIN_ELAPSED_S = 60
 #: Seconds the one exchange that hands a host a job's scripts as a tar may
 #: take (16-nov-2026). The overlay is a few hundred KB (430 KB for the
 #: largest, 41 files), seconds at worst between regions: a host that has
-#: not taken it by then is not taking it, and the upload falls back to
-#: SFTP file by file.
+#: not taken it by then is not answering. Running out is not a failure of
+#: the tar and does not fall back to SFTP: the ``TimeoutError`` fails the
+#: job as a lost connection does, and an executor that retries on one
+#: (``_retry_on_connection_loss``) runs again.
 SCRIPTS_TAR_TIMEOUT_S = 120
+
+#: How long the note of a move's cut waits for the instance's row lock
+#: (16-nov-2026). It runs inside the cut, twice per job, with the job's
+#: event loop waiting: a note that cannot be written in 2 s is dropped
+#: (logged) rather than lengthen the cut it measures. The writes that
+#: take that row meanwhile (metrics, health) last milliseconds.
+MOVE_CUT_NOTE_LOCK_TIMEOUT = "2s"
 
 #: The header ``detached_step.sh read`` answers with: state, exit status,
 #: whether the cap cut the step, and the offset the bytes after it end at.
@@ -2015,6 +2024,11 @@ class AbstractExecutor(ABC):
                 return
             marks = dict(self._cut_marks or {})
             with self._durable_env() as env:
+                if isinstance(env.cr, Cursor):
+                    env.cr.execute(
+                        "SET LOCAL lock_timeout = %s",
+                        (MOVE_CUT_NOTE_LOCK_TIMEOUT,),
+                    )
                 row = env["cloud.instance"].browse(inst.id)
                 parts = row.move_cut_parts
                 if not row.move_cut_started_at or not isinstance(parts, dict):

@@ -821,6 +821,25 @@ class TestReduceCutParts(BaseCase):
             with self.subTest(parts=parts):
                 self.assertIsNone(reduce_cut_parts(parts, 10))
 
+    def test_a_start_that_is_not_a_number_never_raises(self):
+        parts = {"started": 0, "jobs": {
+            "1": self._job("move_fingerprint", 1, 5),
+            "2": {"type": "backup_download", "start": "x", "end": 9,
+                  "steps": {"Dump": 3}},
+        }}
+        result = reduce_cut_parts(parts, 10)
+        self.assertEqual(result["dump"], 3)
+        self.assertTrue(result["incomplete"])
+
+    def test_a_resumed_restore_without_marks_keeps_its_start_apart(self):
+        parts = {"started": 0, "jobs": {
+            "1": {"type": "restore_instance", "end": 20, "resumed": True,
+                  "steps": {"Restore database": 12, "Start Odoo service": 3}},
+        }}
+        result = reduce_cut_parts(parts, 20)
+        self.assertEqual(result["restore"], 12)
+        self.assertEqual(result["start"], 3)
+
     def test_malformed_jobs_never_raise(self):
         result = reduce_cut_parts({"started": 0, "jobs": ["x"]}, 5)
         self.assertTrue(result["incomplete"])

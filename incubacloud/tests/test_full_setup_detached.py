@@ -22,6 +22,7 @@ from odoo.tests.common import TransactionCase
 from ..models.abstract_executor import DETACHED_EXIT_MISSING_TOOLS
 from ..models.full_setup_executor import FullSetupExecutor
 from ..models.transport import CommandResult, SSHTransport
+from ._transport import take_the_tar
 
 _INSTALL = "Install host tools"
 
@@ -104,6 +105,7 @@ class TestFullSetupInstallsItsToolsApart(_FullSetupCase):
             return CommandResult("", 0)
 
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.run.side_effect = _run
         transport.execute = AsyncMock(return_value=CommandResult("ok", 0))
         transport.upload_text_files = AsyncMock()

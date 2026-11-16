@@ -49,6 +49,7 @@ from odoo.addons.incubacloud.models.restore_instance_executor import (
     RestoreInstanceExecutor,
 )
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
+from ._transport import take_the_tar
 
 
 def _make_download_executor(payload, env=None):
@@ -139,6 +140,7 @@ class _RestoreExecutorMixin:
     def _transport(self):
         """Return a host link whose commands all succeed."""
         transport = create_autospec(SSHTransport, instance=True)
+        take_the_tar(transport)
         transport.run.return_value = CommandResult("", 0)
         return transport
 

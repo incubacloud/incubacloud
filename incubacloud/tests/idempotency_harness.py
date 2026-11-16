@@ -486,13 +486,13 @@ class IdempotencyCase(TransactionCase):
                 if cut["at"] is not None and len(ledger.of("ssh")) == cut["at"]:
                     cut["dead"] = True
                     raise HarnessCut(f"cut after host call {cut['at']}")
-                if name in ("execute", "run"):
+                if name in ("execute", "run", "run_with_stdin"):
                     return answer or CommandResult(stdout="", exit_status=0)
                 return None
             return call
 
-        for name in ("execute", "run", "upload_text_files", "upload_file",
-                     "upload_dir", "download_file"):
+        for name in ("execute", "run", "run_with_stdin", "upload_text_files",
+                     "upload_file", "upload_dir", "download_file"):
             getattr(transport, name).side_effect = method(name)
 
         @contextlib.asynccontextmanager

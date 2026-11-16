@@ -54,6 +54,10 @@ from odoo.addons.incubacloud_pitr.models._constants import (
     rclone_obscure,
 )
 from odoo.addons.incubacloud_pitr.models.cloud_instance import PURGE_LABEL
+from odoo.addons.incubacloud.tests._transport import (
+    take_the_tar,
+    uploaded_scripts,
+)
 
 
 def _base(name, finish):
@@ -469,6 +473,7 @@ exit 0
             "Stop archiving and purge what arrived meanwhile"
         ]
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.execute.side_effect = (
             lambda command, *_handlers: CommandResult("", int(command == failing))
         )
@@ -1482,7 +1487,7 @@ class TestASwitchOnThatFails(_PitrCase):
         )
         with patcher:
             asyncio.run(executor.on_failure(self.INSTALL_FAILED, ["failed"]))
-        transport.upload_text_files.assert_awaited()
+        transport.run_with_stdin.assert_awaited()
         cleanup = transport.run.await_args_list[-1].args[0]
         self.assertTrue(cleanup.startswith("rm -rf "))
         self.assertNotIn(old, cleanup)
@@ -1719,6 +1724,7 @@ class TestARestore(_PitrCase):
             ex.PitrRestoreExecutor, "pitr_restore", payload={"target": target},
         )
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.upload_text_files = AsyncMock()
         transport.run = AsyncMock(return_value=CommandResult(answer or self.LIST, 0))
         asyncio.run(executor.before_execute(transport))
@@ -1740,6 +1746,7 @@ class TestARestore(_PitrCase):
             return CommandResult("", 0)
 
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.upload_text_files = AsyncMock()
         transport.run = AsyncMock(side_effect=_run)
         with self.assertRaises(UnappliedRebuild):
@@ -1755,6 +1762,7 @@ class TestARestore(_PitrCase):
             payload={"target": "2026-10-18 22:31:00", "follow": 7},
         )
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.run = AsyncMock(return_value=CommandResult("", 26))
         asyncio.run(executor.before_execute(transport))
         transport.run.assert_not_called()
@@ -1779,6 +1787,7 @@ class TestARestore(_PitrCase):
             payload={"target": "2026-10-18 21:00:00"},
         )
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.upload_text_files = AsyncMock()
         transport.run = AsyncMock(return_value=CommandResult(self.LIST, 0))
         with self.assertRaises(ValueError):
@@ -2048,6 +2057,7 @@ class TestARestore(_PitrCase):
             payload={"target": "2026-10-18 22:31:00"},
         )
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.upload_text_files = AsyncMock()
         transport.run = AsyncMock(return_value=CommandResult(
             "IC_PITR_RESTORE state=running", 0,
@@ -2229,6 +2239,7 @@ class TestCancellingARestore(_PitrCase):
         :return: ``(patcher, transport)``
         """
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.upload_text_files = AsyncMock()
         transport.run = AsyncMock(return_value=CommandResult("", 0))
         transport.execute = AsyncMock(
@@ -2294,8 +2305,8 @@ class TestCancellingARestore(_PitrCase):
         transport, _enqueue = self._cancel(
             executor, "IC_PITR_RESTORE state=none",
         )
-        transport.upload_text_files.assert_awaited()
-        uploaded = next(iter(transport.upload_text_files.await_args.args[0]))
+        transport.run_with_stdin.assert_awaited()
+        uploaded = next(iter(uploaded_scripts(transport)))
         cleanup = transport.run.await_args_list[-1].args[0]
         self.assertTrue(cleanup.startswith("rm -rf "))
         new = cleanup.removeprefix("rm -rf ")
@@ -2602,6 +2613,7 @@ class TestAJobThatEndedWithoutKnowing(_PitrCase):
                 return CommandResult("", 0)
 
             transport = MagicMock(spec=SSHTransport)
+            take_the_tar(transport)
             transport.upload_text_files = AsyncMock()
             transport.run = AsyncMock(side_effect=_run)
             return transport

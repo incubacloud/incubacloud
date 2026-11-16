@@ -97,7 +97,9 @@ def reduce_cut_parts(parts, ended):
     ]
     if isinstance(jobs, dict) and len(entries) != len(jobs):
         incomplete = True
-    entries.sort(key=lambda entry: entry.get("start") or entry["end"])
+    entries.sort(key=lambda entry: (
+        entry["start"] if _number(entry.get("start")) else entry["end"]
+    ))
     previous = started
     for entry in entries:
         kind = entry.get("type") or "unknown"
@@ -111,9 +113,15 @@ def reduce_cut_parts(parts, ended):
             # Resumed with no marks of the attempt that began it: what its
             # steps took is all there is.
             incomplete = True
+            boot = 0.0
+            if kind == "restore_instance":
+                boot = steps.get(CUT_RESTORE_START_STEP)
+                boot = boot if _number(boot) and boot > 0 else 0.0
+                if boot:
+                    out["start"] = out.get("start", 0.0) + boot
             out[part] = out.get(part, 0.0) + sum(
                 value for value in steps.values() if _number(value)
-            )
+            ) - boot
             previous = max(previous, end)
             continue
         connected = entry.get("connected", start)
