@@ -351,7 +351,9 @@ class TestFirstStepsState(_FirstStepsBase):
         self.assertEqual(
             self._step(state, "domain")["help"], "After your first deployment.",
         )
-        self.assertEqual(state["header"], {})
+        # Core hangs nothing on the header; a layer, its own header's data.
+        self.assertEqual(CloudFirstSteps._header(self.Steps, self.manager), {})
+        self.assertEqual(state["header"], self.Steps._header(self.manager))
 
     def test_no_button_says_new_project(self):
         """The page's header keeps «New Project», found by its name in QA."""
@@ -400,8 +402,9 @@ class TestFirstStepsState(_FirstStepsBase):
         other = self._host(name="fs-other", ip_address="10.0.12.9")
         self._job("full_setup", host, state="failed")
         self._job("full_setup", other, state="failed")
+        # On the registry's class, where a layer's own domain would win.
         with patch.object(
-            CloudFirstSteps, "_first_step_host_domain",
+            self.StepsClass, "_first_step_host_domain",
             return_value=[("id", "=", host.id)],
         ):
             server = self._step(self._state(), "server")
