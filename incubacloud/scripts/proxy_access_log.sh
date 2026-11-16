@@ -59,7 +59,7 @@ case "$1" in
 
         if ! command -v logrotate >/dev/null 2>&1; then
             ic_log "Installing logrotate..."
-            ic_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq logrotate \
+            ic_root env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install -y -qq logrotate \
                 || ic_warn "could not install logrotate: the access log will not be rotated"
         fi
 

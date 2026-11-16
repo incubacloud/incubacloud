@@ -15,6 +15,8 @@ setup() {
     mkdir -p "$TMP/bin"
     export APT_CALLS="$TMP/apt_calls"
     export IC_DOCKER_DAEMON_JSON="$TMP/daemon.json"
+    # No needrestart unless a test makes the directory.
+    export IC_NEEDRESTART_CONF_DIR="$TMP/needrestart"
     export TMP
     : > "$APT_CALLS"
 
@@ -22,8 +24,9 @@ setup() {
         printf '#!/usr/bin/env bash\n%s\n' "$2" > "$TMP/bin/$1"
         chmod +x "$TMP/bin/$1"
     }
-    # sudo → run the rest (env handles a VAR=val prefix then the command).
-    _stub sudo 'exec env "$@"'
+    # sudo → run the rest (env handles a VAR=val prefix then the command;
+    # ``-n``, never asking for a password, is dropped).
+    _stub sudo '[ "$1" = -n ] && shift; exec env "$@"'
     _stub apt-get 'echo "apt-get $*" >> "$APT_CALLS"; exit 0'
     _stub curl 'exit 0'
     _stub dpkg 'exit 0'
@@ -162,6 +165,43 @@ _path_without() {
     run bash "$SCRIPT"
     [ "$status" -eq 0 ]
     ! grep -q pull "$TMP/docker_calls" 2>/dev/null
+}
+
+# needrestart restarts, after an apt run, the services left on files it
+# replaced. Restarted by hand, cloud-init's hotplug hook (a oneshot unit fed
+# by a FIFO) waits on the FIFO for good, and the apt run with it: a Full
+# Setup on Ubuntu 24.04 hung there until its 3600 s (QA, 15-nov-2026).
+@test "every apt run, Docker's installer's included, only lists what needs restarting" {
+    rm "$TMP/bin/psql" "$TMP/bin/crontab" "$TMP/bin/zip" "$TMP/bin/docker"
+    _stub apt-get 'echo "${NEEDRESTART_MODE:-unset} $*" >> "$APT_CALLS"'
+    _stub dpkg 'exit 1'
+    # get.docker.com, as sh reads it: what the installer's apt would see.
+    _stub curl 'echo "echo \"\${NEEDRESTART_MODE:-unset} docker-installer\" >> \"$APT_CALLS\""'
+    PATH="$(_path_without docker)" run bash "$SCRIPT"
+    grep -q " docker-installer$" "$APT_CALLS"
+    grep -q " install -y -qq python3-pip python3-venv$" "$APT_CALLS"
+    ! grep -v "^l " "$APT_CALLS"
+}
+
+@test "a host with needrestart gets told to leave cloud-init's hotplug hook alone" {
+    mkdir -p "$IC_NEEDRESTART_CONF_DIR"
+    # Written before any apt run: Docker's installer is the first to start the hook.
+    _stub apt-get '[ -e "$IC_NEEDRESTART_CONF_DIR/50-incubacloud-hotplug.conf" ] || echo "apt before the drop-in" >> "$APT_CALLS"'
+    run bash "$SCRIPT"
+    [ "$status" -eq 0 ]
+    conf="$IC_NEEDRESTART_CONF_DIR/50-incubacloud-hotplug.conf"
+    grep -qxF '$nrconf{override_rc}{qr(^cloud-init-hotplugd)} = 0;' "$conf"
+    [ ! -s "$APT_CALLS" ]
+    # needrestart reads its drop-ins as Perl.
+    if command -v perl >/dev/null 2>&1; then
+        perl -e 'our %nrconf; do $ARGV[0]; die $@ if $@; exit(exists $nrconf{override_rc}{qr(^cloud-init-hotplugd)} ? 0 : 1)' "$conf"
+    fi
+}
+
+@test "a host without needrestart gets no drop-in" {
+    run bash "$SCRIPT"
+    [ "$status" -eq 0 ]
+    [ ! -e "$IC_NEEDRESTART_CONF_DIR" ]
 }
 
 # Full Setup runs the install apart on the server (detached_step.sh, phase 3):

@@ -33,7 +33,11 @@
 #           wrote, if it still says "true" (``fixed``; ``kept`` when it
 #           said "false" already, ``none`` with no such file): the servers
 #           hardened before the panel restarted them stop restarting on
-#           their own, with no new hardening run.
+#           their own, with no new hardening run. Where needrestart is
+#           installed, keeps it off cloud-init's hotplug hook with the
+#           drop-in the Full Setup writes (``ic_needrestart_keep_hotplug``):
+#           the servers set up before it get it with no new Full Setup; one
+#           that cannot be written is warned of and fails nothing.
 #           With ``--auto``, ``--window`` and ``--away``, the panel's mark
 #           (``${STATE_DIR}/panel-seen``: when it checked, whether it
 #           restarts the server by itself, its window, how long it may be
@@ -248,6 +252,7 @@ do_check() {
             policy=kept
         fi
     fi
+    ic_needrestart_keep_hotplug || :
     # The panel's last check, before this one writes its own.
     seen="$(sed -n 's/^seen=//p' "${STATE_DIR}/panel-seen" 2>/dev/null)" || seen=""
     [[ "$seen" =~ ^[0-9]+$ ]] || seen=0

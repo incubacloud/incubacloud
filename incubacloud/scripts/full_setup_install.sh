@@ -22,7 +22,18 @@ source "$(dirname "$0")/lib/common.sh"
 # on PATH in this non-login shell; prepend it for the pipx calls.
 export PATH="$HOME/.local/bin:$PATH"
 
-APT="sudo DEBIAN_FRONTEND=noninteractive apt-get"
+# needrestart (Ubuntu) restarts, at the end of every apt run, the services
+# still on files that run replaced, and a restart of cloud-init's hotplug
+# hook waits for good, and the apt run with it: a Full Setup on Ubuntu 24.04
+# hung at the pip/venv install until its 3600 s (QA, 15-nov-2026; see
+# ic_needrestart_keep_hotplug in lib/common.sh). Our apt runs only list what
+# needs restarting, and the drop-in written below, before the first of them,
+# keeps any other apt run on the host (unattended upgrades among them) off
+# that unit.
+APT="sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get"
+
+ic_log "Keeping needrestart off cloud-init's hotplug hook..."
+ic_needrestart_keep_hotplug || :
 
 ic_log "Updating package index..."
 $APT update -qq || ic_die "apt-get update failed"
@@ -36,7 +47,7 @@ git config --global --get init.defaultBranch >/dev/null 2>&1 \
 
 ic_log "Installing Docker CE..."
 command -v docker >/dev/null 2>&1 \
-    || (curl -fsSL https://get.docker.com | sudo sh) \
+    || (curl -fsSL https://get.docker.com | sudo NEEDRESTART_MODE=l sh) \
     || ic_die "Docker install failed"
 
 # Docker's own address pools hold about 30 networks and each instance takes one,

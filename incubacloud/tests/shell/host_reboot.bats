@@ -51,6 +51,8 @@ EOF
     export IC_LIB_DIR="${TMP}/lib"
     export IC_SYSTEMD_DIR="${TMP}/systemd"
     export IC_PROC_STAT="${TMP}/stat"
+    # No needrestart unless a test makes the directory.
+    export IC_NEEDRESTART_CONF_DIR="${TMP}/needrestart"
     mkdir -p "${IC_SYSTEMD_DIR}"
     printf 'cpu  1 2 3\nbtime 1794718000\n' > "${IC_PROC_STAT}"
 }
@@ -101,6 +103,37 @@ EOF
     grep -q 'Automatic-Reboot "false"' "${IC_UNATTENDED_FILE}"
     ! grep -q 'Automatic-Reboot-Time' "${IC_UNATTENDED_FILE}"
     grep -q 'Remove-Unused-Kernel-Packages "true"' "${IC_UNATTENDED_FILE}"
+}
+
+# The servers set up before the Full Setup wrote needrestart's drop-in get
+# it from the check, with no new Full Setup (lib/common.sh,
+# ic_needrestart_keep_hotplug).
+@test "check: keeps needrestart off cloud-init's hotplug hook, where it is installed" {
+    _policy false
+    mkdir -p "${IC_NEEDRESTART_CONF_DIR}"
+    run bash "$SCRIPT" check
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_POLICY=kept"* ]]
+    grep -qxF '$nrconf{override_rc}{qr(^cloud-init-hotplugd)} = 0;' \
+        "${IC_NEEDRESTART_CONF_DIR}/50-incubacloud-hotplug.conf"
+    rm -r "${IC_NEEDRESTART_CONF_DIR}"
+    run bash "$SCRIPT" check
+    [ "$status" -eq 0 ]
+    [ ! -e "${IC_NEEDRESTART_CONF_DIR}" ]
+}
+
+@test "check: a needrestart drop-in it cannot write fails nothing" {
+    _policy true
+    mkdir -p "${IC_NEEDRESTART_CONF_DIR}"
+    # The check of the text says no, as it would to a drop-in that does not parse.
+    printf '#!/usr/bin/env bash\nexit 1\n' > "${STUB_DIR}/perl"
+    chmod +x "${STUB_DIR}/perl"
+    run bash "$SCRIPT" check
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARNING: needrestart:"* ]]
+    [[ "$output" == *"IC_POLICY=fixed"* ]]
+    [[ "$output" == *"IC_REBOOT_REQUIRED=0"* ]]
+    [ -z "$(ls -A "${IC_NEEDRESTART_CONF_DIR}")" ]
 }
 
 @test "guard: a free server says yes" {
