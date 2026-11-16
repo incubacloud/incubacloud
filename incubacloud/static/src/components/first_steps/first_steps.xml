@@ -45,7 +45,7 @@
                                 <t t-elif="step.failed"><t t-out="env.icon('alert', 14)"/></t>
                                 <t t-elif="step.state === 'started'"><span class="ic-fs-dot ic-fs-dot--half" aria-hidden="true"/></t>
                                 <t t-else=""><span class="ic-fs-dot" aria-hidden="true"/></t>
-                                <span class="ic-fs-state-text" t-esc="stateLabel(step.state)"/>
+                                <span class="ic-fs-state-text" t-esc="stepStateLabel(step.state)"/>
                             </span>
                             <div class="ic-fs-body">
                                 <h3 class="ic-fs-step-title">

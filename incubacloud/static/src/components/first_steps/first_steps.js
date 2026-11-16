@@ -155,7 +155,7 @@ export class FirstSteps extends Component {
      * @param {string} state - ``done``, ``started`` or ``todo``
      * @returns {string} what the state says in words
      */
-    stateLabel(state) {
+    stepStateLabel(state) {
         return (STATE_LABELS[state] || STATE_LABELS.todo)();
     }
 
