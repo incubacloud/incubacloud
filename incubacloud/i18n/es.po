@@ -14430,6 +14430,16 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid ""
+"Remove \"%s\"? Nothing has been deployed, but the panel's access will be "
+"taken off the server."
+msgstr ""
+"¿Eliminar \"%s\"? No se ha desplegado nada, pero se retirará del servidor el "
+"acceso del panel."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Remove \"%s\"? Traefik will be stopped and all remote files deleted."
 msgstr ""
 "¿Eliminar \"%s\"? Traefik se detendrá y todos los archivos remotos se "

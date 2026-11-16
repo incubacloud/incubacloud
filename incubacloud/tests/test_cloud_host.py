@@ -433,6 +433,69 @@ class TestCloudDeleteHostRoute(TransactionCase):
         self.assertTrue(job.exists())
         self.assertEqual(job.host_id, survivor)
 
+    def _reached(self, **vals):
+        """Make the host one the panel logged in to: a trusted server key
+        and the credentials of its login type.
+
+        :param vals: other values to write
+        """
+        self.host.sudo().write({
+            "known_hosts_key": "10.0.0.99 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFake",
+            "login_type": "ssh_key",
+            "key_file": "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n",
+            **vals,
+        })
+
+    def _teardowns(self):
+        """Return the ``delete_host`` jobs queued for the host."""
+        return self.env["cloud.job"].sudo().search([
+            ("host_id", "=", self.host.id),
+            ("job_type_id.code", "=", "delete_host"),
+        ])
+
+    def test_a_server_the_panel_reached_is_torn_down_without_a_proxy(self):
+        """A hardening whose Full Setup failed left the operator account,
+        its sudo grant and the panel's key on the server, and the host was
+        archived with all of it there (16-nov-2026): the teardown runs."""
+        self._reached()
+        self.assertTrue(self.host._teardown_reaches_server())
+        result = self._invoke_delete(self.host.id)
+        teardown = self._teardowns()
+        self.assertEqual(result, {"job_id": teardown.id})
+        self.assertEqual(len(teardown), 1)
+        # Archived by the job, not by the route.
+        self.assertTrue(self.host.active)
+
+    def test_a_server_it_cannot_log_in_to_goes_at_once(self):
+        """A trusted key with no credential, or a password this panel's
+        server has no sshpass for: the playbook could not log in."""
+        from odoo.addons.incubacloud.models import cloud_host
+
+        self._reached(key_file=False)
+        self.assertFalse(self.host._teardown_reaches_server())
+        with patch.object(
+            cloud_host, "_sshpass_available", autospec=True, return_value=True,
+        ):
+            self._reached(login_type="password", password="secret")
+            self.assertTrue(self.host._teardown_reaches_server())
+        with patch.object(
+            cloud_host, "_sshpass_available", autospec=True, return_value=False,
+        ):
+            self.assertFalse(self.host._teardown_reaches_server())
+            host_id = self.host.id
+            self.assertEqual(self._invoke_delete(host_id), {"ok": True})
+        self.assertFalse(self._teardowns())
+        self.assertFalse(self.env["cloud.host"].browse(host_id).exists())
+
+    def test_a_server_never_reached_is_not_torn_down(self):
+        """No trusted key: the panel never logged in there."""
+        self.assertFalse(self.host._teardown_reaches_server())
+        self.host.sudo().write({
+            "login_type": "ssh_key",
+            "key_file": "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n",
+        })
+        self.assertFalse(self.host._teardown_reaches_server())
+
 
 class TestSshReadyDomain(TransactionCase):
     """``_ssh_ready_domain`` is the shared gate that ``cron_collect_metrics``

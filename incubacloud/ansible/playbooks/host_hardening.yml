@@ -156,17 +156,26 @@
         group: "{{ hardened_user }}"
         mode: "0700"
 
-    - name: Copy root's authorized_keys to the operator user
-      # Reads the file on the *target* host (remote_src), mirroring the
-      # old ``cp /root/.ssh/authorized_keys …`` — the keys that got the
-      # host provisioned are the ones that should reach the new user.
-      ansible.builtin.copy:
-        src: /root/.ssh/authorized_keys
-        dest: "/home/{{ hardened_user }}/.ssh/authorized_keys"
-        remote_src: true
-        owner: "{{ hardened_user }}"
-        group: "{{ hardened_user }}"
-        mode: "0600"
+    # The keys that got the host provisioned reach the operator user, the
+    # way in once root's own SSH login is off. Added to what it has, never
+    # written over it: a plain copy of root's file left a reused user (an
+    # image's ``admin``) with root's line for the same key, whose forced
+    # command only says to log in as that user, and neither it nor the
+    # panel could log in any more. files/copy_root_keys.sh says which lines
+    # it leaves out.
+    - name: Add root's keys to the operator user
+      ansible.builtin.shell:
+        cmd: "{{ lookup('ansible.builtin.file', 'copy_root_keys.sh') }}"
+        executable: /bin/bash
+      environment:
+        IC_OPERATOR_USER: "{{ hardened_user }}"
+        IC_OPERATOR_KEYS: "/home/{{ hardened_user }}/.ssh/authorized_keys"
+      register: ic_operator_keys
+      changed_when: "'Added' in ic_operator_keys.stdout"
+
+    - name: Say what was done with root's keys
+      ansible.builtin.debug:
+        msg: "{{ ic_operator_keys.stdout_lines }}"
 
     - name: Grant passwordless sudo to the operator user
       ansible.builtin.copy:
