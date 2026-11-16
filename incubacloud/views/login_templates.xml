@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        The button of /web/login that shows the password is an icon in a
+        button with no text: a screen reader announced it as "button", with
+        no hint of what it does. It gets a name, the state of what it
+        toggles (``aria-pressed``, kept up to date by
+        ``static/src/public/show_password_pressed.js``) and the field it
+        acts on, and the icon is left out of the accessibility tree. The
+        label stays the same while the state changes: "Show password,
+        pressed" says it better than a label that flips.
+
+        The same classes on the other password pages (sign-up with an
+        invitation, reset, the portal's security page) belong to modules
+        this one does not depend on: the layers that install them inherit
+        those templates.
+    -->
+    <template id="login_show_password_name" inherit_id="web.login"
+              name="Login: the show password button has a name">
+        <xpath expr="//button[hasclass('o_show_password')]" position="attributes">
+            <attribute name="aria-label">Show password</attribute>
+            <attribute name="aria-pressed">false</attribute>
+            <attribute name="aria-controls">password</attribute>
+        </xpath>
+        <xpath expr="//button[hasclass('o_show_password')]/i" position="attributes">
+            <attribute name="aria-hidden">true</attribute>
+        </xpath>
+    </template>
+
+</odoo>

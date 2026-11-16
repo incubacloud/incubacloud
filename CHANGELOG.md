@@ -117,19 +117,13 @@ gestionado de copias* on a running panel too.
 
 ### Fixed
 
-- **Deleting a server whose proxy was never deployed takes the panel's
-  access off it.** `/cloud/delete_host` archived such a host at once, with
-  no teardown, so a server hardened before a Full Setup that failed kept
-  the operator user, its sudo grant and the panel's key. The teardown now
-  runs on any server the panel has logged in to and can log in to again
-  (`cloud.host._teardown_reaches_server`: a trusted server key, the
-  credentials of its login type, and `sshpass` for a password); a host the
-  panel never reached is archived or removed at once, as before. When that
-  teardown fails, a host with no proxy is archived all the same, so a
-  server that is gone does not keep it in the panel, and the job's log
-  says what to remove by hand; a teardown a person stops keeps the host.
-  The host page's confirmation says the panel's access will be taken off
-  such a server.
+- **The show password button of the sign-in page has a name and a
+  focus.** A screen reader announced it as a button with no name, and
+  tabbing to it drew nothing. It is now named Show password (translated),
+  reports whether the password is shown (`aria-pressed`) and draws an
+  outline when focused from the keyboard. The sign-in and its OAuth
+  buttons are unchanged.
+
 - **A Full Setup no longer hangs installing the host tools on Ubuntu.**
   After every apt run, needrestart restarts the services still on files
   that run replaced, and one of them can be cloud-init's hotplug hook
