@@ -54,10 +54,7 @@ and first done: a server, backups, a project, the first deploy, a push
 that rebuilds, a domain of its own and outgoing mail. A date once written
 stays, also when the record behind it is deleted. Agents read an
 instance's metrics by the hour, and the assistant's Stop takes effect at
-once. The hardening recipe changes (root's keys are added to the operator
-user's, below), so every hardened host reads `host_hardening_outdated` at
-the next hourly check until its hardening is re-applied; nothing re-runs
-by itself.
+once.
 
 The update adds the SFTP columns of backup destinations (`sftp_host`,
 `sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
@@ -245,122 +242,112 @@ no data migration.
   command is never copied, and the job's log says how many were left out.
   Comments and lines that do not read as a key are not copied, a linked
   file is left as it is, and root without `authorized_keys` no longer
-  fails the run. The recipe changes, so every hardened host reads
-  `host_hardening_outdated` at the next hourly check until its hardening
-  is re-applied (**Re-apply Hardening**); nothing re-runs by itself, and
-  re-applying adds no key to a host where root's were copied before.
-### Changed
-
-- **Stop stops the assistant at once.** The chat says *Stopping…* the
-  moment Stop is pressed. A task waiting for the AI provider, between two
-  attempts, queued or between two tools stops in that same request: the
-  step still waiting for the provider is no longer the conversation's,
-  so the answer that comes later is set aside, and what it cost still
-  counts in the conversation and the month's usage. While an action runs
-  (a tool, a command on a server), the chat says *Stopping… finishing the
-  current action* and the task stops once the action ends: it waits for no
-  job the action started, which goes on, and shows no card the action
-  asked for, whose approval is withdrawn. What the person wrote meanwhile
-  enters the conversation instead of staying queued, and Retry answers it.
-  The state's bus event and the conversation's format carry `stopping`.
-- **A call the provider billed counts whoever's step it is now.** A
-  summary, a billed failure or an answer of another model that comes once
-  the conversation was stopped or deleted is counted in the month's usage
-  (and in the conversation, when it is still there); it went uncounted
-  before. A cost met by a concurrent change is written again, not lost.
-- **Stop withdraws what was confirmed and not yet run.** A card the person
-  confirmed whose call had not run when Stop was pressed loses its approval:
-  if the assistant repeats the call after Retry, it asks again. A call that
-  was running when its step died is answered *Outcome unknown* instead of
-  *Not run*. The panel keeps the state the bus delivered while Stop was on
-  its way, instead of replacing it with the older answer.
-
-## [1.0.233] — unreleased
-
-Agents read an instance's metrics by the hour. The update adds no column
-and no data migration.
-
-### Added
-
-- **`read_metrics` in the MCP.** An instance's metrics by the hour over the
-  last 24 hours, or up to 168: CPU and memory of its services together,
-  requests and 5xx per second, the p50 and p95 of request time and the
-  database's connections, each hour with its average and highest point,
-  and each metric's peak of the window with how many times the average it
-  is and its share of the limit (for CPU and memory, the largest share of
-  any service against its own limit); an hour with a peak at least twice
-  the average says so. The points are read at a step that divides an hour
-  (300 s for 24 hours, 1800 s for 168), the pages of a reading share the
-  window of the first (`end`), `silence` comes only when it explains an
-  empty or silent reading, and a metric without readings says why. It is
-  read from the metrics central with the instance's Metrics tab's own
-  panels (`PANELS["instance_summary"]`), through the new route `/cloud/instance/metrics_summary`, for whoever sees that tab (the
-  `developer` role and the instance), and counts in the tab's twenty chart
-  reads a minute per user. Observability off, no central, or a central
-  that does not answer are said as the tab says them.
-
-## [1.0.232] — unreleased
-
-The panel keeps when each of its first steps was first tried and first
-done: a server, backups, a project, the first deploy, a push that rebuilds,
-a domain of its own and outgoing mail. A date once written stays, also when
-the record behind it is deleted.
-
-The update adds a table and a column. Its one data migration, 1.0.232's
-`end-first-steps`, fills the marks of what a running panel already holds,
-marked as backfilled; each mark in a savepoint of its own, and what fails is
-logged without breaking the update.
-
-### Added
-
-- **The first steps' marks.** `cloud.first.step` keeps, per mark, the first
-  try, the first success, the type of the last job that failed while it was
-  not achieved and whether the dates were backfilled; a written date is never
-  changed (`INSERT … ON CONFLICT` with `COALESCE`). `cloud.first.steps` is
-  the one definition of each mark: tried by the oldest server, backup
-  destination, deploy asked for, own domain (a name outside its server's
-  wildcard domain; one whose instance has no server left, archived after its
-  server was deleted, does not count) or instance with a mail relay; achieved by the oldest Full
-  Setup done, backup made, project, deploy done, rebuild done that a push
-  asked for on an instance that tests its image, deploy or rebuild done after
-  an own domain was added (no DNS or certificate check), or relay delivering.
-  Archived records count. The creation of a server, a destination, a project
-  or a domain, a change to an instance's relay, the end of the jobs of those
-  types and every read of the steps write the marks; each mark in a savepoint
-  of its own, logged, so a mark never makes the operation fail nor keeps the
-  others from being written. A layer turns them off (`_enabled`), narrows the
-  servers that count (`_first_step_host_domain`) and the jobs whose failure
-  counts (`_failure_domain`), adds marks (`_marks`, `_mark`, `_job_types`),
-  leaves a try out of a step's started (`_started`) and hears every change
-  (`_on_marks_changed`). See what failed leads to the last failed job of the
-  type its mark keeps, among those that count.
-- **`/cloud/first_steps`,** for whoever manages servers: each step's state
-  (done, started, to do, last attempt failed), the next one, its actions
-  and guide, whether the card shows and the counts; and
-  `/cloud/first_steps/set_hidden`, which closes the card for the user who
-  asks or opens it again (`res.users.cloud_first_steps_display`). It shows
-  by itself while a required step is left, or optional ones are and the
-  first deploy was not backfilled.
-- **The first steps card on Projects.** Under the page's title, in the place
-  of «No projects yet» or over the projects: First steps with its sentence,
-  the steps in a list (Get a server, Set up backups, Deploy Odoo, and Use your
-  own domain and Send mail from Odoo, optional), each with its state in an
-  icon and words, one help line, its buttons and its guide; only the next
-  step's first button is primary, a failed attempt says so and leads to the
-  page of the job, the optional ones wait for the first deployment. Folded to
-  one line once the required steps are done; `×` closes it for the user, and
-  First steps beside the number of projects or in the user menu opens it
-  again. The page loads as before when the card's call fails, and its header
-  keeps New Project and Import from GitHub. A layer adds actions of its own
-  (`registerFirstStepAction`) and a header over the steps
-  (`registerFirstStepsHeader`). An instance's address takes `?tab=`, which
-  opens that tab.
-- **The assistant's `get_first_steps`.** A read of its own, for every role:
-  the same steps as the card, in English whatever the person's language,
-  with each button's label and the screen it is on, the guide and the next
-  step, and no name or id of a server, project or instance. Absent where a
-  layer turns the steps off. The prompt tells the model to call it when the
-  person asks what to do next or how to start.
+  fails the run. The recipe's fingerprint changes, and a host hardened
+  with the one before still reads as current: the change only matters on a
+  host whose panel connected as a user of its image, where the old copy
+  locked the panel out, and a host hardened from root holds what the new
+  step gives. Equivalent fingerprints are listed, with why, in
+  `host_hardening_executor._EQUIVALENT_RECIPES`, which
+  `host_hardening_outdated` reads.
+- **An instance's backup path is held to the grammar of the panel's
+  destinations.** `custom_backup_dst` (written by an Administrator, by
+  an import and by archiving) is accepted only as `boto3+s3://` or
+  `s3://`, with letters, digits, dots, hyphens and underscores in the
+  bucket and in each part of the path, no `.` or `..` part and a port of
+  at most 65535, or as `sftp://` with a user, a host name or IPv4
+  address and such a path, as an SFTP destination writes it; a
+  destination's bucket and path only where the path they compute is
+  too. Where a backup path reaches a server it is quoted
+  in the command, and an environment or compose file refuses one that
+  would break its line, before the host is reached. Paths saved before
+  stay as they are: 1.0.232's post-migrate names in the log those outside
+  the grammar, for an Administrator to correct. Spanish translation
+  included.
+- **The rest of a backup destination reaches the servers as data too.**
+  Its endpoint must be an `http://` or `https://` URL of a host (the
+  scheme is stored in lower case, and a host name may hold `_` or end in
+  a `.`), its keys letters, digits and `/ + = . _ -` only, its
+  passphrase no quote, backquote, `$`, `\`, `#`, line break or space at
+  either end (the one the panel generates holds none), its image version
+  a docker tag, its time zone one `pytz` knows and each notification
+  address one address, checked when they are written, an import's
+  included. Every line of the environment files the panel writes is
+  checked as the backup path is, and in the files compose reads, for
+  what compose would read as more than the value; the time zone and the
+  addresses are escaped where the template quotes them, and a deploy or
+  a purge stops before the host is reached on a value saved before that
+  would not fit. 1.0.232's post-migrate names in the log the
+  destinations that hold one, without the value of a secret, and keeps
+  them. Spanish translation included.
+- **A purge empties only its own instance's copies.** The deletion of an
+  archived instance and the purge of a switched-off recovery archive
+  refuse a prefix that is a backup destination's path or above it, or
+  that is or holds another instance's path (archived instances
+  included; a successor of the same name is left to the purge's
+  bounds): the job fails before anything is deleted, raises its purge
+  alert and keeps the record. Deleting a live instance refuses such a
+  prefix the same way, for its backup path and its recovery archive,
+  before its first step: the instance stays as it was. Deleting the
+  successor of an archived instance of the same name, which shares its
+  backup path and recovery archive, empties only what the successor
+  stored since it was created (on an SFTP destination by the files'
+  times, once the server's clock is checked): the archived instance
+  keeps its copies.
+  Two instances of the same name in one path are taken for a successor
+  and its archived predecessor only when the dates prove it: one
+  archived, and the other created at least a minute after the archive.
+  Two live ones, two that lived at the same time, or an archive without
+  its date are refused as another's copies, by every purge. The purge of
+  the archived one, and of a recovery archive switched off, ends at the
+  successor's creation when that is earlier than the delete's cutoff, so
+  a delete decided after the successor's first copy, or retried weeks
+  later, no longer takes what the successor stored until then. Should
+  the successor have continued the archived chain (its first backup an
+  incremental on the archived full), the purge deletes nothing, exits 23
+  and raises `archived_purge_chain_continued`; the record stays (RB-05).
+  On an SFTP destination the files' times tell it, as above.
+  A successor archived in turn, or whose recovery archive is switched
+  off, has the purge of that copy start at its own creation
+  (`PURGE_SINCE`), as its delete does: the predecessor's copy in the
+  same path stays for the predecessor's purge.
+  A backup path an Administrator or an import writes
+  is held to the same check, naming the instance it would overlap; 1.0.232's post-migrate names those saved before. A layer that
+  shares one bucket between panels must give each panel credentials
+  limited to its own prefix (`docs/architecture.md`, security model).
+- **An instance that takes the name of another gets a backup path of its
+  own.** When another record already holds the path an instance would
+  compute (an archived instance of the same name whose project's folder
+  the new one took, or two instances of a name without a project), the
+  new one's path ends in `-<id>` (`backup_path_suffix`, set by the panel
+  on creation, when the name, the project or the project's folder
+  changes, and when a backup path written by hand is emptied on an
+  instance without one), and so does its
+  continuous recovery prefix: its first copy is a full of its own and no
+  purge of the other reaches it. Without such a record the path is the
+  one the destination computes, as before. A backup path written by hand
+  may no longer be the path of an instance of the same name, archived
+  included. 1.0.232's post-migrate names in the log the records that
+  already share a path and raises one `backup_path_shared` alert per
+  path; their paths are kept, and their purges go by the dates above.
+  The alert resolves itself at the daily check of archived copies once
+  one record holds the path (RB-05). The backup listing's sizes are read
+  from the instance's own path, its suffix included, and the alerts of a
+  recovery archive left behind name the prefix with it.
+  Spanish translation included.
+- **An import with a backup value the panel refuses goes on without it.**
+  A backup path or destination from the host's files that the checks
+  above refuse is left out and the import says why, instead of «An
+  internal error occurred»; any other value refused is named the same
+  way.
+- **The SSH library no longer writes the commands the panel runs to its
+  log.** asyncssh's logger is kept at WARNING whatever level the
+  deployment sets, so a command's text stays out of the server's log.
+- **A secret a command needs goes in a file, not on its command line.**
+  Executors queue it as an owner-only file of the job's directory
+  (`_queue_private_file`), uploaded before the first step and removed with
+  the directory; the reading of a staging's last login takes its database
+  password that way, and hands it to the container through the
+  environment.
 
 ### Documentation
 

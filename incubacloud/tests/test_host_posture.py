@@ -533,6 +533,28 @@ class TestHardeningCurrent(PostureCase):
             with self.subTest(part=part):
                 self.assertIn(part, alert.message)
 
+    def test_an_equivalent_older_recipe_raises_nothing(self):
+        """Adding root's keys to the operator user instead of copying them
+        over it (16-nov-2026) leaves every host hardened before as the new
+        recipe would: the fleet is not asked to harden again."""
+        from odoo.addons.incubacloud.models.host_hardening_executor import (
+            _EQUIVALENT_RECIPES,
+            _recipe_is_current,
+        )
+
+        self.assertEqual(
+            self.recipe, "0b5a14aa18f2",
+            "the recipe changed: decide whether _EQUIVALENT_RECIPES keeps an "
+            "entry for it, and update this test",
+        )
+        self.assertIn("3ab1139825de", _EQUIVALENT_RECIPES[self.recipe])
+        self.host.hardening_recipe = "3ab1139825de"
+        self.assertFalse(self._run())
+        # Only towards the recipe it names: a later one asks again.
+        self.assertFalse(_recipe_is_current("3ab1139825de", "fedcba987654"))
+        self.assertFalse(_recipe_is_current(False, self.recipe))
+        self.assertTrue(_recipe_is_current(self.recipe, self.recipe))
+
     def test_a_host_hardened_before_the_recipe_was_recorded_raises_it(self):
         """Every host hardened before this check existed: what it runs is
         unknown, so it is not assumed current."""
