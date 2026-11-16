@@ -195,12 +195,6 @@
           - nftables
           - python3-systemd
         state: present
-      # needrestart only lists what needs restarting: a restart of
-      # cloud-init's hotplug hook, a oneshot unit fed by a FIFO, waits on
-      # the FIFO for good, and this task with it (see
-      # full_setup_install.sh, 15-nov-2026).
-      environment:
-        NEEDRESTART_MODE: l
 
     - name: Enable Docker on boot when it is installed
       ansible.builtin.systemd_service:
