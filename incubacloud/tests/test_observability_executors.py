@@ -38,6 +38,7 @@ from odoo.addons.incubacloud.models.observability_central_executor import (
     _OPERATOR_READ_PATHS,
     ObservabilityCentralExecutor,
 )
+from odoo.addons.incubacloud.tests._direct import central_names_as_new
 from odoo.addons.incubacloud.tests.test_executor_durable_writes import (
     JobEndAssertions,
 )
@@ -51,6 +52,7 @@ class ObservabilityExecutorCase(TransactionCase):
         # test mode that cursor rides on this test's transaction.
         self.registry_enter_test_mode()
         self.settings = self.env["cloud.settings"].sudo()._get_system()
+        central_names_as_new(self.settings)
         self.settings.write({
             "metrics_enabled": True,
             "metrics_central_url": "http://vm.test:8428",
