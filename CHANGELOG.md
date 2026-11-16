@@ -22,14 +22,17 @@ and first done: a server, backups, a project, the first deploy, a push
 that rebuilds, a domain of its own and outgoing mail. A date once written
 stays, also when the record behind it is deleted. Agents read an
 instance's metrics by the hour, and the assistant's Stop takes effect at
-once.
+once. A move's cut is measured from the drain and broken down by part, a
+job hands its scripts to the server in one exchange, and the cutover sees
+the destination healthy within half a second.
 
 The update adds the SFTP columns of backup destinations (`sftp_host`,
 `sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
 `sftp_public_key`, `sftp_known_hosts`, `sftp_host_key_fingerprint`,
 `sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
 destinations there are, the table `cloud_host_reboot`, seven columns on
-hosts for their restart and `backup_path_suffix` on instances. Its data
+hosts for their restart and `backup_path_suffix`, `move_cut_parts` and
+`move_last_cut_breakdown` on instances. Its data
 migration, 1.0.232's post-migrate, writes each backup destination's
 retention in the form it must now have (spaces gone, the unit in capitals,
 an empty one as `3M`) and names in the log any it leaves invalid, the
@@ -171,6 +174,25 @@ own, and what fails is logged without breaking the update.
   was running when its step died is answered *Outcome unknown* instead of
   *Not run*. The panel keeps the state the bus delivered while Stop was on
   its way, instead of replacing it with the older answer.
+- **A move's cut, measured by part.** The source's stop uploads its
+  scripts before it stamps the start of the cut, so the cut no longer
+  counts the seconds the instance was still serving. Each job of the cut
+  notes when it started, connected, prepared and uploaded, when it ended
+  and what each step took (a step's result carries `seconds`), and the
+  cutover keeps `move_last_cut_breakdown`: drain, dns, fingerprint, dump,
+  relay, restore, start, health, overhead, queue and other, with the
+  total, and `incomplete` when a part is missing. A note that cannot be
+  written is logged and the job goes on.
+- **Scripts reach the server in one exchange.** A job hands its scripts
+  to the server as one tar on the input of `mkdir … && tar -x` instead of
+  an SFTP round trip per file, 2-3 s less per job between regions. When
+  the tar fails on the server, or the transport cannot feed a command's
+  input (`run_with_stdin`, new and not abstract), the job uploads them file
+  by file as before. The files unpack 0600 in 0700 directories.
+- **The cutover's health check every half second.** It finds the Odoo
+  container once and probes it with `docker exec` every 0.5 s, `curl`
+  allowed 2 s, up to 120 s in all; a container recreated meanwhile is found
+  again. It probed every 3 s through `docker compose exec`.
 
 ### Fixed
 

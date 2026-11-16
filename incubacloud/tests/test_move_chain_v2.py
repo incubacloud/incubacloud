@@ -13,6 +13,7 @@ import asyncio
 import os
 import subprocess
 import tempfile
+import time
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,7 +30,8 @@ from ..models.deploy_instance_executor import DeployInstanceExecutor, _half_memo
 from ..models.move_steps_executor import parse_fingerprint
 from ..models.registry import executor_registry
 from ..models.restore_instance_executor import RestoreInstanceExecutor
-from ..models.transport import SSHTransport
+from ..models.move_cutover_executor import reduce_cut_parts
+from ..models.transport import CommandResult, SSHTransport
 from ._template import pin_template
 from .test_executor_features import _make_deploy_executor
 
@@ -501,14 +503,51 @@ class TestRestoreVerifies(_MoveCase):
             self._restore(verify_job=self.fingerprint.id).pre_run_checks()
 
 
+def _host_transport():
+    """A transport whose commands, the scripts' tar included, all succeed."""
+    transport = MagicMock(spec=SSHTransport)
+    transport.run.return_value = CommandResult("", 0)
+    transport.run_with_stdin.return_value = CommandResult("", 0)
+    return transport
+
+
 class TestTheCutIsMeasured(_MoveCase):
 
     def test_the_sources_stop_stamps_the_start_of_the_cut(self):
         self.registry_enter_test_mode()
+        self.inst.move_cut_parts = {"started": 1.0, "jobs": {"1": {"end": 2.0}}}
         stop = self._job("stop_instance", self.source, payload={
             "services": ["odoo"], "move_cut": True,
         })
-        asyncio.run(self._executor(stop).before_execute(MagicMock(spec=SSHTransport)))
+        before = time.time()
+        asyncio.run(self._executor(stop).before_execute(_host_transport()))
+        self.inst.invalidate_recordset(["move_cut_started_at", "move_cut_parts"])
+        self.assertTrue(self.inst.move_cut_started_at)
+        # The parts of an earlier chain are gone with the new stamp.
+        self.assertEqual(self.inst.move_cut_parts["jobs"], {})
+        self.assertGreaterEqual(self.inst.move_cut_parts["started"], before)
+
+    def test_the_stamp_follows_the_upload_of_the_scripts(self):
+        """The drain comes right after it: the upload is not the cut."""
+        self.registry_enter_test_mode()
+        stop = self._job("stop_instance", self.source, payload={
+            "services": ["odoo"], "move_cut": True,
+        })
+        executor = self._executor(stop)
+        seen = []
+
+        def _upload(executor_self, transport):
+            """Record whether the cut was stamped when the scripts went up."""
+            self.inst.invalidate_recordset(["move_cut_started_at"])
+            seen.append(bool(self.inst.move_cut_started_at))
+            executor_self._scripts_uploaded = True
+
+        with patch.object(
+            type(executor), "_upload_scripts", autospec=True, side_effect=_upload,
+        ):
+            asyncio.run(executor.before_execute(_host_transport()))
+        self.assertEqual(seen, [False])
+        self.assertTrue(executor._scripts_requested)
         self.inst.invalidate_recordset(["move_cut_started_at"])
         self.assertTrue(self.inst.move_cut_started_at)
 
@@ -517,9 +556,12 @@ class TestTheCutIsMeasured(_MoveCase):
         stop = self._job("stop_instance", self.source, payload={
             "services": ["odoo"], "move_target": True,
         })
-        asyncio.run(self._executor(stop).before_execute(MagicMock(spec=SSHTransport)))
+        transport = _host_transport()
+        asyncio.run(self._executor(stop).before_execute(transport))
         self.inst.invalidate_recordset(["move_cut_started_at"])
         self.assertFalse(self.inst.move_cut_started_at)
+        # Nor uploads anything ahead of ``_async_entry``.
+        transport.run_with_stdin.assert_not_called()
 
     def _cut_over(self, seconds):
         """Cut over a move whose cut started *seconds* ago; return the hook."""
@@ -602,6 +644,180 @@ class TestTheCutIsMeasured(_MoveCase):
         self.assertEqual(self._slow_cut_alert().level, "warning")
         self._cut_over(5)
         self.assertFalse(self._slow_cut_alert())
+
+
+class TestTheCutIsBrokenDown(_MoveCase):
+    """Each job of the cut notes its part; the cutover adds them up."""
+
+    def setUp(self):
+        super().setUp()
+        self.registry_enter_test_mode()
+        self.job = self._job("move_fingerprint", self.source)
+        self.started = time.time() - 30
+        self.inst.write({
+            "move_chain_job_ids": f"1,{self.job.id}",
+            "move_cut_started_at": fields.Datetime.now(),
+            "move_cut_parts": {"started": self.started, "jobs": {}},
+        })
+        self.executor = self._executor(self.job)
+        self.marks = {
+            "start": self.started + 1, "connected": self.started + 2,
+            "prepared": self.started + 3, "uploaded": self.started + 4,
+        }
+        self.executor._cut_marks = dict(self.marks)
+
+    def _noted(self):
+        """What the job noted, by job id."""
+        self.inst.invalidate_recordset(["move_cut_parts"])
+        return (self.inst.move_cut_parts or {}).get("jobs") or {}
+
+    def test_a_job_of_the_cut_notes_its_marks_then_its_end(self):
+        self.executor._note_move_cut_part()
+        entry = self._noted()[str(self.job.id)]
+        self.assertEqual(entry, {**self.marks, "type": "move_fingerprint"})
+        self.executor._note_move_cut_part({
+            "Fingerprint": {"stdout": "", "exit_status": 0, "seconds": 1.5},
+        })
+        entry = self._noted()[str(self.job.id)]
+        self.assertEqual(entry["steps"], {"Fingerprint": 1.5})
+        self.assertGreater(entry["end"], entry["uploaded"])
+        self.assertNotIn("resumed", entry)
+
+    def test_a_resumed_attempt_keeps_the_marks_of_the_first(self):
+        self.executor._note_move_cut_part()
+        self.executor._resumed = True
+        self.executor._cut_marks = {"start": self.started + 20}
+        self.executor._note_move_cut_part({})
+        entry = self._noted()[str(self.job.id)]
+        self.assertEqual(entry["start"], self.marks["start"])
+        self.assertTrue(entry["resumed"])
+
+    def test_a_job_outside_the_chain_notes_nothing(self):
+        self.inst.move_chain_job_ids = "1,2"
+        self.executor._note_move_cut_part()
+        self.assertEqual(self._noted(), {})
+
+    def test_nothing_is_noted_before_the_cut(self):
+        self.inst.move_cut_started_at = False
+        self.executor._note_move_cut_part()
+        self.assertEqual(self._noted(), {})
+
+    def test_a_note_that_fails_never_fails_the_job(self):
+        with patch.object(
+            type(self.executor), "_durable_env", autospec=True,
+            side_effect=RuntimeError("lock timeout"),
+        ), self.assertLogs(level="WARNING"):
+            self.executor._note_move_cut_part()
+
+    def test_the_cutover_keeps_the_breakdown_and_clears_the_parts(self):
+        self.inst.write({
+            "host_id": self.source.id,
+            "move_origin_host_id": self.source.id,
+            "move_target_host_id": self.target.id,
+            "move_cut_parts": {"started": self.started, "jobs": {
+                "1": {"type": "stop_instance", **self.marks,
+                      "end": self.started + 5},
+            }},
+        })
+        cutover = self._job("move_cutover", self.target)
+        with patch.object(type(self.inst), "_on_move_cutover", autospec=True):
+            asyncio.run(self._executor(cutover).on_success({}))
+        breakdown = self.inst.move_last_cut_breakdown
+        self.assertAlmostEqual(breakdown["drain"], 2, delta=0.1)
+        self.assertAlmostEqual(breakdown["total"], 30, delta=5)
+        self.assertTrue(breakdown["incomplete"])
+        self.assertFalse(self.inst.move_cut_parts)
+
+    def test_a_cutover_with_nothing_noted_clears_the_last_breakdown(self):
+        self.inst.write({
+            "host_id": self.source.id,
+            "move_origin_host_id": self.source.id,
+            "move_target_host_id": self.target.id,
+            "move_cut_parts": False,
+            "move_last_cut_breakdown": {"total": 9},
+        })
+        cutover = self._job("move_cutover", self.target)
+        with patch.object(type(self.inst), "_on_move_cutover", autospec=True):
+            asyncio.run(self._executor(cutover).on_success({}))
+        self.assertFalse(self.inst.move_last_cut_breakdown)
+
+
+class TestReduceCutParts(BaseCase):
+    """``reduce_cut_parts``: seconds by part, from what the jobs noted."""
+
+    def _job(self, kind, start, end, steps=None, **marks):
+        """A noted job, its marks one second apart unless given."""
+        return {
+            "type": kind, "start": start,
+            "connected": marks.get("connected", start + 1),
+            "prepared": marks.get("prepared", start + 2),
+            "uploaded": marks.get("uploaded", start + 3),
+            "end": end, "steps": steps or {},
+        }
+
+    def test_a_whole_chain(self):
+        parts = {"started": 100, "jobs": {
+            # Connected and uploaded before the stamp: not the cut.
+            "1": self._job("stop_instance", 90, 104, prepared=99, uploaded=100),
+            "2": self._job("move_fingerprint", 105, 108),
+            "3": self._job("backup_download", 108, 118),
+            "4": self._job(
+                "restore_instance", 119, 140, {"Start Odoo service": 4},
+                prepared=128, uploaded=129,
+            ),
+            "5": self._job("move_cutover", 141, 150),
+        }}
+        result = reduce_cut_parts(parts, 151)
+        self.assertEqual(result["drain"], 4)
+        self.assertEqual(result["fingerprint"], 1)
+        self.assertEqual(result["dump"], 1 + 7)
+        self.assertEqual(result["relay"], 8)
+        self.assertEqual(result["restore"], 11 - 4)
+        self.assertEqual(result["start"], 4)
+        self.assertEqual(result["health"], 1 + 6)
+        self.assertEqual(result["queue"], 1 + 1 + 1)
+        self.assertEqual(result["overhead"], 4 * 2)
+        self.assertEqual(result["total"], 51)
+        self.assertEqual(result["other"], 51 - 50)
+        self.assertFalse(result["incomplete"])
+        self.assertNotIn("resumed", result)
+
+    def test_a_layers_job_is_a_part_of_its_own_name(self):
+        parts = {"started": 0, "jobs": {
+            "1": self._job("move_dns_repoint", 0, 4),
+            "2": self._job("layer_step", 4, 8),
+        }}
+        result = reduce_cut_parts(parts, 8)
+        self.assertEqual(result["dns"], 2)
+        self.assertEqual(result["layer_step"], 2)
+        self.assertTrue(result["incomplete"])
+
+    def test_a_resumed_job_without_marks_counts_its_steps(self):
+        parts = {"started": 0, "jobs": {
+            "1": {"type": "backup_download", "end": 30, "resumed": True,
+                  "steps": {"Dump": 12, "Odd": "x"}},
+        }}
+        result = reduce_cut_parts(parts, 30)
+        self.assertEqual(result["dump"], 12)
+        self.assertEqual(result["resumed"], ["dump"])
+        self.assertTrue(result["incomplete"])
+        self.assertNotIn("queue", result)
+
+    def test_a_job_that_never_ended_makes_it_incomplete(self):
+        parts = {"started": 0, "jobs": {"1": {"type": "move_fingerprint"}}}
+        result = reduce_cut_parts(parts, 10)
+        self.assertTrue(result["incomplete"])
+        self.assertEqual(result["other"], 10)
+
+    def test_nothing_to_measure_from(self):
+        for parts in (None, False, [], {}, {"started": "x"}, {"started": True}):
+            with self.subTest(parts=parts):
+                self.assertIsNone(reduce_cut_parts(parts, 10))
+
+    def test_malformed_jobs_never_raise(self):
+        result = reduce_cut_parts({"started": 0, "jobs": ["x"]}, 5)
+        self.assertTrue(result["incomplete"])
+        self.assertEqual(result["total"], 5)
 
 
 class TestTheOldCopyIsFrozen(_MoveCase):

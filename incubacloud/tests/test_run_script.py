@@ -10,12 +10,15 @@ host or the ORM (the executor is built with ``object.__new__`` like the
 other Tier 1 executor tests).
 """
 import asyncio
+import io
+import tarfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from odoo.tests.common import BaseCase
 
+from odoo.addons.incubacloud.models import abstract_executor
 from odoo.addons.incubacloud.models.abstract_executor import (
     JOB_DIR_PREFIX,
     AbstractExecutor,
@@ -46,10 +49,21 @@ def _make_executor(job_id=42):
     return executor
 
 
-def _make_transport(exit_status=0):
-    """Return a transport mock spec'd against the real SSH transport."""
+def _make_transport(exit_status=0, tar_status=None):
+    """Return a transport mock spec'd against the real SSH transport.
+
+    :param int exit_status: what ``run`` answers
+    :param int tar_status: what ``run_with_stdin`` answers; None for a
+        transport without it, which uploads file by file
+    """
     transport = MagicMock(spec=SSHTransport)
     transport.run.return_value = CommandResult(stdout="", exit_status=exit_status)
+    if tar_status is None:
+        transport.run_with_stdin.side_effect = NotImplementedError
+    else:
+        transport.run_with_stdin.return_value = CommandResult(
+            stdout="tar: not found" if tar_status else "", exit_status=tar_status,
+        )
     return transport
 
 
@@ -188,6 +202,92 @@ class TestScriptUpload(BaseCase):
         with self.assertRaises(RuntimeError):
             asyncio.run(self.executor._upload_scripts(self.transport))
         self.transport.upload_text_files.assert_not_called()
+
+
+class TestScriptUploadAsTar(BaseCase):
+    """The overlay goes up in one exchange: a tar on a command's input."""
+
+    def setUp(self):
+        self.executor = _make_executor(job_id=7)
+        self.root = self.executor._script_root()
+        self.executor.run_script(SHARED_LIB)
+
+    def _upload(self, tar_status):
+        """Upload the overlay through a host whose tar exits *tar_status*.
+
+        :return: the transport mock
+        """
+        transport = _make_transport(tar_status=tar_status)
+        asyncio.run(self.executor._upload_scripts(transport))
+        return transport
+
+    def _archive(self, transport):
+        """Return the tar the upload sent, opened.
+
+        :rtype: tarfile.TarFile
+        """
+        data = transport.run_with_stdin.call_args.args[1]
+        return tarfile.open(fileobj=io.BytesIO(data), mode="r:")
+
+    def test_one_command_unpacks_the_whole_overlay(self):
+        transport = self._upload(0)
+        transport.run_with_stdin.assert_awaited_once()
+        command = transport.run_with_stdin.call_args.args[0]
+        self.assertEqual(command, (
+            f"mkdir -p -m 700 {self.root} && tar -xmf - -C {self.root}"
+        ))
+        self.assertEqual(
+            transport.run_with_stdin.call_args.kwargs["timeout"],
+            abstract_executor.SCRIPTS_TAR_TIMEOUT_S,
+        )
+        transport.upload_text_files.assert_not_called()
+        # Only the job's own directory is made apart.
+        transport.run.assert_awaited_once_with(
+            f"mkdir -m 700 {self.executor._job_dir()}",
+        )
+        self.assertTrue(self.executor._scripts_uploaded)
+
+    def test_the_tar_holds_every_script_private(self):
+        archive = self._archive(self._upload(0))
+        members = {m.name: m for m in archive.getmembers()}
+        files = {n for n, m in members.items() if m.isfile()}
+        self.assertEqual(files, set(self.executor._script_overlay()))
+        self.assertTrue(members["lib"].isdir())
+        for member in members.values():
+            with self.subTest(member=member.name):
+                self.assertEqual(member.mode, 0o700 if member.isdir() else 0o600)
+                self.assertEqual((member.uid, member.gid), (0, 0))
+                self.assertEqual((member.uname, member.gname), ("", ""))
+                self.assertFalse(member.pax_headers)
+        local = Path(self.executor._script_overlay()[SHARED_LIB])
+        self.assertEqual(
+            archive.extractfile(SHARED_LIB).read(), local.read_bytes(),
+        )
+
+    def test_a_tar_that_fails_falls_back_to_sftp(self):
+        """Any exit but 0: a host where the tar fails still runs jobs."""
+        transport = self._upload(127)
+        files = transport.upload_text_files.call_args.args[0]
+        self.assertEqual(
+            set(files),
+            {f"{self.root}/{rel}" for rel in self.executor._script_overlay()},
+        )
+        self.assertTrue(self.executor._scripts_uploaded)
+        self.assertTrue(any(
+            "one by one" in str(entry) for entry in self.executor._log_buffer
+        ))
+
+    def test_a_transport_without_it_uploads_file_by_file(self):
+        transport = self._upload(None)
+        transport.upload_text_files.assert_awaited_once()
+
+    def test_a_lost_connection_is_not_a_failure_of_the_tar(self):
+        transport = _make_transport()
+        transport.run_with_stdin.side_effect = ConnectionResetError("gone")
+        with self.assertRaises(ConnectionResetError):
+            asyncio.run(self.executor._upload_scripts(transport))
+        transport.upload_text_files.assert_not_called()
+        self.assertFalse(self.executor._scripts_uploaded)
 
 
 class TestScriptCleanup(BaseCase):

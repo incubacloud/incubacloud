@@ -1,4 +1,6 @@
 import inspect
+import logging
+import time
 
 from odoo import fields
 
@@ -21,6 +23,127 @@ def _takes_keyword(method, name):
         ))
         for param in inspect.signature(method).parameters.values()
     )
+
+
+#: The part of the cut each job of a move chain is (16-nov-2026). A job of
+#: another type (a layer's step inside the cut) is a part of its own name.
+CUT_PART_BY_JOB_TYPE = {
+    "stop_instance": "drain",
+    "move_dns_repoint": "dns",
+    "move_fingerprint": "fingerprint",
+    "backup_download": "dump",
+    "restore_instance": "restore",
+    "move_cutover": "health",
+}
+
+#: The parts every move of this core has: without one of them, the
+#: breakdown says ``incomplete`` (a chain queued by an earlier core, an
+#: attempt that could not note its part). ``dns`` is a layer's.
+CUT_PARTS_EXPECTED = ("drain", "fingerprint", "dump", "restore", "health")
+
+#: The restore's step that starts Odoo, a part of its own (``start``).
+CUT_RESTORE_START_STEP = "Start Odoo service"
+
+
+def _number(value):
+    """Whether *value* is a number noted in the parts (not a bool).
+
+    :rtype: bool
+    """
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def reduce_cut_parts(parts, ended):
+    """Reduce what the jobs of a move noted of its cut to seconds by part.
+
+    *parts* is ``cloud.instance.move_cut_parts``: ``started`` (the stamp,
+    ``time.time()``) and ``jobs`` (``AbstractSSHExecutor._note_move_cut_part``).
+    Every interval is cut to ``[started, ended]``: the source's stop
+    connects and uploads before the stamp, and that is not the cut. Per
+    job: its connection and script upload are ``overhead``; the rest is
+    its part (``CUT_PART_BY_JOB_TYPE``), save the restore's, whose
+    ``before_execute`` is the ``relay`` of the archive and whose start of
+    Odoo is ``start``. ``queue`` is the time between one job's end and the
+    next one's start. ``other`` is what the parts leave of ``total``.
+
+    Never raises on what it is given: whatever is missing or malformed is
+    left out and the result says ``incomplete``.
+
+    :param parts: the noted parts, or anything else
+    :param float ended: the end of the cut, ``time.time()``
+    :return: ``{part: seconds, 'total', 'other', 'incomplete'[, 'resumed']}``,
+        or None when there is no start to measure from
+    :rtype: dict | None
+    """
+    if not isinstance(parts, dict) or not _number(parts.get("started")):
+        return None
+    started = parts["started"]
+    out = {}
+    incomplete = False
+    resumed = set()
+
+    def add(key, begin, end):
+        """Add the share of ``[begin, end]`` that falls inside the cut."""
+        if not (_number(begin) and _number(end)):
+            return
+        span = min(end, ended) - max(begin, started)
+        if span > 0:
+            out[key] = out.get(key, 0.0) + span
+
+    jobs = parts.get("jobs")
+    entries = [
+        entry for entry in (jobs.values() if isinstance(jobs, dict) else ())
+        if isinstance(entry, dict) and _number(entry.get("end"))
+    ]
+    if isinstance(jobs, dict) and len(entries) != len(jobs):
+        incomplete = True
+    entries.sort(key=lambda entry: entry.get("start") or entry["end"])
+    previous = started
+    for entry in entries:
+        kind = entry.get("type") or "unknown"
+        part = CUT_PART_BY_JOB_TYPE.get(kind, kind)
+        if entry.get("resumed"):
+            resumed.add(part)
+        start, end = entry.get("start"), entry["end"]
+        steps = entry.get("steps")
+        steps = steps if isinstance(steps, dict) else {}
+        if not _number(start):
+            # Resumed with no marks of the attempt that began it: what its
+            # steps took is all there is.
+            incomplete = True
+            out[part] = out.get(part, 0.0) + sum(
+                value for value in steps.values() if _number(value)
+            )
+            previous = max(previous, end)
+            continue
+        connected = entry.get("connected", start)
+        prepared = entry.get("prepared", connected)
+        uploaded = entry.get("uploaded", prepared)
+        add("queue", previous, start)
+        add("overhead", start, connected)
+        add("overhead", prepared, uploaded)
+        if kind == "restore_instance":
+            add("relay", connected, prepared)
+            add("restore", uploaded, end)
+            boot = steps.get(CUT_RESTORE_START_STEP)
+            if _number(boot) and boot > 0:
+                boot = min(boot, out.get("restore", 0.0))
+                out["restore"] = out.get("restore", 0.0) - boot
+                out["start"] = out.get("start", 0.0) + boot
+        else:
+            add(part, connected, prepared)
+            add(part, uploaded, end)
+        previous = max(previous, end)
+    if any(part not in out for part in CUT_PARTS_EXPECTED):
+        incomplete = True
+    total = max(ended - started, 0.0)
+    result = {key: round(value, 2) for key, value in out.items()}
+    result["total"] = round(total, 2)
+    result["other"] = round(total - sum(out.values()), 2)
+    result["incomplete"] = incomplete
+    if resumed:
+        result["resumed"] = sorted(resumed)
+    return result
 
 
 class MoveCutoverExecutor(AbstractSSHExecutor):
@@ -75,8 +198,9 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
 
     def get_commands(self):
         inst = self._inst()
-        # Poll the in-container health endpoint for up to ~90s so a
-        # freshly restored stack has time to come up before cutover.
+        # Poll the in-container health endpoint every 0.5 s for up to
+        # 120 s so a freshly restored stack has time to come up before
+        # cutover (``move_health_wait.sh`` gives the values' reasons).
         return [
             (
                 "health_wait",
@@ -102,6 +226,17 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
         cut_seconds = (
             (fields.Datetime.now() - started).total_seconds() if started else None
         )
+        # What each job of the cut noted, this one's included
+        # (``_dispatch_outcome`` notes it before this hook). Measurement
+        # only: a breakdown that cannot be made never stops the cutover.
+        try:
+            breakdown = reduce_cut_parts(inst.move_cut_parts, time.time())
+        except Exception:  # noqa: BLE001 — logged, never fatal
+            logging.getLogger(__name__).warning(
+                "[job %s] could not reduce the parts of the cut",
+                self.job.id, exc_info=True,
+            )
+            breakdown = None
         # From the chain the markers name, before they are cleared.
         trigger = inst._move_trigger()
         # With ``sudo``: the markers are the platform's
@@ -114,10 +249,14 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
             'move_target_host_id': False,
             'move_chain_job_ids': False,
             'move_cut_started_at': False,
+            'move_cut_parts': False,
             **(
                 {'move_last_cut_seconds': cut_seconds}
                 if cut_seconds is not None else {}
             ),
+            # Cleared when there is none, so a move that noted nothing does
+            # not show the breakdown of the one before.
+            'move_last_cut_breakdown': breakdown or False,
         })
         self._sys(f"✓ Cut over to host '{target.name}'.")
         if cut_seconds is not None:

@@ -108,6 +108,32 @@ class BaseTransport(ABC):
         as ``execute`` does.
         """
 
+    async def run_with_stdin(
+        self, command: str, data: bytes,
+        timeout: float = DEFAULT_SSH_COMMAND_TIMEOUT,
+    ) -> CommandResult:
+        """Run *command* with *data* on its standard input and capture its output.
+
+        For handing a host many files in one exchange (the job's scripts as
+        one tar, ``_upload_scripts``) instead of one round trip each. A
+        command that ends without reading all of *data* is not an error
+        here: its exit status says what happened. ``stdout`` holds its
+        standard output and error together, for the message of a failure.
+
+        Not abstract: a transport without it still works, and a caller
+        falls back to what it did before (``upload_text_files``).
+
+        Aborts with ``asyncio.TimeoutError`` after *timeout* seconds and,
+        cancelled, stops the command as ``run`` does.
+
+        :param str command: the command to run
+        :param bytes data: what it reads on its standard input
+        :param float timeout: seconds before the command is given up on
+        :rtype: CommandResult
+        :raises NotImplementedError: when this transport cannot do it
+        """
+        raise NotImplementedError
+
     @abstractmethod
     async def upload_text_files(self, files: dict, mode=None) -> None:
         """Write text files to the remote target.
@@ -247,6 +273,42 @@ class SSHTransport(BaseTransport):
         return CommandResult(
             stdout=(result.stdout or '').strip(),
             exit_status=result.exit_status,
+        )
+
+    async def run_with_stdin(
+        self, command: str, data: bytes,
+        timeout: float = DEFAULT_SSH_COMMAND_TIMEOUT,
+    ) -> CommandResult:
+        """Run *command* fed *data*, its error output merged into ``stdout``.
+
+        See :meth:`BaseTransport.run_with_stdin`. The input is written
+        whole and closed; a command that exits before reading it (no
+        ``tar`` on the host, a ``mkdir`` that failed) closes the channel
+        under the write, and the ``BrokenPipeError`` that follows is left
+        to the exit status.
+        """
+        process = None
+
+        async def _talk():
+            """Feed the input, then wait for the command's end."""
+            with contextlib.suppress(BrokenPipeError):
+                process.stdin.write(data)
+                process.stdin.write_eof()
+            return await process.wait(check=False)
+
+        try:
+            process = await self._conn.create_process(
+                command, encoding=None, stderr=asyncssh.STDOUT,
+            )
+            result = await asyncio.wait_for(_talk(), timeout=timeout)
+        except asyncio.CancelledError:
+            await _stop_cancelled(process)
+            raise
+        output = result.stdout or b''
+        if isinstance(output, bytes):
+            output = output.decode('utf-8', errors='replace')
+        return CommandResult(
+            stdout=output.strip(), exit_status=result.exit_status,
         )
 
     async def upload_text_files(self, files: dict, mode=None) -> None:
