@@ -37,10 +37,22 @@
 # get the unconditional purge.
 #
 # ``PURGE_SINCE`` (optional, ISO-8601 UTC) is the other side: only
-# objects stored at or after that instant are in scope. The deletion of
-# that successor sets it to the instant the successor was created, so
-# what the archived instance of the same name keeps in the prefix,
-# stored before, stays for that instance's own purge.
+# objects stored at or after that instant are in scope. The purges of
+# that successor (its deletion, the purge of its archived copy, of its
+# recovery archive switched off) set it to the instant the successor was
+# created, so what the archived instance of the same name keeps in the
+# prefix, stored before, stays for that instance's own purge.
+#
+# With ``PURGE_BEFORE``, an object it keeps may still need one it would
+# delete: duplicity names an incremental set, and its signatures, after
+# the instant the set it builds on ends (``duplicity-inc.<T1>.to.<T2>``,
+# ``duplicity-new-signatures.<T1>.to.<T2>``). An instance that took the
+# name of an archived one and inherited its path continues that one's
+# chain with its first backup, and deleting the archived full leaves
+# every set after it unrestorable. So when an object kept for being
+# stored at or after the cutoff names a start before it (and, with
+# ``PURGE_SINCE``, not before that either: those stay), nothing is
+# deleted and the program exits 23. Listed whole before the first delete.
 #
 # An ``sftp://`` DST is emptied over SFTP with paramiko (in both images),
 # with the same contract: the key and the trusted server key are read from
@@ -49,13 +61,17 @@
 # ``PURGE_SINCE`` the server's clock decides what is in scope (a file's
 # mtime), so it is checked first: a probe file's mtime more than 120 s off
 # the container's clock stops the purge with 22. Off, it would take the
-# other instance's files, or leave this one's behind and answer 10.
+# other instance's files, or leave this one's behind and answer 10. The
+# chain check (23) reads a file's mtime where S3 gives ``LastModified``;
+# a file the server gives no time for is kept, and counts as newer.
 #
 # Exit codes are the contract with the executors (see backup_purge.sh):
 #   0   purged and verified empty (of objects in scope)
 #   10  nothing in scope was stored under the prefix
 #   21  the provider rejected the credentials
 #   22  anything else
+#   23  an object kept continues a chain the purge would delete: nothing
+#       deleted (only with ``PURGE_BEFORE``)
 
 # Print the deletion program on stdout, ready to pipe into a container's
 # python3. Written as a quoted heredoc so nothing here is expanded by
@@ -71,8 +87,10 @@ exit code is what the executor reads.
 
 With ``PURGE_BEFORE`` set, only objects stored before that instant are
 in scope; anything newer belongs to whoever holds the prefix now and is
-left alone. With ``PURGE_SINCE`` set, only objects stored at or after it
-are; anything older belongs to the archived instance of the same name.
+left alone, and should one of those continue a duplicity chain this
+purge would delete, nothing is deleted (exit 23). With ``PURGE_SINCE``
+set, only objects stored at or after it are; anything older belongs to
+the archived instance of the same name.
 """
 import os
 import re
@@ -114,6 +132,50 @@ since = read_instant("PURGE_SINCE")
 scope = f" stored before {cutoff.isoformat()}" if cutoff else ""
 if since:
     scope += f" stored since {since.isoformat()}"
+
+#: The start of the set a duplicity incremental, or its signatures, builds
+#: on, in the object's name (after the file prefix the image adds).
+SET_START = re.compile(r"duplicity-(?:inc|new-signatures)\.(\d{8}T\d{6}Z)\.to\.")
+
+
+def continues_scope(name, stored):
+    """Whether a file kept for being newer needs a set the purge deletes.
+
+    Shared by both destinations: S3 passes the object's ``LastModified``,
+    SFTP the file's mtime.
+
+    :param str name: the object's key or the file's path
+    :param stored: when it was stored, aware; None when the server gave
+        no time, which counts as at or after the cutoff: it is kept, and
+        whether it is newer cannot be told
+    :return: True for a duplicity incremental or its signatures stored at
+        or after the cutoff whose set starts before it (and not before
+        ``PURGE_SINCE``, whose objects stay).
+    """
+    if cutoff is None or (stored is not None and stored < cutoff):
+        return False
+    found = SET_START.search(name.rsplit("/", 1)[-1])
+    if not found:
+        return False
+    start = datetime.strptime(found.group(1), "%Y%m%dT%H%M%SZ").replace(
+        tzinfo=timezone.utc,
+    )
+    return start < cutoff and (since is None or start >= since)
+
+
+def refuse_continued(depends, where):
+    """Exit 23 when a kept file continues a chain the purge would delete.
+
+    :param list depends: the names of those files, empty when none
+    :param str where: the prefix or path, for the log
+    """
+    if depends:
+        print(
+            f"IC_PURGE_DEPENDS {len(depends)} object(s) stored since "
+            f"{cutoff.isoformat()} continue a chain this purge would delete, "
+            f"first {depends[0]}: nothing deleted under {where}"
+        )
+        sys.exit(23)
 
 # A copy of incubacloud/models/sftp_dst.py's parse(): this runs in the
 # backup container, away from the panel's code. Both are tested against
@@ -252,6 +314,16 @@ def sftp_purge():
                 )
                 sys.exit(22)
         files, dirs = walk()
+        # Listed whole first, as on S3: the chain check sees every file
+        # kept before anything is deleted.
+        refuse_continued([
+            name for name, mtime in files
+            if not in_scope(mtime) and continues_scope(
+                name,
+                None if mtime is None
+                else datetime.fromtimestamp(mtime, timezone.utc),
+            )
+        ], path)
         deleted = 0
         for name, mtime in files:
             if in_scope(mtime):
@@ -326,14 +398,20 @@ client = boto3.client("s3", **kwargs)
 deleted = 0
 try:
     paginator = client.get_paginator("list_objects_v2")
+    # Listed whole first: the dependency check has to see every object
+    # kept before anything is deleted.
+    doomed = []
+    depends = []
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        batch = [
-            {"Key": o["Key"]}
-            for o in page.get("Contents") or ()
-            if in_scope(o)
-        ]
-        if not batch:
-            continue
+        for o in page.get("Contents") or ():
+            if in_scope(o):
+                doomed.append({"Key": o["Key"]})
+            elif continues_scope(o["Key"], o["LastModified"]):
+                depends.append(o["Key"])
+    refuse_continued(depends, prefix)
+    # delete_objects takes up to 1000 keys a call.
+    for start in range(0, len(doomed), 1000):
+        batch = doomed[start:start + 1000]
         client.delete_objects(Bucket=bucket, Delete={"Objects": batch})
         deleted += len(batch)
 

@@ -23,13 +23,15 @@ The update adds the SFTP columns of backup destinations (`sftp_host`,
 `sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
 `sftp_public_key`, `sftp_known_hosts`, `sftp_host_key_fingerprint`,
 `sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
-destinations there are, the table `cloud_host_reboot` and seven columns
-on hosts for their restart. Its data migration, 1.0.232's post-migrate,
-writes each backup destination's retention in the form it must now have
-(spaces gone, the unit in capitals, an empty one as `3M`) and names in
-the log any it leaves invalid, the backup paths outside their new
-grammar, and the backup destinations' values and instances' backup
-paths that their new checks refuse, keeping them.
+destinations there are, the table `cloud_host_reboot`, seven columns
+on hosts for their restart and `backup_path_suffix` on instances. Its
+data migration, 1.0.232's post-migrate, writes each backup destination's
+retention in the form it must now have (spaces gone, the unit in
+capitals, an empty one as `3M`) and names in the log any it leaves
+invalid, the backup paths outside their new grammar, the backup
+destinations' values and instances' backup paths that their new checks
+refuse, and the backup paths two records share (raising
+`backup_path_shared` for each), keeping them.
 
 ### Added
 
@@ -209,7 +211,7 @@ paths that their new checks refuse, keeping them.
   refuse a prefix that is a backup destination's path or above it, or
   that is or holds another instance's path (archived instances
   included; a successor of the same name is left to the purge's
-  cutoff): the job fails before anything is deleted, raises its purge
+  bounds): the job fails before anything is deleted, raises its purge
   alert and keeps the record. Deleting a live instance refuses such a
   prefix the same way, for its backup path and its recovery archive,
   before its first step: the instance stays as it was. Deleting the
@@ -217,10 +219,48 @@ paths that their new checks refuse, keeping them.
   backup path and recovery archive, empties only what the successor
   stored since it was created (on an SFTP destination by the files'
   times, once the server's clock is checked): the archived instance
-  keeps its copies. A backup path an Administrator or an import writes
+  keeps its copies.
+  Two instances of the same name in one path are taken for a successor
+  and its archived predecessor only when the dates prove it: one
+  archived, and the other created at least a minute after the archive.
+  Two live ones, two that lived at the same time, or an archive without
+  its date are refused as another's copies, by every purge. The purge of
+  the archived one, and of a recovery archive switched off, ends at the
+  successor's creation when that is earlier than the delete's cutoff, so
+  a delete decided after the successor's first copy, or retried weeks
+  later, no longer takes what the successor stored until then. Should
+  the successor have continued the archived chain (its first backup an
+  incremental on the archived full), the purge deletes nothing, exits 23
+  and raises `archived_purge_chain_continued`; the record stays (RB-05).
+  On an SFTP destination the files' times tell it, as above.
+  A successor archived in turn, or whose recovery archive is switched
+  off, has the purge of that copy start at its own creation
+  (`PURGE_SINCE`), as its delete does: the predecessor's copy in the
+  same path stays for the predecessor's purge.
+  A backup path an Administrator or an import writes
   is held to the same check, naming the instance it would overlap; 1.0.232's post-migrate names those saved before. A layer that
   shares one bucket between panels must give each panel credentials
   limited to its own prefix (`docs/architecture.md`, security model).
+- **An instance that takes the name of another gets a backup path of its
+  own.** When another record already holds the path an instance would
+  compute (an archived instance of the same name whose project's folder
+  the new one took, or two instances of a name without a project), the
+  new one's path ends in `-<id>` (`backup_path_suffix`, set by the panel
+  on creation, when the name, the project or the project's folder
+  changes, and when a backup path written by hand is emptied on an
+  instance without one), and so does its
+  continuous recovery prefix: its first copy is a full of its own and no
+  purge of the other reaches it. Without such a record the path is the
+  one the destination computes, as before. A backup path written by hand
+  may no longer be the path of an instance of the same name, archived
+  included. 1.0.232's post-migrate names in the log the records that
+  already share a path and raises one `backup_path_shared` alert per
+  path; their paths are kept, and their purges go by the dates above.
+  The alert resolves itself at the daily check of archived copies once
+  one record holds the path (RB-05). The backup listing's sizes are read
+  from the instance's own path, its suffix included, and the alerts of a
+  recovery archive left behind name the prefix with it.
+  Spanish translation included.
 - **An import with a backup value the panel refuses goes on without it.**
   A backup path or destination from the host's files that the checks
   above refuse is left out and the import says why, instead of «An

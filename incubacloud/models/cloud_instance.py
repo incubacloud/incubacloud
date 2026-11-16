@@ -167,7 +167,10 @@ def _yaml_dq_escape(value):
 #: nothing left to remove; the relay's state is what the health probe and
 #: the relay's test mail read of its deliveries. ``move_to_host``, the
 #: rollback, the watchdog, the move's executors, the webhook, the teardown,
-#: the probe and the test mail write them with ``sudo``.
+#: the probe and the test mail write them with ``sudo``. The backup path's
+#: suffix keeps an instance's copies out of a path another of the same name
+#: holds (``_claim_own_backup_path``): cleared by hand, its chain would join
+#: that one's.
 _PLATFORM_FIELDS = frozenset({
     "move_origin_host_id", "move_target_host_id", "move_chain_job_ids",
     "move_rollback_in_progress", "move_frozen_source_host_id",
@@ -177,11 +180,21 @@ _PLATFORM_FIELDS = frozenset({
     "pr_update_cut_off",
     "removal_finalized",
     "smtp_relay_state", "smtp_relay_checked_at", "smtp_relay_error",
+    "backup_path_suffix",
 })
 
 #: When an instance was archived and up to when its purge deletes: set by
 #: the platform alone, and cleared by a revive.
 _PLATFORM_STAMPS = frozenset({"archived_at", "purge_cutoff_at"})
+
+#: The least time between an archive and the creation of the instance of
+#: the same name that holds its backup path, for the two to be taken for a
+#: succession (``_backup_succession``). Asked of the gap, not added to the
+#: purges' bounds: what one side would gain the other would lose. The panel's
+#: clock and the storage's, both on NTP, are seconds apart; a minute leaves
+#: room and is far below the time between an archive and a new instance.
+#: Decided on 15-nov-2026.
+_SUCCESSION_MARGIN = timedelta(seconds=60)
 
 #: Where an instance lives on its host and where its copy is kept: the
 #: directory a teardown removes and the place a purge empties. An
@@ -853,11 +866,22 @@ class CloudInstance(models.Model):
                 or global_backend
             )
 
+    backup_path_suffix = fields.Char(
+        copy=False,
+        readonly=True,
+        help="Added to the backup path the destination computes when "
+             "another instance of the same name already holds that path, "
+             "an archived one included, so this one's copies form a chain "
+             "of their own. Set by the panel when the instance is created, "
+             "renamed or moved to another project.",
+    )
+
     @api.depends(
         "custom_backup_dst",
         "effective_backup_backend",
         "name",
         "project_id.remote_folder",
+        "backup_path_suffix",
     )
     def _compute_instance_backup_dst(self):
         for inst in self:
@@ -868,9 +892,11 @@ class CloudInstance(models.Model):
     def _computed_backup_dst(self):
         """The path the destination computes for this instance, ignoring its own.
 
-        ``{backup_dst}/{project folder}/{name}``: where the panel puts an
-        instance's copies when nothing else is written
-        (``custom_backup_dst``).
+        ``{backup_dst}/{project folder}/{name}{suffix}``: where the panel
+        puts an instance's copies when nothing else is written
+        (``custom_backup_dst``). The suffix is empty unless another
+        instance of the same name held the path first
+        (``_claim_own_backup_path``).
 
         :return: the path, or ``""`` without a destination or a name
         :rtype: str
@@ -879,9 +905,80 @@ class CloudInstance(models.Model):
         bb = self.effective_backup_backend
         if not (bb and bb.backup_dst and self.name):
             return ""
-        folder = (self.project_id.remote_folder if self.project_id else "") \
+        return f"{bb.backup_dst}/{self._backup_folder()}/{self.name}" \
+            f"{self.backup_path_suffix or ''}"
+
+    def _backup_folder(self):
+        """The folder of the destination this instance's copies go under.
+
+        :return: its project's remote folder, or ``default``
+        :rtype: str
+        """
+        self.ensure_one()
+        return (self.project_id.remote_folder if self.project_id else "") \
             or "default"
-        return f"{bb.backup_dst}/{folder}/{self.name}"
+
+    def _backup_path_tails(self, suffix):
+        """How the paths this instance would compute with *suffix* end.
+
+        Core's chain: ``/{folder}/{name}{suffix}``. An addon that keeps
+        more of the copy beside it adds the ending of its prefix. Compared
+        by the ending and not the whole path, so the check holds before
+        the instance has a destination, and whatever destination another
+        record's path is on.
+
+        :param str suffix: a ``backup_path_suffix``, ``""`` for none
+        :rtype: list
+        """
+        self.ensure_one()
+        return [f"/{self._backup_folder()}/{self.name}{suffix}"]
+
+    def _claim_own_backup_path(self):
+        """Give each instance a backup path no other record holds.
+
+        An instance that takes the name of another, an archived one above
+        all, computes the same path: its copies would continue that one's
+        duplicity chain, and a purge of either would take the other's.
+        When another record already holds a path that ends as this one's
+        would (``_backup_path_tails``), the instance takes the suffix
+        ``-<id>``; otherwise none. Another record is one of the same name,
+        or one with a suffix of its own, whose name and suffix may spell
+        this one's name; a suffix taken by an instance of that spelling is
+        passed over for the next. The path is otherwise left as the
+        destination computes it, the one imports, runbooks and a recovery
+        by hand use.
+
+        Called when the computed path moves anyway: on creation, when
+        the name, the project or the project's folder changes, and when a
+        path written by hand is emptied on an instance without a suffix
+        (one with a suffix already has a path of its own). Not for an instance with a path
+        of its own written (``custom_backup_dst``), which the field's
+        check holds to the same rule. Of several claimed together, the
+        first keeps the path and the later ones take suffixes.
+        """
+        Instance = self.env["cloud.instance"].sudo().with_context(
+            active_test=False,
+        )
+        for inst in self:
+            if inst.custom_backup_dst or not inst.name:
+                continue
+            for suffix in ("", *(f"-{inst.id}" + (f"-{n}" if n else "")
+                                 for n in range(10))):
+                tails = inst._backup_path_tails(suffix)
+                others = Instance.search([
+                    ("id", "!=", inst.id), "|", "|",
+                    ("name", "=", inst.name),
+                    ("name", "=", f"{inst.name}{suffix}"),
+                    ("backup_path_suffix", "!=", False),
+                ]).filtered(lambda other: other not in self or other.id < inst.id)
+                if not any(
+                    (path or "").rstrip("/").endswith(tail)
+                    for other in others for path in other._backup_paths_held()
+                    for tail in tails
+                ):
+                    break
+            if (inst.backup_path_suffix or "") != suffix:
+                inst.sudo().write({"backup_path_suffix": suffix or False})
 
     def _backup_paths_held(self):
         """The backup paths this instance's copies are kept under.
@@ -907,15 +1004,22 @@ class CloudInstance(models.Model):
         destination's path and no other instance uses that destination
         (an import names one after the path it read); and one that is or
         holds the path of another instance, archived included. One that is
-        the same path as another instance of the same name is not: that is
-        a successor, which the cutoff protects. Compared bucket and parts as the purge
+        the same path as another instance of the same name is not when the
+        dates prove a succession (``_backup_succession``): one of the two
+        archived, and the other created at least a minute after: the
+        purges' bounds keep each one's objects apart. Two live ones, two
+        that lived at the same time or one archived without its date are
+        refused. Compared bucket and parts as the purge
         reads them (``_backup_dst.dst_key``), whatever the endpoint: two
         destinations naming one bucket are taken for one, which refuses
         more, never less.
 
         With *held*, *prefix* is a path to write as this instance's own
         (``custom_backup_dst``): one under another instance's path is
-        refused too, as that one's purge would empty it.
+        refused too, as that one's purge would empty it, and so is the
+        path of one of the same name, whose chain it would continue: an
+        instance that takes the name of another computes a path of its
+        own (``_claim_own_backup_path``).
 
         :param str prefix: the duplicity or wal-g prefix
         :param bool held: also refuse a *prefix* under another's path
@@ -960,7 +1064,10 @@ class CloudInstance(models.Model):
         for other in others:
             for path in other._backup_paths_held():
                 theirs = dst_key(path)
-                if theirs == key and other.name == self.name:
+                if (
+                    theirs == key and other.name == self.name and not held
+                    and self._backup_succession(other)
+                ):
                     continue
                 if dst_covers(key, theirs) or (held and dst_covers(theirs, key)):
                     return None, other
@@ -990,19 +1097,88 @@ class CloudInstance(models.Model):
             "deleted. Correct the instance's backup path."
         )
 
+    def _backup_succession(self, other):
+        """Whether one of the two took the other's name once it was archived.
+
+        One is archived (inactive, with ``archived_at``) and the other was
+        created at least ``_SUCCESSION_MARGIN`` after: what each one stored
+        in a path they share is then told apart by the storage's dates,
+        the archived one's before the other's creation. Anything else (two
+        live ones, two that lived at the same time, an archive without its
+        date) proves nothing.
+
+        :param other: another ``cloud.instance``
+        :rtype: bool
+        """
+        self.ensure_one()
+
+        def took_over(archived, successor):
+            """Whether *successor* was created a margin after *archived* was archived."""
+            return bool(
+                not archived.active and archived.archived_at
+                and successor.create_date
+                and archived.archived_at + _SUCCESSION_MARGIN
+                <= successor.create_date
+            )
+
+        return took_over(self, other) or took_over(other, self)
+
+    def _backup_purge_before(self, prefix, cutoff):
+        """Up to when a purge of this instance's *prefix* deletes.
+
+        *cutoff*, the instant the purge was decided, unless an instance
+        of the same name that holds the same path was created after this
+        one, the successor that took its name: then its creation, when
+        earlier. A delete decided after the successor's first copy would
+        otherwise take what the successor stored until then; the oldest
+        such creation, so one that was archived in turn keeps its copy
+        too. The purges of an archived instance's copy and of a recovery
+        archive switched off read it (``PURGE_BEFORE``).
+
+        :param str prefix: the duplicity or wal-g prefix the purge empties
+        :param datetime.datetime cutoff: naive UTC
+        :return: the bound, naive UTC
+        :rtype: datetime.datetime
+        """
+        self.ensure_one()
+        key = dst_key(prefix)
+        if not (key and key[1] and self.name and self.create_date and cutoff):
+            return cutoff
+        namesakes = self.env["cloud.instance"].sudo().with_context(
+            active_test=False,
+        ).search([
+            ("id", "!=", self.id), ("name", "=", self.name),
+            ("create_date", ">", self.create_date),
+        ])
+        later = [
+            other.create_date for other in namesakes
+            if any(dst_key(path) == key for path in other._backup_paths_held())
+        ]
+        return min([cutoff, *later])
+
     def _backup_purge_since(self, prefix):
-        """Where a delete's purge of *prefix* starts, or ``""`` to empty it whole.
+        """Where a purge of this instance's *prefix* starts, or ``""`` to empty it whole.
 
-        Another instance of the same name that holds the same path, the
-        archived one whose name this one took (``_backup_prefix_conflict``
-        lets it through), keeps there what was stored before this one was
-        created: the delete's purge is bounded to what came after
-        (``PURGE_SINCE``, ``lib/purge_prefix.sh``), the archived one's own
-        purge to what came before (``PURGE_BEFORE``).
+        Another instance of the same name that holds the same path and
+        was created before this one, the archived one whose name this one
+        took (``_backup_prefix_conflict`` lets it through), keeps there
+        what was stored before this one was created: this one's purges
+        are bounded to what came after (``PURGE_SINCE``,
+        ``lib/purge_prefix.sh``), the delete of this one live and, once
+        it is archived in turn or its recovery archive switched off, the
+        purge of that copy. The earlier one's own purge is bounded to what
+        came before (``PURGE_BEFORE``, ``_backup_purge_before``).
 
-        :param str prefix: the duplicity or wal-g prefix the delete empties
+        Only one created before: one created after is this one's
+        successor, which ``_backup_prefix_conflict`` refuses to a live
+        instance's delete, and whose creation already ends this one's
+        archived purge. Counted, it would leave behind, with the record
+        gone, what an imported instance's path held from before its
+        record was created.
+
+        :param str prefix: the duplicity or wal-g prefix the purge empties
         :return: this instance's creation as ISO-8601 UTC, to the second
-            and rounded down, or ``""`` when no other instance holds it
+            and rounded down, or ``""`` when no earlier instance holds it
         :rtype: str
         """
         self.ensure_one()
@@ -1011,7 +1187,10 @@ class CloudInstance(models.Model):
             return ""
         namesakes = self.env["cloud.instance"].sudo().with_context(
             active_test=False,
-        ).search([("id", "!=", self.id), ("name", "=", self.name)])
+        ).search([
+            ("id", "!=", self.id), ("name", "=", self.name),
+            ("create_date", "<", self.create_date),
+        ])
         if not any(
             dst_key(path) == key
             for other in namesakes for path in other._backup_paths_held()
@@ -1614,6 +1793,21 @@ class CloudInstance(models.Model):
             name in vals and (inst[name] or False) != (vals[name] or False)
             for name in ("smtp_relay_auth", "smtp_relay_host")
         ))
+        # A form sends the name back on every save: only a change moves
+        # the computed backup path. So does emptying a path written by
+        # hand: the instance goes back to the computed one. Not one with a
+        # suffix: its path is already its own, and a claim that found the
+        # path without it free would move it there, away from its chain.
+        path_moved = self.filtered(lambda inst: (
+            "name" in vals and inst.name != vals["name"]
+        ) or (
+            "project_id" in vals
+            and inst.project_id.id != (vals["project_id"] or False)
+        ) or (
+            "custom_backup_dst" in vals and inst.custom_backup_dst
+            and not vals["custom_backup_dst"]
+            and not inst.backup_path_suffix
+        ))
         result = super().write(vals)
         relay_moved._forget_relay_state()
         # Odoo checks the record rules on the instance as it was: one moved
@@ -1621,6 +1815,9 @@ class CloudInstance(models.Model):
         # only to a project its writer is a member of.
         if "project_id" in vals:
             self.check_access("write")
+        # The computed backup path moves with the name and the project:
+        # it must not move into one another instance holds.
+        path_moved._claim_own_backup_path()
         # Auto-generate domain when a host is assigned to an instance
         # that doesn't have any domains yet (e.g. imported without host).
         if "host_id" in vals and vals["host_id"]:
@@ -4305,6 +4502,7 @@ class CloudInstance(models.Model):
         Finding out when the operator presses "revive" is too late, so
         this raises an alert as soon as it happens.
         """
+        self._resolve_unshared_backup_paths()
         archived = self.with_context(active_test=False).search([
             ("active", "=", False),
             ("custom_backup_dst", "!=", False),
@@ -4333,6 +4531,41 @@ class CloudInstance(models.Model):
                     instance=inst,
                 )
         return len(archived)
+
+    @api.model
+    def _resolve_unshared_backup_paths(self):
+        """Resolve each ``backup_path_shared`` whose path one record holds now.
+
+        1.0.232's post-migrate raises it once per path that two records or
+        more hold, keyed by the path. Once fewer than two hold it (one of
+        them purged, or given a path of its own) the alert has nothing
+        left to say. Run with the daily check of archived copies, which
+        is where an archived one's purge ends up seen; compared as the
+        purges read a path (``dst_key``).
+
+        :return: the alerts resolved
+        :rtype: int
+        """
+        Alert = self.env["cloud.alert"].sudo()
+        alerts = Alert.search([
+            ("code", "=", "backup_path_shared"), ("state", "=", "active"),
+            ("instance_id", "=", False), ("dedup_key", "!=", False),
+        ])
+        if not alerts:
+            return 0
+        holders = {}
+        for inst in self.sudo().with_context(active_test=False).search([]):
+            for path in inst._backup_paths_held():
+                key = dst_key(path)
+                if key and key[1]:
+                    holders.setdefault(key, set()).add(inst.id)
+        resolved = 0
+        for alert in alerts:
+            if len(holders.get(dst_key(alert.dedup_key), ())) < 2:
+                resolved += len(
+                    Alert.resolve_alert("backup_path_shared", key=alert.dedup_key),
+                )
+        return resolved
 
     def _probe_archived_copy(self):
         """Return ``(state, bytes)`` for this instance's frozen prefix.
@@ -5720,7 +5953,8 @@ class CloudInstance(models.Model):
         A path written other than the one the destination computes must
         not overlap a destination's or another instance's
         (``_backup_prefix_conflict``): a purge of one would empty the
-        other's copies.
+        other's copies. That of one of the same name, archived included,
+        too: the copies would continue its chain.
 
         :raises ValidationError: for a path outside it, or one that
             overlaps
@@ -6406,6 +6640,7 @@ class CloudInstance(models.Model):
         # is born only in a project its creator is a member of.
         records.check_access("create")
         self._check_new_record_rows(records, creating)
+        records._claim_own_backup_path()
         Whitelist = self.env["cloud.instance.whitelist"]
         for inst in records:
             # A staging is born with the egress list its host already

@@ -35,6 +35,15 @@ update, so they are core's backup paths alone: one with a continuous
 recovery prefix is not named here, and the purge's own check refuses it
 all the same. Only the log misses it.
 
+The records that share a backup path, archived ones included, are named
+in the log, each group with its ids and path, and raise one panel alert
+per path (``backup_path_shared``). From this version an instance that
+takes the name of another computes a path of its own
+(``cloud.instance._claim_own_backup_path``); the paths already shared
+are kept, as moving a live instance's would hide its history, and their
+purges go on only where the dates prove a succession and the successor
+did not continue the archived chain.
+
 Idempotent: a second run changes nothing.
 """
 import logging
@@ -49,6 +58,7 @@ from odoo.addons.incubacloud.models._backup_dst import (
     breaks_line,
     compose_env_breaks,
     dst_is_valid,
+    dst_key,
     endpoint_url_is_valid,
     image_tag_is_valid,
 )
@@ -219,8 +229,52 @@ def _log_backup_values_outside_their_checks(cr):
     return backends, instances
 
 
+def _log_shared_backup_paths(cr):
+    """Name the records that share a backup path, and alert once per path; keep them.
+
+    :param cr: database cursor
+    :return: how many paths are shared
+    :rtype: int
+    """
+    env = api.Environment(cr, SUPERUSER_ID, {"active_test": False})
+    groups = {}
+    for inst in env["cloud.instance"].search([]):
+        for path in inst._backup_paths_held():
+            key = dst_key(path)
+            if key and key[1]:
+                members = groups.setdefault(key, (path, []))[1]
+                if inst not in members:
+                    members.append(inst)
+    shared = 0
+    for path, members in groups.values():
+        if len(members) < 2:
+            continue
+        shared += 1
+        listed = ", ".join(
+            f"{inst.name} (id {inst.id}, {'live' if inst.active else 'archived'})"
+            for inst in members
+        )
+        _logger.warning(
+            "1.0.232: the backup path %s is held by %s. Their copies are "
+            "told apart by dates alone: a purge of one goes on only when "
+            "one of them is archived and the other was created after, and "
+            "deletes nothing should the later one have continued the "
+            "archived chain. Kept as it is.",
+            path, listed,
+        )
+        env["cloud.alert"].raise_alert(
+            "backup_path_shared",
+            f"The backup path {path} is held by {listed}. Their purges go "
+            "on only when the dates tell their copies apart; see the log "
+            "of the update to 1.0.232.",
+            level="warning",
+            key=path,
+        )
+    return shared
+
+
 def migrate(cr, version):
-    """Normalise the retentions; name the backup values the new checks refuse.
+    """Normalise the retentions; name the backup values refused and paths shared.
 
     :param cr: database cursor
     :param version: module version being upgraded from
@@ -230,3 +284,4 @@ def migrate(cr, version):
     _normalise_backup_retentions(cr)
     _log_backup_dsts_outside_the_grammar(cr)
     _log_backup_values_outside_their_checks(cr)
+    _log_shared_backup_paths(cr)

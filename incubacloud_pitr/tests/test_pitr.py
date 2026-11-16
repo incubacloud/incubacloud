@@ -620,6 +620,37 @@ class TestDeletingAnArchivedInstancePurgesTheArchive(_PitrCase):
         self.assertIn(recovery, command)
         self.assertNotIn("pitr-archived-secret", command)
 
+    def test_a_successor_s_archive_in_the_prefix_bounds_the_purge(self):
+        """The successor took the name after the archive; the delete was
+        decided after its creation: both prefixes end where it began."""
+        executor = self._purge()
+        successor = self.env["cloud.instance"].create({
+            "name": "pitr-inst",
+            "project_id": self.env["cloud.project"].create({
+                "name": "pitr-proj-2", "remote_folder": "pp2",
+                "backup_backend_id": self.backend.id,
+            }).id,
+            "environment": "production", "host_id": self.host.id,
+            "state": "deployed",
+        })
+        now = fields.Datetime.now()
+        born = now - timedelta(days=4)
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET create_date = %s, archived_at = %s,"
+            " purge_cutoff_at = %s WHERE id = %s",
+            (now - timedelta(days=30), now - timedelta(days=5), now, self.inst.id),
+        )
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET create_date = %s, custom_backup_dst = %s,"
+            " pitr_rendered_prefix = %s WHERE id = %s",
+            (born, self.inst.custom_backup_dst, self.PREFIX, successor.id),
+        )
+        self.env.invalidate_all()
+        executor._refuse_shared_prefix()
+        for content in executor._env_contents().values():
+            self.assertIn(f"PURGE_BEFORE={born.isoformat()}\n", content)
+
     def test_switched_off_the_archive_is_still_purged(self):
         """Switching off leaves the archive in the bucket and the cluster
         on the record (``pitr_disable``)."""

@@ -263,6 +263,23 @@ STUB
     [ "$status" -eq 21 ]
 }
 
+@test "archived purge passes a chain the successor continued through as 23" {
+    env_file="$(_env_file)"
+    echo 23 > "$DOCKER_EXIT"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag"
+    [ "$status" -eq 23 ]
+    [[ "$output" == *"continued this chain: nothing deleted"* ]]
+}
+
+@test "archived purge stops at a prefix whose chain was continued" {
+    env_file="$(_env_file)"
+    more="$(_more_env_file pitr)"
+    printf '23\n0\n' > "$DOCKER_EXITS"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag" "$more"
+    [ "$status" -eq 23 ]
+    [ "$(grep -c 'docker run' "$DOCKER_CALLS")" -eq 1 ]
+}
+
 @test "archived purge collapses a failed image pull to 22" {
     env_file="$(_env_file)"
     echo 125 > "$DOCKER_EXIT"

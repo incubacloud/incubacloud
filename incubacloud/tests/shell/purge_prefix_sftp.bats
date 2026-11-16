@@ -297,6 +297,36 @@ _run_program() {
     [[ "$(_state files)" != *"backups/proj/inst/old"* ]]
 }
 
+@test "sftp: an incremental kept that builds on a set it would delete stops the purge whole" {
+    # The successor continued the archived chain: its first backup, after
+    # the cutoff, is an incremental whose set starts before it.
+    now=$(date +%s)
+    old=$(date -u -d "@$((now - 7200))" +%Y%m%dT%H%M%SZ)
+    new=$(date -u -d "@$((now - 10))" +%Y%m%dT%H%M%SZ)
+    _seed ok 0 "backups/proj/inst/duplicity-full.$old.vol1.difftar.gpg=$((now - 7200))" \
+        "backups/proj/inst/duplicity-inc.$old.to.$new.vol1.difftar.gpg=$((now - 10))"
+    export PURGE_BEFORE="$(date -u -d "@$((now - 3600))" +%Y-%m-%dT%H:%M:%S)"
+    run _run_program
+    [ "$status" -eq 23 ]
+    [[ "$output" == *"IC_PURGE_DEPENDS 1 object(s)"* ]]
+    # Only the clock probe went.
+    [[ "$(_state removed)" != *duplicity* ]]
+    [[ "$(_state files)" == *"duplicity-full.$old"* ]]
+}
+
+@test "sftp: an incremental the server gives no time for counts as kept and newer" {
+    now=$(date +%s)
+    old=$(date -u -d "@$((now - 7200))" +%Y%m%dT%H%M%SZ)
+    _seed ok 0 "backups/proj/inst/duplicity-full.$old.vol1.difftar.gpg=$((now - 7200))" \
+        "backups/proj/inst/duplicity-inc.$old.to.20991231T000000Z.vol1.difftar.gpg=none"
+    export PURGE_BEFORE="$(date -u -d "@$((now - 3600))" +%Y-%m-%dT%H:%M:%S)"
+    run _run_program
+    [ "$status" -eq 23 ]
+    # Only the clock probe went.
+    [[ "$(_state removed)" != *duplicity* ]]
+    [[ "$(_state files)" == *"duplicity-full.$old"* ]]
+}
+
 @test "sftp: a link is removed, never followed" {
     _seed ok 0 "backups/proj/inst/escape=100:link" "backups/proj/elsewhere/data=100"
     run _run_program

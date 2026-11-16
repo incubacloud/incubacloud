@@ -18,16 +18,23 @@
 # host may have to pull the image again.
 #
 # The environment comes from a file the panel uploads (destination,
-# credentials, endpoint), never from arguments: an argument would be
-# visible in ``ps`` to every account on the host for as long as the
+# credentials, endpoint, bounds), never from arguments: an argument would
+# be visible in ``ps`` to every account on the host for as long as the
 # container runs. The file is removed on the way out, including when
 # this script fails.
+#
+# Two bounds, read by ``lib/purge_prefix.sh``: ``PURGE_BEFORE``, the
+# instant the delete was decided, or the creation of an instance that
+# took the name since when earlier, so what that one stores stays; and
+# ``PURGE_SINCE``, set when this instance took the name of an earlier one
+# that holds the same path: its own creation, so what the earlier one
+# stored stays for that one's purge.
 #
 # Each further file is one more prefix of the same copy, emptied the
 # same way in a container of its own: an addon that keeps part of an
 # instance's copy beside the duplicity prefix (continuous recovery's
 # ``<name>-pitr``) hands it here, with its own ``DST`` and the same
-# ``PURGE_BEFORE``. They run in order and the first that fails stops the
+# bounds. They run in order and the first that fails stops the
 # others, with its exit code: the record stays, and the next run finds
 # the ones before it empty. The result is 0 when any of them removed
 # something, 10 when every one was already empty. All of them must have
@@ -46,6 +53,9 @@
 #   20  the environment file (or an SFTP copy's key files) is missing
 #   21  the provider rejected the credentials
 #   22  the container could not start, or any other failure
+#   23  an object stored since the cutoff continues a chain the purge
+#       would delete (``lib/purge_prefix.sh``): nothing deleted under
+#       that prefix
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
@@ -116,6 +126,7 @@ case "$rc" in
     10) ic_log "archived backup prefix was already empty." ;;
     21) ic_warn "storage rejected the credentials." ;;
     20) ic_warn "environment unavailable." ;;
+    23) ic_warn "the instance that took the name continued this chain: nothing deleted." ;;
     *)  ic_warn "archived backup purge failed (exit $rc)."
         # Anything the inner program did not classify — most often the
         # image failing to pull or to start at all — lands here as 22.

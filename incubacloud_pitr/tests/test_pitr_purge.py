@@ -448,14 +448,26 @@ class TestTheDeleteReachesOnlyItsOwnArchive(_PitrCase):
             "environment": "staging", "host_id": self.host.id,
             "state": "deployed",
         })
+        # Archived two days before this instance was created: the dates
+        # prove the succession (``_backup_succession``).
+        now = fields.Datetime.now()
         self.env.flush_all()
         self.env.cr.execute(
-            "UPDATE cloud_instance SET active = false, pitr_archived_prefix = %s"
-            " WHERE id = %s",
-            (prefix, namesake.id),
+            "UPDATE cloud_instance SET active = false, pitr_archived_prefix = %s,"
+            " create_date = %s, archived_at = %s WHERE id = %s",
+            (prefix, now - timedelta(days=9), now - timedelta(days=2), namesake.id),
         )
         self.env.invalidate_all()
         return namesake
+
+    def test_an_archived_one_without_its_date_refuses_the_delete(self):
+        """Its archive is not told apart from this one's by the dates."""
+        namesake = self._archived_namesake(PREFIX)
+        namesake.sudo().write({"archived_at": False})
+        executor = self._executor(DeleteInstanceExecutor, "delete_instance")
+        with self.assertRaises(JobRefused) as caught:
+            executor._refuse_shared_prefix(self.inst)
+        self.assertIn(f"id {namesake.id}", str(caught.exception))
 
     def test_a_successor_s_delete_keeps_the_archived_one_s_archive(self):
         self._archived_namesake(PREFIX)
@@ -538,12 +550,80 @@ class TestThePurgeReachesOnlyItsOwnArchive(_SwitchedOffCase):
             self._purge(before)._env_content()
         self.assertIn("pitr-other", str(caught.exception))
 
-    def test_a_successor_s_archive_under_the_same_name_is_left_to_the_cutoff(self):
+    def test_a_live_one_of_the_same_name_in_its_prefix_is_refused(self):
+        """Two live ones in a prefix prove no succession."""
         before = self._switched_off(15)
         self.inst._pitr_record_rendered()
-        self._elsewhere("pitr-inst", pitr_rendered_prefix=PREFIX)
-        self.assertIn(f"DST={PREFIX}\n", self._purge(before)._env_content())
+        other = self._elsewhere("pitr-inst", pitr_rendered_prefix=PREFIX)
+        with self.assertRaises(JobRefused) as caught:
+            self._purge(before)._env_content()
+        self.assertIn(f"id {other.id}", str(caught.exception))
 
+    def test_the_cutoff_ends_where_one_that_took_the_name_began(self):
+        """The instance archived since, its name taken: the bound is the
+        switch off or the successor's creation, the earlier."""
+        before = self._switched_off(15)
+        self.inst._pitr_record_rendered()
+        successor = self._elsewhere("pitr-inst", pitr_rendered_prefix=PREFIX)
+        now = fields.Datetime.now()
+        for archived, created, bound in (
+            (16, 15.5, 15.5),   # a successor before the switch off: its creation
+            (14, 13, None),     # one after it: the switch off
+        ):
+            with self.subTest(created=created):
+                self.env.flush_all()
+                self.env.cr.execute(
+                    "UPDATE cloud_instance SET active = false, archived_at = %s,"
+                    " create_date = %s WHERE id = %s",
+                    (now - timedelta(days=archived), now - timedelta(days=30),
+                     self.inst.id),
+                )
+                self.env.cr.execute(
+                    "UPDATE cloud_instance SET create_date = %s WHERE id = %s",
+                    (now - timedelta(days=created), successor.id),
+                )
+                self.env.invalidate_all()
+                expected = (
+                    now - timedelta(days=bound) if bound
+                    else fields.Datetime.to_datetime(before)
+                )
+                self.assertIn(
+                    f"PURGE_BEFORE={expected.isoformat()}\n",
+                    self._purge(before)._env_content(),
+                )
+
+    def test_a_successor_s_purge_starts_at_its_creation(self):
+        """This one took the name of one archived that keeps its archive in
+        the prefix: what that one archived before stays (``PURGE_SINCE``)."""
+        before = self._switched_off(15)
+        self.inst._pitr_record_rendered()
+        predecessor = self._elsewhere("pitr-inst", pitr_rendered_prefix=PREFIX)
+        now = fields.Datetime.now()
+        born = now - timedelta(days=19)
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET active = false, archived_at = %s,"
+            " create_date = %s WHERE id = %s",
+            (now - timedelta(days=20), now - timedelta(days=30), predecessor.id),
+        )
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET create_date = %s WHERE id = %s",
+            (born, self.inst.id),
+        )
+        self.env.invalidate_all()
+        content = self._purge(before)._env_content()
+        self.assertIn(
+            f"PURGE_SINCE={born.strftime('%Y-%m-%dT%H:%M:%S+00:00')}\n", content,
+        )
+        self.assertIn(
+            f"PURGE_BEFORE={fields.Datetime.to_datetime(before).isoformat()}\n",
+            content,
+        )
+
+    def test_without_one_of_its_name_in_the_prefix_it_has_no_start(self):
+        before = self._switched_off(15)
+        self.inst._pitr_record_rendered()
+        self.assertNotIn("PURGE_SINCE", self._purge(before)._env_content())
 
 class TestSwitchingOnBeforeTheDate(_SwitchedOffCase):
 
@@ -778,3 +858,60 @@ class TestANeutralizedCopy(_SwitchedOffCase):
         self.assertFalse(self.inst.pitr_purge_at)
         self.assertFalse(self.inst.pitr_rendered_prefix)
         self.assertFalse(self.inst.pitr_rendered_backend_id)
+
+
+class TestASuccessorArchivesUnderAPrefixOfItsOwn(_PitrCase):
+    """The recovery prefix follows the backup path's suffix (``backup_path_suffix``).
+
+    An instance that takes the name of an archived one whose project's
+    folder it took computes ``<folder>/<name>-<id>-pitr``: its archive is
+    not the archived one's, and neither purge reaches the other.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.inst.write({"pitr_enabled": True, "pitr_cluster_id": "7698"})
+        self.inst._finalize_removal(keep_in_panel=True)
+        self.assertEqual(self.inst.pitr_archived_prefix, PREFIX)
+        self.project.remote_folder = "pp-archived"
+        self.again = self.env["cloud.project"].create({
+            "name": "pitr-proj-again", "remote_folder": "pp",
+            "backup_backend_id": self.backend.id,
+        })
+
+    def _successor(self):
+        return self.env["cloud.instance"].create({
+            "name": "pitr-inst", "project_id": self.again.id,
+            "environment": "production", "host_id": self.host.id,
+            "state": "draft",
+        })
+
+    def test_its_recovery_prefix_follows_the_suffix(self):
+        successor = self._successor()
+        self.assertEqual(successor.backup_path_suffix, f"-{successor.id}")
+        self.assertEqual(
+            successor._pitr_prefix_base(),
+            f"s3://bucket/backups/pp/pitr-inst-{successor.id}-pitr",
+        )
+        self.assertIsNone(self.inst._backup_prefix_conflict(PREFIX))
+
+    def test_an_archive_left_alone_under_the_name_claims_it_too(self):
+        """Its chain path elsewhere: the recovery prefix alone ends as the
+        successor's would (``_backup_path_tails``)."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET custom_backup_dst = %s WHERE id = %s",
+            ("boto3+s3://bucket/imported/pitr-inst", self.inst.id),
+        )
+        self.env.invalidate_all()
+        successor = self._successor()
+        self.assertEqual(successor.backup_path_suffix, f"-{successor.id}")
+
+    def test_its_chain_path_still_says_its_prefix_once_archived(self):
+        successor = self._successor()
+        successor._finalize_removal(keep_in_panel=True)
+        successor.sudo().pitr_archived_prefix = False
+        self.assertEqual(
+            successor._pitr_prefix_from_chain(),
+            f"s3://bucket/backups/pp/pitr-inst-{successor.id}-pitr",
+        )

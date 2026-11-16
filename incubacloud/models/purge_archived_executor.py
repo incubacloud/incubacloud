@@ -51,6 +51,15 @@ PURGE_ARCHIVED_ALERT_BY_EXIT = {
         "Could not delete %(name)s's archived copy. See the job log; the "
         "purge image failing to pull or to start is the usual cause.",
     ),
+    23: (
+        "archived_purge_chain_continued",
+        "%(name)s's archived copy was not deleted: the instance that took "
+        "its name continued its backup chain, and deleting the copy would "
+        "leave that instance's later backups without the set they build "
+        "on. Nothing was deleted. Once that instance has a full backup of "
+        "its own, remove its incremental sets older than that full and "
+        "delete again (see the triage runbook).",
+    ),
 }
 
 #: The alert of a purge stopped before its step, under the code of 22.
@@ -155,9 +164,22 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         would empty whatever holds the prefix by the time it runs, and
         after "start from scratch" that is the customer's new instance.
 
+        Nor what an instance of the same name that took this one's path
+        stored there: the cutoff is that instance's creation when it is
+        earlier (``cloud.instance._backup_purge_before``), so a delete
+        decided after its first copy, or of an archive it outlived,
+        leaves its copies. Should it have continued this chain, the
+        program deletes nothing and exits 23.
+
+        Nor, when this one took the name of an instance created before it
+        that holds the same path, archived as well, what that one stored
+        there: ``PURGE_SINCE`` is this one's creation
+        (``cloud.instance._backup_purge_since``), and the purge keeps
+        what is older for the other's own.
+
         A further prefix of the copy (*dst*) gets the same environment
         with its own ``DST``: the same destination's credentials, and the
-        same cutoff, for the same reason.
+        same bounds, for the same reason.
 
         :param str dst: a further prefix (``_extra_prefixes``), or None
             for the chain's frozen one
@@ -167,9 +189,14 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         """
         inst = self._inst()
         backend = inst.effective_backup_backend.sudo()
-        lines = [env_line("DST", dst or inst.custom_backup_dst)]
+        dst = dst or inst.custom_backup_dst
+        lines = [env_line("DST", dst)]
         if inst.purge_cutoff_at:
-            lines.append(env_line("PURGE_BEFORE", inst.purge_cutoff_at.isoformat()))
+            before = inst._backup_purge_before(dst, inst.purge_cutoff_at)
+            lines.append(env_line("PURGE_BEFORE", before.isoformat()))
+        since = inst._backup_purge_since(dst)
+        if since:
+            lines.append(env_line("PURGE_SINCE", since))
         if backend.backend_type == "sftp":
             # The key and the trusted server key travel as files of their
             # own (``_sftp_files``), mounted where the program reads them.
@@ -333,10 +360,11 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         Empty in core, where deleting an archived instance is the end of
         the story. A module that owns a lifecycle *above* the instance —
         a customer account, say — may need to act exactly here and nowhere
-        earlier: a customer who asks to start over must not have a fresh
-        instance provisioned until this has run, because it would take
-        the same name and therefore the same backup prefix, and this
-        purge would empty the new instance's own copy.
+        earlier. Not to keep a fresh instance of the same name from this
+        purge: that one gets a backup path of its own
+        (``cloud.instance._claim_own_backup_path``), and one that shared
+        the path is protected by the cutoff
+        (``cloud.instance._backup_purge_before``).
 
         Called after the unlink, so an override that needs anything off
         the instance has to read it before, in its own ``on_success``.
