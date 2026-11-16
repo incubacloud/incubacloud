@@ -3591,7 +3591,7 @@ msgstr "Verificar propietario de retención de backups declarado"
 #. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_check_managed_unused_ir_actions_server
 msgid "Check Managed Backup Backends Unused"
-msgstr "Verificar backends de backup gestionados sin usar"
+msgstr "Verificar backends de almacenamiento gestionado de copias sin usar"
 
 #. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_check_production_backup_ir_actions_server
