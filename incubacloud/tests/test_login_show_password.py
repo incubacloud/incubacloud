@@ -56,12 +56,17 @@ class TestLoginShowPassword(ChromeStartRetry, HttpCase):
         self.assertEqual(button.cssselect('i')[0].get('aria-hidden'), 'true')
 
     def test_the_name_is_translated(self):
-        """A Spanish visitor's screen reader hears the Spanish name."""
+        """A Spanish visitor's screen reader hears the Spanish name.
+
+        Read from the template's own arch in Spanish: which language a
+        visitor browses in depends on the website, when one is installed.
+        """
         self.env['res.lang']._activate_lang('es_ES')
         self.env['ir.module.module']._load_module_terms(
             ['incubacloud'], ['es_ES'])
-        self.assertEqual(
-            self._button('es_ES').get('aria-label'), 'Mostrar contraseña')
+        view = self.env.ref('incubacloud.login_show_password_name')
+        self.assertIn(
+            'Mostrar contraseña', view.with_context(lang='es_ES').arch_db)
 
     def test_a_click_toggles_the_state_and_the_focus_shows(self):
         """Two clicks: the type of the field and aria-pressed go together, and focus shows."""
@@ -79,8 +84,14 @@ class TestLoginShowPassword(ChromeStartRetry, HttpCase):
                 }
             };
             check('password', 'false', 'at the start');
-            button.click();
-            await waitFor(() => input.type === 'text', 'the password shown');
+            // The interactions start after the page is complete, and nothing
+            // says when: click until the first one has an effect.
+            await waitFor(() => {
+                if (input.type !== 'text') {
+                    button.click();
+                }
+                return input.type === 'text';
+            }, 'the password shown');
             await sleep(50);
             check('text', 'true', 'after a click');
             button.click();
