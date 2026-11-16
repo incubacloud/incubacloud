@@ -108,7 +108,15 @@ class TestFirstStepsTool(McpUsersMixin, TransactionCase):
         text = json.dumps(self._answer(self.manager))
         for secret in ("asis-fs-secret", "project_id", "instance_id", "host_id"):
             self.assertNotIn(secret, text)
-        self.assertIn("Open the instance", text)
+        # The deploy step leads to the oldest project's production: this
+        # test's on a new panel, a project of its own on a running one.
+        Steps = self.env["cloud.first.steps"].with_user(self.manager).with_context(
+            lang="en_US",
+        )
+        label = Steps._deploy_actions()[0]["label"]
+        self.assertIn(f'"button": "{label}"', text)
+        if self.env["cloud.project"].search([], order="id", limit=1) == project:
+            self.assertEqual(label, "Open the instance")
 
     def test_absent_when_the_panel_keeps_no_first_steps(self):
         with patch.object(self.StepsClass, "_enabled", return_value=False):
