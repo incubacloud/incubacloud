@@ -1,5 +1,7 @@
 """The button and the side panel, opened in a browser by each kind of user."""
 
+from unittest.mock import patch
+
 from odoo.tests import HttpCase, tagged
 
 from odoo.addons.queue_job.tests.common import trap_jobs
@@ -249,3 +251,58 @@ class TestAssistantPanel(AssistantMixin, ChromeStartRetry, HttpCase):
             """,
             )
         self.assertEqual(approval.sudo().state, "cancelled")
+
+    def test_stop_says_it_is_stopping_while_an_action_finishes(self):
+        """Stop with an action running: the chat says it finishes it first and
+        Stop goes. With nothing running: stopped at once."""
+        self._read_notice()
+        Conversation = self.env["incubacloud.assistant.conversation"]
+        acting = Conversation.with_user(self.allowed)._start()
+        acting.sudo().write(
+            {
+                "name": "Acting",
+                "state": "working",
+                "job_uuid": "step-acting",
+                "running_call_id": "c1",
+            }
+        )
+        thinking = Conversation.with_user(self.allowed)._start()
+        thinking.sudo().write(
+            {"name": "Thinking", "state": "working", "job_uuid": "step-thinking"}
+        )
+        # No queue job runs these steps: opening them must not heal them as lost.
+        with patch.object(type(Conversation), "_heal", autospec=True):
+            self._open(
+                self.allowed.login,
+                """
+                click(await until("the button", () => $(".ic-asst-btn")));
+                click(await until("the conversation", () => withText(
+                    ".ic-asst-conv", "Acting"
+                )));
+                click(await until("Stop", () => withText(
+                    ".ic-asst-foot-buttons button", "Stop"
+                )));
+                await until("the stopping state", () => withText(
+                    ".ic-asst-state", "Stopping… finishing the current action"
+                ));
+                if (withText(".ic-asst-foot-buttons button", "Stop")) {
+                    throw new Error("Stop still shows while it stops");
+                }
+                click(await until("back", () => $(
+                    ".ic-asst-head button[aria-label='Back']"
+                )));
+                click(await until("the other conversation", () => withText(
+                    ".ic-asst-conv", "Thinking"
+                )));
+                click(await until("Stop", () => withText(
+                    ".ic-asst-foot-buttons button", "Stop"
+                )));
+                await until("the stopped state", () => withText(
+                    ".ic-asst-state", "Stopped"
+                ));
+            """,
+            )
+        (acting | thinking).invalidate_recordset()
+        self.assertTrue(acting.stop_requested)
+        self.assertEqual(acting.state, "working")
+        self.assertEqual(thinking.state, "stopped")

@@ -172,6 +172,60 @@ class TestEngineStep(EngineMixin, TransactionCase):
         self._step(other)
         self.assertEqual(other.state, "error")
 
+    def test_stop_while_the_model_thinks_stops_now_and_drops_its_late_answer(self):
+        """The person presses Stop while the provider generates: stopped at
+        once; the answer that comes after is set aside, its calls never run,
+        and what it cost still counts."""
+        conversation = self._working(self.dev, "Delete the old stagings")
+        seen = {}
+
+        def late(request):
+            """The person presses Stop; then the provider answers."""
+            conversation.with_user(self.dev)._stop()
+            conversation.env.flush_all()
+            seen["state"] = conversation.state
+            return answer(
+                "Deleting them now.",
+                [("c1", "search_docs", {"query": "staging"})],
+                usage=Usage(1_000_000, 0),
+            )
+
+        connector = self._provider()
+        connector.chat.side_effect = late
+        with trap_jobs() as trap:
+            self._step(conversation, job_uuid=conversation.job_uuid)
+        trap.assert_jobs_count(0)
+        self.assertEqual(seen["state"], "stopped")
+        self.assertEqual(conversation.state, "stopped")
+        self.assertFalse(
+            conversation.message_ids.filtered(
+                lambda m: m.role in ("assistant", "tool")
+            ),
+            "the late answer entered the conversation",
+        )
+        self.assertIn("Stopped", conversation.message_ids[-1].content)
+        cost, _unpriced = self.env["incubacloud.assistant.usage"]._month_cost(
+            self.dev.id
+        )
+        self.assertGreater(cost, 0)
+        self.assertAlmostEqual(conversation.cost, cost)
+
+    def test_stop_during_a_pause_before_another_attempt_asks_no_more(self):
+        """The provider is busy; Stop during the pause: no second attempt."""
+        busy = ProviderError("rate_limited", "slow", 3)
+        connector = self._provider(busy, answer("Too late."))
+        conversation = self._working(self.dev)
+
+        def stop(_seconds):
+            """The person presses Stop while the step waits."""
+            conversation.with_user(self.dev)._stop()
+            conversation.env.flush_all()
+
+        self.sleep.side_effect = stop
+        self._step(conversation, job_uuid=conversation.job_uuid)
+        self.assertEqual(connector.chat.call_count, 1)
+        self.assertEqual(conversation.state, "stopped")
+
     def test_a_refused_key_is_told_to_the_manager_with_where_to_change_it(self):
         """The manager reads where to change it; the developer, to ask a manager."""
         for user, words in ((self.manager, "Settings"), (self.dev, "manager")):
@@ -262,6 +316,28 @@ class TestEngineStep(EngineMixin, TransactionCase):
             (self.dev, f"Assistant (conversation {conversation.id})"),
         )
         self.assertIn("claude-opus-4-8", audit.details)
+
+    def test_a_cost_met_by_a_concurrent_change_is_written_again(self):
+        """The counted cost of an answer set aside is not lost to a concurrency
+        error: it is tried again."""
+        self._provider(answer("I am another model.", model="claude-opus-4-8"))
+        conversation = self._working(self.dev)
+        original = AssistantEngine._record_cost
+        attempts = []
+
+        def met_once(engine, *args, **kwargs):
+            """Fail the first time, as a write met by another one does."""
+            attempts.append(len(attempts))
+            if len(attempts) == 1:
+                raise SerializationFailure("could not serialize")
+            return original(engine, *args, **kwargs)
+
+        with patch.object(
+            AssistantEngine, "_record_cost", autospec=True, side_effect=met_once
+        ):
+            self._step(conversation)
+        self.assertEqual(len(attempts), 2)
+        self.assertGreater(conversation.cost, 0)
 
     def test_a_stale_step_does_nothing(self):
         """A step queued for a conversation now stopped does not call the provider."""

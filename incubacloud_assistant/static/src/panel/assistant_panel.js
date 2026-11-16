@@ -26,6 +26,8 @@ import {
     providerWording,
     screenContext,
     stateView,
+    statusLine,
+    stopStage,
     usageLabel,
 } from "../assistant_format";
 
@@ -36,12 +38,17 @@ export class AssistantPanel extends Component {
 
     /** Load the conversations; follow the open one live. */
     setup() {
+        // State events of the open conversation seen so far: an answer to a
+        // call that started before the latest one is older than it.
+        this.stateEvents = 0;
         this.state = useState({
             view: "list",
             conversations: [],
             conversation: null,
             messages: [],
             progress: "",
+            // Stop was pressed and the server has not answered yet.
+            stopAsked: false,
             text: "",
             sending: false,
             error: "",
@@ -118,6 +125,7 @@ export class AssistantPanel extends Component {
             messages: data.messages,
             modelId: data.conversation.model_id || this.props.status.default_model,
             progress: "",
+            stopAsked: false,
             view: "chat",
         });
         this.props.onChange();
@@ -129,6 +137,7 @@ export class AssistantPanel extends Component {
             conversation: null,
             messages: [],
             progress: "",
+            stopAsked: false,
             view: "chat",
             modelId: this.props.status.default_model,
         });
@@ -194,9 +203,18 @@ export class AssistantPanel extends Component {
         return this.send();
     }
 
-    /** Stop the open conversation's task. */
+    /**
+     * Stop the open conversation's task: "Stopping…" at once, then what the
+     * server answers (stopped, or finishing the action in course). Should
+     * the call fail, Stop comes back.
+     */
     async stop() {
-        await this._call("/cloud/assistant/stop");
+        this.state.stopAsked = true;
+        try {
+            await this._call("/cloud/assistant/stop");
+        } finally {
+            this.state.stopAsked = false;
+        }
     }
 
     /** Go on after an error or a stop. */
@@ -235,10 +253,12 @@ export class AssistantPanel extends Component {
 
     /** Call a route of the open conversation and keep its new state. */
     async _call(route) {
-        const result = await this._safely(() =>
-            rpc(route, { conversation_id: this.state.conversation.id })
-        );
-        if (result?.conversation) {
+        const id = this.state.conversation.id;
+        const seen = this.stateEvents;
+        const result = await this._safely(() => rpc(route, { conversation_id: id }));
+        // A state the bus delivered while the call was on its way is newer
+        // than the answer (an action that ends in milliseconds): it stays.
+        if (result?.conversation && this.stateEvents === seen && this.state.conversation?.id === id) {
             this.state.conversation = result.conversation;
         }
     }
@@ -283,6 +303,10 @@ export class AssistantPanel extends Component {
         if (this.state.conversation && merged.state) {
             this.state.conversation.state = merged.state;
         }
+        if (this.state.conversation && event.kind === "state") {
+            this.state.conversation.stopping = merged.stopping;
+            this.stateEvents += 1;
+        }
     }
 
     /** The month's usage line. */
@@ -317,7 +341,13 @@ export class AssistantPanel extends Component {
 
     /** The open conversation's state and its buttons. */
     get stateInfo() {
-        return stateView(this.state.conversation?.state);
+        const conversation = this.state.conversation;
+        return stateView(conversation?.state, stopStage(conversation, this.state.stopAsked));
+    }
+
+    /** The line under the chat: the stop, the tool that runs, or the state. */
+    get statusText() {
+        return statusLine(this.stateInfo, this.state.progress);
     }
 
     /** The messages the chat shows, with how it shows them. */

@@ -6,6 +6,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.233] — unreleased
+
+The assistant's Stop takes effect at once. The update adds no column and
+no data migration.
+
+### Changed
+
+- **Stop stops the assistant at once.** The chat says *Stopping…* the
+  moment Stop is pressed. A task waiting for the AI provider, between two
+  attempts, queued or between two tools stops in that same request: the
+  step still waiting for the provider is no longer the conversation's,
+  so the answer that comes later is set aside, and what it cost still
+  counts in the conversation and the month's usage. While an action runs
+  (a tool, a command on a server), the chat says *Stopping… finishing the
+  current action* and the task stops once the action ends: it waits for no
+  job the action started, which goes on, and shows no card the action
+  asked for, whose approval is withdrawn. What the person wrote meanwhile
+  enters the conversation instead of staying queued, and Retry answers it.
+  The state's bus event and the conversation's format carry `stopping`.
+- **A call the provider billed counts whoever's step it is now.** A
+  summary, a billed failure or an answer of another model that comes once
+  the conversation was stopped or deleted is counted in the month's usage
+  (and in the conversation, when it is still there); it went uncounted
+  before. A cost met by a concurrent change is written again, not lost.
+- **Stop withdraws what was confirmed and not yet run.** A card the person
+  confirmed whose call had not run when Stop was pressed loses its approval:
+  if the assistant repeats the call after Retry, it asks again. A call that
+  was running when its step died is answered *Outcome unknown* instead of
+  *Not run*. The panel keeps the state the bus delivered while Stop was on
+  its way, instead of replacing it with the older answer.
+
 ## [1.0.232] — unreleased
 
 A backup destination can be an SFTP server (#93): the panel generates its

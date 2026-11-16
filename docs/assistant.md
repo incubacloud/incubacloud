@@ -58,6 +58,23 @@ channel `root.assistant`, run as the conversation's owner.
    (`waiting_confirmation`), a job (`waiting_job`), the person (`idle`, `stopped`)
    or a failure (`error`).
 
+**Stop** (`conversation._stop`) ends the task in the request that asks for it,
+unless an action runs (`working` with `running_call_id`). Ending it clears
+`job_uuid`, so the step still waiting for the provider is no longer the
+conversation's: when the answer comes, `_record_answer` counts its cost
+(`_record_cost` counts it in the month's usage whoever's step it is now) and
+sets it aside, and between two attempts the step tries no more. With an action
+running, `stop_requested` is set and the panels show *Stopping… finishing the
+current action* (`stopping` in the state's event and in `_format`): the action
+ends, `_record_call` records its answer and stops there, without waiting for a
+job it started and withdrawing a card it asked for. Either way `_stop_now`
+withdraws the pending cards and the approvals of the confirmed ones whose call
+has not run (a repeated call asks again), answers the open calls *not run* (the
+one the `running_call_id` mark names, *outcome unknown*, and clears the mark) and
+moves what the person wrote meanwhile into the context. The step waiting for the
+provider keeps its worker until the answer comes, at most the call's read timeout:
+abandoning it would leave what the provider bills uncounted.
+
 The states are written by the conversation (`_enqueue_step` sets `working`; `_halt`
 sets the others) and by the card and job hooks. **`job_uuid`** is the queue job of
 the step in course; every write of a step first checks (`_conversation_in`) that its
@@ -243,6 +260,10 @@ the model refresh), never through the ORM by a manager.
   capacity: a step and a deploy wait for each other. Production sets
   `root.assistant:3`. Without a line for the channel in `[queue_job] channels`, its jobs
   share root's.
+- After a Stop while the model thinks, the next step (Retry or a new message) can show
+  *Working…* until the abandoned call returns when the channel has a single slot
+  (`root.assistant:1`): the step keeps its worker for at most the call's read timeout
+  (600 s).
 - A new branch or a pull request starts the workflows the repository already runs on
   them; the assistant cannot write under `.github/`.
 - A panel that is put to sleep when idle can lose a running task; the user retries it

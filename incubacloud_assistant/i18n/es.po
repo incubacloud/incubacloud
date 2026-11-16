@@ -1075,6 +1075,25 @@ msgid "Searching the panel's code"
 msgstr "Buscando en el código del panel"
 
 #. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_conversation__stop_requested
+msgid "Stop was pressed while an action ran: the task stops once it ends."
+msgstr ""
+"Se pulsó Detener mientras se ejecutaba una acción: la tarea se detiene "
+"cuando esta termina."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Stopping…"
+msgstr "Deteniendo…"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Stopping… finishing the current action"
+msgstr "Deteniendo… terminando la acción en curso"
+
+#. module: incubacloud_assistant
 #. odoo-javascript
 #: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
 msgid ""

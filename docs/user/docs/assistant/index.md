@@ -128,8 +128,13 @@ already runs on them.
 
 ## Stop, retry, continue
 
-- **Stop** ends the task at the next step. What was done stays as it is: a commit
-  on the branch, a staging.
+- **Stop** ends the task at once, also while the assistant waits for the AI
+  provider: an answer that comes later is set aside, and what it cost still
+  counts. While an action runs (a tool, a command on a server), the chat says
+  *Stopping… finishing the current action* and the task stops once it ends: an
+  action is never left half done. A job it started goes on. What was done stays
+  as it is: a commit on the branch, a staging. What you wrote meanwhile stays in
+  the conversation, and Retry answers it.
 - **Retry** goes on after an error or a stop (the AI provider did not answer, say).
 - A task stops after a number of steps (30 unless a manager changed it) and asks
   whether to go on: **Go on** continues.

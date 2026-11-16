@@ -4,7 +4,10 @@ A step reads the settings again (the key may have changed, the assistant
 may be off for this user now), asks the provider once and runs the tools
 the model asked for, then queues the next step, or stops: the model is
 done, a card waits for the person, a job runs, the step cap or the monthly
-limit is reached, the person stopped it, or the provider failed.
+limit is reached, the person stopped it, or the provider failed. A stop
+while the step waits for the model is the conversation's at once
+(``conversation._stop``): the step then finds it is no longer the
+conversation's, counts what the late answer cost and sets the answer aside.
 
 The step's own transaction writes nothing, as a ``cloud.job`` executor's
 does not (``AbstractExecutor._durable_env``): queue_job forbids committing
@@ -33,6 +36,7 @@ from .. import pricing
 from ..connectors import connector_for
 from ..connectors.base import ChatRequest, ProviderError, ToolCall, Turn, same_model
 from ..request_scope import call_context, tool_request
+from .assistant_conversation import STOPPED_CALL, UNKNOWN_CALL
 from .assistant_prompt import SUMMARY_PROMPT, SUMMARY_SYSTEM, system_prompt
 from .assistant_tools import THIRD_PARTY_READS
 from .mcp_auto_approval import ASSISTANT_CREDENTIAL
@@ -80,10 +84,11 @@ class AssistantEngine(models.AbstractModel):
     def _conversation_in(self, env, conversation_id):
         """Return the conversation in *env* while this step is still its own.
 
-        Empty when it is gone, or when another step took the task over: the
+        Empty when it is gone, or when the task is no longer this step's: the
         queue job this runs in (``job_uuid`` in the context, as queue_job
-        sets it) is no longer the conversation's, as after a step healed as
-        lost and retried. A late step then writes nothing.
+        sets it) is no longer the conversation's, as after a stop, or a step
+        healed as lost and retried. A late step then writes nothing but what
+        its call to the provider cost (:meth:`_record_cost`).
         """
         conv = (
             env["incubacloud.assistant.conversation"].browse(conversation_id).exists()
@@ -148,6 +153,8 @@ class AssistantEngine(models.AbstractModel):
         calls = self._retried(
             lambda: self._record_answer(conversation_id, config, response, model)
         )
+        if calls is None:
+            return
         if response.stop == "max_tokens" and not calls and not response.text:
             self._finish(
                 conversation_id,
@@ -195,8 +202,7 @@ class AssistantEngine(models.AbstractModel):
             if not conv or conv.state != "working":
                 return None
             if conv.stop_requested:
-                conv._close_open_calls("Not run: the person stopped the task.")
-                conv._halt("stopped", env._("Stopped. What was done stays as it is."))
+                conv._stop_now()
                 return None
             Settings = env["cloud.settings"]
             if not Settings._assistant_available_for(env.user):
@@ -251,6 +257,9 @@ class AssistantEngine(models.AbstractModel):
         """
         with self._durable() as env:
             conv = self._conversation_in(env, conversation_id)
+            if not conv:
+                # Stopped, or deleted, since the checks.
+                return None
             model = self._model_for(conv, config)
             if not pricing.model_usable(config, model):
                 conv._halt(
@@ -280,13 +289,18 @@ class AssistantEngine(models.AbstractModel):
             except ProviderError as error:
                 if error.usage:
                     # A failure the provider still billed: it counts.
-                    self._record_cost(
-                        conversation_id, config, error.billed(model), model
+                    self._retried(
+                        lambda: self._record_cost(
+                            conversation_id, config, error.billed(model), model
+                        )
                     )
                 if error.retryable and attempt < len(RETRY_DELAYS):
                     pause = error.retry_after
                     _sleep(pause if pause is not None else RETRY_DELAYS[attempt])
                     attempt += 1
+                    if not self._still_ours(conversation_id):
+                        # Stopped during the pause: no other attempt.
+                        return None
                     continue
                 if error.kind == "context_too_long" and not summarized:
                     summarized = self._summarize(
@@ -294,12 +308,19 @@ class AssistantEngine(models.AbstractModel):
                     )
                     if summarized:
                         with self._durable() as env:
-                            request = self._request(
-                                self._conversation_in(env, conversation_id), model
-                            )
+                            conv = self._conversation_in(env, conversation_id)
+                            if not conv:
+                                return None
+                            request = self._request(conv, model)
                         continue
                 self._provider_failed(conversation_id, error)
                 return None
+
+    @api.model
+    def _still_ours(self, conversation_id):
+        """Return whether the task is still this step's (not stopped, not gone)."""
+        with self._durable() as env:
+            return bool(self._conversation_in(env, conversation_id))
 
     @api.model
     def _model_for(self, conv, config):
@@ -439,13 +460,17 @@ class AssistantEngine(models.AbstractModel):
         """Record the model's answer, its cost and the month's usage; return its calls.
 
         Priced at *model*, the one asked for, when the answer names a dated
-        version of it.
+        version of it. An answer that comes once the task is no longer this
+        step's (the person pressed Stop while the model generated it) is set
+        aside: only its cost is counted, and None is returned.
         """
         cost = pricing.response_cost(config.provider, response, config.listing, model)
         with self._durable() as env:
             conv = self._conversation_in(env, conversation_id)
             if not conv:
-                return ()
+                # Set aside, on a cursor of its own: only what it cost counts.
+                self._record_cost(conversation_id, config, response, model)
+                return None
             scrubber = env["incubacloud.mcp.secrets"]._scrubber()
             usage = response.usage
             conv._add_message(
@@ -486,7 +511,12 @@ class AssistantEngine(models.AbstractModel):
     @api.model
     def _record_cost(self, conversation_id, config, response, requested=""):
         """Count a call that leaves no answer in the conversation (a summary, a
-        refused answer): its cost in the conversation and the month's usage.
+        refused answer, one set aside after a stop): its cost in the
+        conversation and the month's usage.
+
+        The provider bills it whoever's step this is now: also counted once
+        the task is no longer this step's, and in the month's usage when the
+        conversation is gone.
 
         :param str requested: the model asked for, whose price a dated
             version of it answers at
@@ -495,15 +525,18 @@ class AssistantEngine(models.AbstractModel):
             config.provider, response, config.listing, requested
         )
         with self._durable() as env:
-            conv = self._conversation_in(env, conversation_id)
-            if not conv:
-                return
-            conv.sudo().write(
-                {
-                    "cost": conv.cost + (cost or 0.0),
-                    "cost_unknown": conv.cost_unknown or cost is None,
-                }
+            conv = (
+                env["incubacloud.assistant.conversation"]
+                .browse(conversation_id)
+                .exists()
             )
+            if conv:
+                conv.sudo().write(
+                    {
+                        "cost": conv.cost + (cost or 0.0),
+                        "cost_unknown": conv.cost_unknown or cost is None,
+                    }
+                )
             env["incubacloud.assistant.usage"]._add(
                 env.uid, config.provider, response.model or "?", response.usage, cost
             )
@@ -523,7 +556,9 @@ class AssistantEngine(models.AbstractModel):
             model,
         )
         # Priced at the model that answered: *model* only names what was asked.
-        self._record_cost(conversation_id, config, response, model)
+        self._retried(
+            lambda: self._record_cost(conversation_id, config, response, model)
+        )
         with self._durable() as env:
             conv = self._conversation_in(env, conversation_id)
             if not conv:
@@ -654,10 +689,7 @@ class AssistantEngine(models.AbstractModel):
                 with self._durable() as env:
                     conv = self._conversation_in(env, conversation_id)
                     if conv:
-                        conv._close_open_calls("Not run: the person stopped the task.")
-                        conv._halt(
-                            "stopped", env._("Stopped. What was done stays as it is.")
-                        )
+                        conv._stop_now()
                 return
             self._progress(conversation_id, call.name)
             outcome = self._execute(conversation_id, call)
@@ -669,7 +701,7 @@ class AssistantEngine(models.AbstractModel):
                     "ends.",
                 )
                 self._retried(lambda: self._wake_if_ended(conversation_id))
-            if outcome in ("card", "job", "gone"):
+            if outcome in ("card", "job", "gone", "stopped"):
                 return
         self._next(conversation_id)
 
@@ -678,7 +710,8 @@ class AssistantEngine(models.AbstractModel):
         """Run one call, then record what it answered; return what the task does next.
 
         ``"next"``: answered; ``"card"``: a card waits; ``"job"``: the task
-        waits for a job; ``"gone"``: the conversation was deleted.
+        waits for a job; ``"gone"``: the conversation was deleted;
+        ``"stopped"``: the person pressed Stop while it ran.
 
         First the call is marked as running, on a cursor of its own
         (``running_call_id``): a worker that dies between the tool and its
@@ -695,11 +728,7 @@ class AssistantEngine(models.AbstractModel):
         if started == "gone":
             return "gone"
         if started == "unknown":
-            outcome = {
-                "text": "Outcome unknown: the panel stopped while this ran. Read the "
-                "state again before trying once more.",
-                "is_error": True,
-            }
+            outcome = {"text": UNKNOWN_CALL, "is_error": True}
             return self._retried(
                 lambda: self._record_call(conversation_id, call, outcome)
             )
@@ -835,13 +864,25 @@ class AssistantEngine(models.AbstractModel):
 
     @api.model
     def _record_call(self, conversation_id, call, outcome):
-        """Record what a call answered, on its own cursor; return what comes next."""
+        """Record what a call answered, on its own cursor; return what comes next.
+
+        Stop pressed while it ran: the task stops here. It waits for no job
+        the call started (the job runs on), and a call that asks first
+        never shows its card: its approval is withdrawn and it is not run.
+        """
         with self._durable() as env:
             conv = self._conversation_in(env, conversation_id)
             if not conv or outcome.get("gone"):
                 return "gone"
             conv.sudo().running_call_id = False
             card = outcome.get("card")
+            if card and conv.stop_requested:
+                env["incubacloud.mcp.approval"].sudo().browse(
+                    card["approval_id"]
+                )._withdraw()
+                conv._answer_call(call.id, call.name, STOPPED_CALL, is_error=True)
+                conv._stop_now()
+                return "stopped"
             if card:
                 conv._add_message(
                     {
@@ -867,6 +908,9 @@ class AssistantEngine(models.AbstractModel):
             )
             if outcome.get("tainted"):
                 conv.sudo().tainted = True
+            if conv.stop_requested:
+                conv._stop_now()
+                return "stopped"
             job = env["cloud.job"].sudo().browse(outcome.get("job_id") or []).exists()
             if job and job.state not in job._terminal_states:
                 conv.sudo().waiting_job_id = job.id
@@ -1006,7 +1050,9 @@ class AssistantEngine(models.AbstractModel):
             response = connector.chat(request)
         except ProviderError:
             return False
-        self._record_cost(conversation_id, config, response, model)
+        self._retried(
+            lambda: self._record_cost(conversation_id, config, response, model)
+        )
         if not same_model(model, response.model):
             _logger.warning(
                 "assistant: %s summarized conversation %s with model %r instead of %r",
