@@ -11,9 +11,16 @@ deploy is backfilled does not see the card appear for its optional steps.
 (``_enabled``) is loaded only once every module is, and then nothing is
 written.
 
-Idempotent: a date written is never changed.
+Idempotent: a date written is never changed. It never breaks the update:
+each mark is written in a savepoint of its own (``_reconcile``,
+``_backfill``), and whatever still fails is logged and leaves the marks
+for the panel's next reads to fill.
 """
+import logging
+
 from odoo import SUPERUSER_ID, api
+
+_logger = logging.getLogger(__name__)
 
 
 def migrate(cr, version):
@@ -25,4 +32,8 @@ def migrate(cr, version):
     if not version:
         return
     env = api.Environment(cr, SUPERUSER_ID, {})
-    env["cloud.first.steps"]._backfill()
+    try:
+        with cr.savepoint():
+            env["cloud.first.steps"]._backfill()
+    except Exception:  # the update goes on without the marks
+        _logger.exception("First steps: backfilling the marks failed")

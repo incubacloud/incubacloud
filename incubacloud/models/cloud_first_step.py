@@ -201,6 +201,33 @@ class CloudFirstSteps(models.AbstractModel):
         """
 
     @api.model
+    def _failure_domain(self, code):
+        """The jobs whose failure counts for mark *code*.
+
+        For ``server``, those of the servers of ``_first_step_host_domain``;
+        any job for the others. A layer adds its own marks'.
+
+        :param str code: the mark
+        :rtype: list
+        """
+        if code == "server":
+            return self._server_job_domain()
+        return []
+
+    @api.model
+    def _started(self, code, row):
+        """Whether mark *code*'s *row* makes its step started.
+
+        Tried, in core. A layer leaves out a try that only a click wrote,
+        which it keeps all the same.
+
+        :param str code: the mark
+        :param row: its ``cloud.first.step``, or an empty recordset
+        :rtype: bool
+        """
+        return bool(row and row.attempted_at)
+
+    @api.model
     def _header(self, user):
         """Data a layer hangs on the card for its own header; empty in core.
 
@@ -282,22 +309,29 @@ class CloudFirstSteps(models.AbstractModel):
         )
         return {"failed_job_type": ftype, "failed_at": fat}
 
+    def _server_job_domain(self):
+        """The jobs of the servers of ``_first_step_host_domain``, archived included.
+
+        :rtype: list
+        """
+        host_domain = self._first_step_host_domain()
+        if not host_domain:
+            return []
+        hosts = self.env["cloud.host"].sudo().with_context(
+            active_test=False,
+        ).search(host_domain)
+        return [("host_id", "in", hosts.ids)]
+
     def _derive_server(self):
         """Tried: the oldest server; done: the oldest full setup that ended done.
 
         Only the servers of ``_first_step_host_domain``.
         """
-        host_domain = self._first_step_host_domain()
-        job_domain = []
-        if host_domain:
-            hosts = self.env["cloud.host"].sudo().with_context(
-                active_test=False,
-            ).search(host_domain)
-            job_domain = [("host_id", "in", hosts.ids)]
+        job_domain = self._server_job_domain()
         types = self._job_types()["server"]
         achieved = self._first_job_date(types.get("done"), "done", job_domain)
         return {
-            "attempted_at": self._oldest("cloud.host", host_domain),
+            "attempted_at": self._oldest("cloud.host", self._first_step_host_domain()),
             "achieved_at": achieved,
             **self._failure_vals("server", job_domain, achieved),
         }
@@ -358,13 +392,18 @@ class CloudFirstSteps(models.AbstractModel):
     def _is_own_domain(domain):
         """Whether *domain* is a name of its own, not one under its server's wildcard.
 
+        A domain whose instance has no server left is not counted.
+
         :param domain: a ``cloud.instance.domain``
         :rtype: bool
         """
         hostname = (domain.hostname or "").strip().lower()
-        suffix = (domain.instance_id.host_id._subdomain_suffix() or "").lower()
-        if not hostname:
+        host = domain.instance_id.host_id
+        if not hostname or not host:
+            # An archived instance whose server was deleted: its wildcard
+            # is gone with it, so whether the name was its own is unknown.
             return False
+        suffix = (host._subdomain_suffix() or "").lower()
         if not suffix:
             return True
         return hostname != suffix and not hostname.endswith(f".{suffix}")
@@ -442,7 +481,9 @@ class CloudFirstSteps(models.AbstractModel):
 
         The only definition of what each date means (``_marks``). A mark
         already achieved is not looked at again: with every mark achieved
-        nothing else is read. With ``first_steps_backfill`` in the context
+        nothing else is read. Each mark is derived and written in a
+        savepoint of its own: one that fails is logged and left unwritten,
+        and the others are written. With ``first_steps_backfill`` in the context
         what it writes is marked ``backfilled`` and ``_on_marks_changed``
         is not called.
 
@@ -463,10 +504,15 @@ class CloudFirstSteps(models.AbstractModel):
             row = rows.get(code)
             if derive is None or (row and row.achieved_at):
                 continue
-            vals = derive() or {}
-            if not self._adds_something(row, vals):
+            try:
+                with self.env.cr.savepoint():
+                    vals = derive() or {}
+                    if not self._adds_something(row, vals):
+                        continue
+                    Step._upsert(code, backfilled=backfill, **vals)
+            except Exception:  # one broken mark leaves the others standing
+                _logger.exception("First steps: deriving %s failed", code)
                 continue
-            Step._upsert(code, backfilled=backfill, **vals)
             changed.append(code)
         if changed and not backfill:
             self._on_marks_changed(changed)
@@ -565,7 +611,14 @@ class CloudFirstSteps(models.AbstractModel):
             row = rows.get(code)
             if not date or (row and row.achieved_at):
                 continue
-            Step._upsert(code, attempted_at=date, achieved_at=date, backfilled=True)
+            try:
+                with self.env.cr.savepoint():
+                    Step._upsert(
+                        code, attempted_at=date, achieved_at=date, backfilled=True,
+                    )
+            except Exception:  # the update goes on without this mark
+                _logger.exception("First steps: backfilling %s failed", code)
+                continue
             changed.add(code)
         return sorted(changed)
 
@@ -698,16 +751,28 @@ class CloudFirstSteps(models.AbstractModel):
             },
         ]
 
-    def _failure_action(self, step):
-        """The action to the screen where the failed job of *step* shows, or None."""
+    def _failure_action(self, step, rows):
+        """The action to the screen where the failed job of *step* shows, or None.
+
+        The job is the last failed one of the type its mark keeps, among
+        the jobs that count for that mark (``_failure_domain``): the
+        server step leads to one of the servers it counts.
+
+        :param dict step: a step of ``_steps``
+        :param dict rows: the marks written, by code
+        """
         _ = self.env._
-        types = set()
-        for code in step["marks"]:
-            types |= set(self._job_types().get(code, {}).get("failed", ()))
-        if not types:
+        failed = [
+            (code, rows[code]) for code in step["marks"]
+            if rows.get(code) and rows[code].failed_job_type
+            and not rows[code].achieved_at
+        ]
+        if not failed:
             return None
+        code, row = max(failed, key=lambda item: item[1].failed_at or item[1].create_date)
         job = self.env["cloud.job"].search([
-            ("job_type_id.code", "in", list(types)), ("state", "=", "failed"),
+            ("job_type_id.code", "=", row.failed_job_type), ("state", "=", "failed"),
+            *self._failure_domain(code),
         ], order="id desc", limit=1)
         if job.instance_id:
             tab = {"backups": "backups", "mail": "email"}.get(step["code"])
@@ -741,7 +806,9 @@ class CloudFirstSteps(models.AbstractModel):
             marks = [rows.get(code) for code in step["marks"]]
             if any(row and row.achieved_at for row in marks):
                 state = "done"
-            elif any(row and row.attempted_at for row in marks) or (
+            elif any(
+                self._started(code, rows.get(code)) for code in step["marks"]
+            ) or (
                 step["code"] == "deploy" and rows.get("project")
                 and rows["project"].achieved_at
             ):
@@ -805,7 +872,7 @@ class CloudFirstSteps(models.AbstractModel):
             help_text = step["help"]
             if step["failed"]:
                 help_text = _("The last attempt failed.")
-                failure = self._failure_action(step)
+                failure = self._failure_action(step, rows)
                 if failure:
                     actions = [failure, *actions]
             elif step["after_deploy"] and step["state"] != "done":
