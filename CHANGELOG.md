@@ -39,7 +39,10 @@ paths two records share (raising `backup_path_shared` for each), keeping
 them. For the first steps it adds a table and a column, and a second data
 migration, 1.0.232's `end-first-steps`, fills the marks of what a running
 panel already holds, marked as backfilled; each mark in a savepoint of its
-own, and what fails is logged without breaking the update.
+own, and what fails is logged without breaking the update. A third,
+1.0.232's `post-translations`, reloads the module's translations, so the
+Spanish name of the cron of unused managed backends says *almacenamiento
+gestionado de copias* on a running panel too.
 
 ### Added
 
