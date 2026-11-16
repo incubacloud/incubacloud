@@ -200,7 +200,7 @@ export class HostDetail extends Component {
                 required(_t("IP address or hostname is required")),
                 hostname(),
             ],
-            port: [required(_t("Port is required")), portRange()],
+            port: [required(_t("Port is required")), portRange(_t("Use a port between 1 and 65535."))],
             user: [required(_t("SSH user is required"))],
             login_type: [required(_t("Login method is required"))],
             wildcard_domain: [required(_t("Wildcard domain is required"))],
