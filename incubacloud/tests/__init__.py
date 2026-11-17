@@ -183,6 +183,7 @@ from . import test_public_boundary
 from . import test_pr_preview_control
 from . import test_staging_autopurge_clock
 from . import test_read_last_login
+from . import test_admin_password
 from . import test_provider_alert_inventory
 from . import test_secret_key_escrow
 from . import test_readable_secrets

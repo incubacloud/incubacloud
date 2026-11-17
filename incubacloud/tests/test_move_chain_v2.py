@@ -37,7 +37,8 @@ from .test_executor_features import _make_deploy_executor
 
 _SKIPPED = (
     "Start database", "Initialize database",
-    "Initialize module checksums", "Set system parameters",
+    "Initialize module checksums", "Replace the default admin password",
+    "Set system parameters",
 )
 
 

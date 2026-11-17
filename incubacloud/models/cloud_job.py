@@ -1617,6 +1617,9 @@ class CloudJob(models.Model):
         # one the health probe has, so it sits at the same level: only
         # the daily cron legitimately produces these.
         "read_last_login": "group_cloud_manager",
+        # Writes the password of the instance's admin user, when it is
+        # still Odoo's default; only the platform's sweep queues it.
+        "check_admin_password": "group_cloud_manager",
         "sync_metrics_accounts": "group_cloud_manager",
         # Both deploy containers on the host — cAdvisor runs privileged
         # with the root filesystem mounted, and the central brings up a
@@ -2065,14 +2068,15 @@ class CloudJob(models.Model):
         job stays ``failed`` meanwhile (a failed job cannot be cancelled),
         so nothing but the alert releases the queue.
 
-        Four kinds of job pass a held queue (``_passes_hold``): the
+        Five kinds of job pass a held queue (``_passes_hold``): the
         retry of a failure that holds it, which is what releases it; a
         delete of the instance (``_get_queue_clearing_job_types``); the
         rollback of a move, which is the recovery — a move step that
         fails after the source was stopped leaves the customer's
-        production down until it runs; and a new attempt at what failed
+        production down until it runs; a new attempt at what failed
         (``_supersedes_hold``: the rebuild of a push with a commit the
-        failed rebuilds were not asked for). The rollback's jobs say so
+        failed rebuilds were not asked for); and the types that only
+        look into a running instance (``_get_hold_passing_job_types``). The rollback's jobs say so
         as a retry does, on the record: ``move_rollback`` in their
         payload (``cloud.instance._enqueue_rollback_jobs``; only the
         platform may ask for it, ``_check_internal_queue_flags``),
@@ -2106,11 +2110,12 @@ class CloudJob(models.Model):
     def _passes_hold(self, first, holding_jobs):
         """Whether the entry led by *first* is dispatched past a held queue.
 
-        The four kinds of job ``_queue_held_by`` lists: the retry of a
+        The five kinds of job ``_queue_held_by`` lists: the retry of a
         failure that holds the queue, a delete of the instance
         (``_get_queue_clearing_job_types``), the rollback of a move
-        while it is in progress and a new attempt at what failed
-        (``_supersedes_hold``).
+        while it is in progress, a new attempt at what failed
+        (``_supersedes_hold``) and a type of
+        ``_get_hold_passing_job_types``.
 
         :param first: the first step of the entry, a ``cloud.job`` record
         :param holding_jobs: the failed jobs whose alerts hold the queue
@@ -2123,7 +2128,25 @@ class CloudJob(models.Model):
             or ((first.payload or {}).get("move_rollback")
                 and first.instance_id.move_rollback_in_progress)
             or self._supersedes_hold(first, holding_jobs)
+            or first.job_type_id.code in self._get_hold_passing_job_types()
         )
+
+    @api.model
+    def _get_hold_passing_job_types(self):
+        """Job types dispatched past a queue held by a failure.
+
+        A type here changes nothing the held failure is about: it looks
+        into the instance's running Odoo, and acts only on what it finds
+        there. ``check_admin_password`` execs a program in the odoo
+        container and restarts Odoo only after replacing the admin's
+        default password (17-nov-2026): a failure that holds the queue
+        for days must not keep that password in service meanwhile. Its
+        executor skips an instance that does not run.
+
+        :return: job type codes
+        :rtype: set
+        """
+        return {"check_admin_password"}
 
     @api.model
     def _supersedes_hold(self, first, holding_jobs):
@@ -2472,8 +2495,9 @@ class CloudJob(models.Model):
         visible job runs; while the queue is held (``_queue_held_by``)
         only the retry of a failure that holds it, a delete of the
         instance (``_get_queue_clearing_job_types``: it waits for the
-        running job alone), the rollback of a move or a push's rebuild
-        after failed rebuilds passes (see ``_queue_held_by``).
+        running job alone), the rollback of a move, a push's rebuild
+        after failed rebuilds or a type of ``_get_hold_passing_job_types``
+        passes (see ``_queue_held_by``).
 
         An entry whose instance is gone, or archived when its type is not
         meant for archived instances (``_runs_on_archived``), is cancelled

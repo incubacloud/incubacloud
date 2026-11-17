@@ -63,6 +63,7 @@ from . import cloud_instance_domain
 from . import cloud_instance_whitelist
 from . import cloud_instance_move
 from . import cloud_instance_frozen_copy
+from . import cloud_instance_admin_password
 from . import cloud_job
 from . import cloud_host_reboot
 from . import cloud_job_log_chunk
@@ -99,6 +100,7 @@ from . import start_instance_executor
 from . import read_last_login_executor
 from . import relay_test_mail_executor
 from . import capture_secret_key_executor
+from . import admin_password_executor
 from . import restart_instance_executor
 from . import rebuild_instance_executor
 from . import restore_instance_executor

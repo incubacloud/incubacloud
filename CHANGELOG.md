@@ -421,6 +421,36 @@ gestionado de copias* on a running panel too.
 
 ### Security
 
+- **The admin user of each instance gets a random password when the
+  instance is created.** Odoo's `base` creates its admin user with Odoo's
+  default password. The panel now gives it a random password in every flow
+  that puts a database under an instance's Odoo, before Odoo serves it: the
+  deploy that creates the database, a restore (from an archive, a link, a
+  backup or to a moment of continuous recovery), a refresh or a clone from
+  production, a preview with production's data, an import and a move. The
+  panel does not keep the new password, show it or log it: sign in with
+  Connect and set your own in Odoo. A password somebody set is never
+  changed. The admin user is the one `base.user_admin` names, else
+  `base.user_root`, read in the database, and only the password columns
+  its Odoo series reads are compared.
+
+- **Existing instances still using a default password get a random one.**
+  Each running instance is checked by a job of its own
+  (`check_admin_password`), queued by the update and then by an hourly
+  sweep until it has answered; a failed job holding the instance's queue
+  does not hold it back. Where the password was the default, it is
+  replaced as above, Odoo is restarted, and the instance gets an alert and
+  an audit entry: «The admin user still had Odoo's default password; it
+  now has a random one. Sign in with Connect to set your own». The
+  instance keeps what was found and when (`admin_password_state`,
+  `admin_password_checked_at`), and the instance's database keeps the
+  time of the change (the system parameter
+  `incubacloud.admin_password_replaced_at`, nothing else), so that a check
+  whose answer was lost is told by the next one. The field
+  `odoo_admin_user_password` is not used for this, and stays for modules
+  installed on top. [SECURITY.md](SECURITY.md#the-admin-users-password)
+  says what to review on an instance that had the default password.
+
 - **The OAuth2 relay image carries docker-mailserver 16.0.1's Debian
   security updates (#10).** `RELAY_OAUTH_IMAGE` moves to
   `ghcr.io/incubacloud/relay-oauth:16.0.1-0.28-2`, by digest
@@ -586,6 +616,11 @@ gestionado de copias* on a running panel too.
   the server's creation, a deployed instance, at the instance's, and the
   oldest backup listed. Nothing is written where a layer turns the steps
   off.
+- 1.0.232's `end-admin-password` queues a `check_admin_password` job for
+  every deployed instance that runs, each in a savepoint of its own, and
+  changes nothing itself. The update adds the columns
+  `admin_password_state` and `admin_password_checked_at` to instances,
+  empty, and the hourly cron `cron_check_admin_passwords`.
 
 ## [1.0.231] — unreleased
 
