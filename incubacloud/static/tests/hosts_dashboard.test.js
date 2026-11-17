@@ -449,7 +449,7 @@ describe("HostsDashboard — what a card paints", () => {
     test("a long name with no spaces wraps and leaves the badge inside the card", async () => {
         const long = {
             ...live, id: 3, status: "unknown", ip_address: "",
-            name: "a-very-long-host-name.staging.example.com",
+            name: "averyveryverylonghostnamewithnohyphens.staging.example.com",
             region: "a-region-with-a-very-long-name-and-no-spaces",
         };
         await mountWith([long]);

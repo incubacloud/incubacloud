@@ -432,6 +432,15 @@ gestionado de copias* on a running panel too.
   keeps its size at the top right of the card, and an address or a region
   with no spaces on the line below breaks the same way.
 
+- **A long name with no spaces no longer pushes a badge or a button out of
+  its place on three more screens.** On the backup destinations list the
+  name wraps and the type badge keeps its size at the top right of the
+  card, as on the hosts list. In the whitelist tab of a host and of an
+  instance a long hostname wraps and the remove button stays at the end
+  of its row. In the archived instances tab of a project a long instance
+  name, or the host it came from, wraps inside its row instead of running
+  past it on a narrow screen.
+
 ### Security
 
 - **The OAuth2 relay image carries docker-mailserver 16.0.1's Debian

@@ -406,9 +406,18 @@
     &:last-child { border-bottom: none; }
 }
 
+// A hostname with no hyphen cannot break, so it breaks anywhere and the
+// remove button keeps its place at the end of the row. Shared by the
+// host's and the instance's whitelist tabs.
 .ic-whitelist-hostname {
     flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
     font-size: 12px;
+}
+
+.ic-whitelist-item .rl-iconbtn {
+    flex: none;
 }
 
 .ic-whitelist-empty {
