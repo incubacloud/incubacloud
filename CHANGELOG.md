@@ -6,6 +6,143 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.235] — unreleased
+
+A server keeps the SSH keys its Administrators sign in with as known keys:
+their sign-ins are listed and raise no alert, and each key added raises a
+critical alert of its own. Monitoring's Fleet view reads the panel's own
+servers alone, and the central serves no cross-account read. A conflict
+answered before 1.0.220 no longer holds its instance's queue.
+
+The update adds the table `cloud_host_known_key`, empty. Its data
+migration, 1.0.235's `end-stale-holds`, closes the failures a conflict
+answered before 1.0.220 left holding an instance's queue, and cancels what
+waited behind them.
+
+### Added
+
+- **Known SSH keys of a server.** In **Metrics → Security**, an
+  Administrator adds a key the team signs in with (the line of its `.pub`
+  file, the line `ssh-keygen -lf` prints, or its SHA256 fingerprint; only
+  the fingerprint is kept and a private key is refused), with a name and,
+  optionally, the addresses it may sign in from. A sign-in with it, from
+  the moment it was added until it is removed, is listed as *known key:
+  <name>* and raises no `security_ssh_login_foreign`; from outside its
+  addresses it raises that alert naming the key. The panel's own key, and
+  the one it replaced, cannot be added. Each addition is audited, raises
+  the critical alert `security_known_key_added` (one per key, left open
+  when the key is removed) and emails every Administrator and the
+  account's holder, with no daily quota. Keys are added and removed only
+  by the server's routes (an Administrator's session: no API key, no
+  agent), never edited but for their name, and a removed key stays listed
+  and never comes back; a server keeps 20 active keys at most, and the
+  alert says whether a key is limited to some addresses, never which. A
+  list that cannot be read alerts as if no key were known. A known key
+  covers the sign-in alone: `sudo` and
+  the changes to watched files of its session alert as before. Developers
+  see the list without its addresses. Where security logs are not
+  available, there is no list.
+
+### Fixed
+
+- **Every line of Monitoring's Load per core names its server.** The
+  fleet's load is the 15-minute load divided by the cores, matched on the
+  account and the server's id, and a division matched on some labels keeps
+  only those: the lines reached the legend without the server's name, as
+  a dash or as an account alone. The division keeps it now
+  (`group_left`), and the board names each server as the panel names it
+  when the reader can open it, by the name its agents report otherwise,
+  and as *Server <id>* without one, so a legend never has an unnamed line
+  and a renamed server reads by its new name at once.
+- **A server's charts and table name an instance with its project.**
+  *CPU per instance*, *Memory per instance*, the other charts by instance
+  and the *Right now* table of a server's board took the instance's own
+  name, which repeats from one project to the next (`prod`) and says
+  nothing where instances are named by a code. They read
+  `project/instance`, as the job history does
+  (`cloud.instance._metrics_label`), for the instances the reader can
+  open; any other keeps the name its agents report. The server's
+  diagnosis names the instance to look at the same way. A legend entry
+  wider than its chart, as such a name can be on a phone, keeps its two
+  ends around an ellipsis instead of being cut at the chart's edge
+  (`fitLabel`); the tooltip keeps the whole name.
+- **The boards of Monitoring leave no empty column on a wide screen.**
+  Where three cards fit in a row, the fleet's fourth chart stood alone
+  with *Are the servers reporting?* in a section of its own below, and a
+  server's *Load per core* and *Waiting for resources* left the third
+  column empty over a full-width *Memory in use*. *Are the servers
+  reporting?* is now a card of the fleet's charts, on the row the fourth
+  leaves; a server's load, waiting and memory share a row; its two charts
+  by instance and its two of traffic take half the width each, and its
+  four of disk make two rows of two. A narrower screen shows them in two
+  columns, a phone in one, as before.
+
+- **A conflict answered before 1.0.220 no longer holds its instance's
+  queue.** Until 1.0.220 closing a `pip_conflict` or `addon_conflict` left
+  open the `job_failed` of the job that failed on it, and that alert held
+  the instance's queue: what was asked for behind it never started (a
+  rebuild and a listing of backups waited a week on a panel).
+  1.0.220 closed both from then on; the update closes the failures left
+  so, and cancels what waited behind them with a note to ask for it again
+  (`cloud.job._close_stale_conflict_holds_on`). What passes the hold (a
+  delete, a move's rollback, the retry, a push's rebuild that supersedes
+  it), the heads of the queue and a queue another failure still holds are
+  left alone. A failure raised after its conflict was closed, by the run
+  that resolving it started again, is the job's own and is not touched.
+  What waited behind a chain cancelled so, in a queue where that chain
+  came first and no failure of its own holds, is cancelled too. A failure
+  whose conflict alert was deleted after its 60 days counts when its
+  message is the pre-flight's and no conflict is open on its instance.
+
+### Security
+
+- **Monitoring's Fleet view is the panel's own servers, on every panel.**
+  The panel that deployed the central holds the central's operator
+  credential, which reads every account, and its Fleet view read with
+  it: the figures counted, and the charts and *Are the servers
+  reporting?* named, the servers of every other panel that writes to
+  that central, each with its account. A panel's fleet is the servers it
+  manages, and no panel lists or charts another account's. The board is
+  now read with the panel's own account alone, as a server's and an
+  instance's boards are, so the central filters it; should a gateway
+  that does not filter answer a series of another account, it is dropped
+  before the answer is built (`cloud.host._fleet_own_servers`), and the
+  answer carries no account at all. `/cloud/fleet/resource_series` has no
+  `scope` any more, and the heading always reads *Your servers*. The
+  Security figures of that view count the panel's own servers too. The
+  operator credential stays what deletes series; nothing in the panel
+  reads with it.
+
+- **The central has no cross-account read any more.** Its gateway served
+  the operator's `/admin-r/` (the accounts' `query` and `query_range` and
+  `/health`) to the panel's address under the public name and the single
+  name. Nothing read it since the Fleet view above, and the route is
+  gone: vmauth's operator user keeps the series deletion alone,
+  `/admin-d/api/v1/admin/tsdb/delete_series`, and is left out of the list
+  while the central has no deletion key; the proxy's `ic-central-read`
+  router is gone and the single name's operator router serves `/admin-d/`
+  only. A request to `/admin-r/` meets no route. The deployment and the
+  account sync prove the gateway with the panel's own account instead,
+  `/r/api/v1/query?query=vector(1)`, rather than the operator's
+  `/admin-r/health`. The central's revision is now 4, so the
+  reconciliation cron deploys every central again after the update. The
+  setting *Who may delete series and read the fleet on the central* is
+  now *Who may delete series on the central*, and its help, like the
+  operator credential's, says only that.
+
+### Documentation
+
+- RB-11 and RB-36 check the central through `/r/` with the panel's own
+  account, which the operator's `/admin-r/` no longer serves, and RB-11
+  names the read user's cap of 8 requests in flight.
+
+### Migration
+
+- 1.0.235's `end-stale-holds` closes, `auto`, the `job_failed` alerts left
+  holding an instance's queue after their conflict was closed, and cancels
+  what waited behind them; one savepoint per instance, and what fails is
+  logged without breaking the update.
+
 ## [1.0.234] — unreleased
 
 The admin user of each instance gets a random password when the instance is
@@ -105,9 +242,7 @@ stays, also when the record behind it is deleted. Agents read an
 instance's metrics by the hour, and the assistant's Stop takes effect at
 once. A move's cut is measured from the drain and broken down by part, a
 job hands its scripts to the server in one exchange, and the cutover sees
-the destination healthy within half a second. A server keeps the SSH keys
-its Administrators sign in with as known keys: their sign-ins are listed
-and raise no alert, and each key added raises a critical alert of its own.
+the destination healthy within half a second.
 
 The update adds the SFTP columns of backup destinations (`sftp_host`,
 `sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
@@ -115,8 +250,7 @@ The update adds the SFTP columns of backup destinations (`sftp_host`,
 `sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
 destinations there are, the table `cloud_host_reboot`, seven columns on
 hosts for their restart and `backup_path_suffix`, `move_cut_parts` and
-`move_last_cut_breakdown` on instances, and the table
-`cloud_host_known_key`, empty. Its data
+`move_last_cut_breakdown` on instances. Its data
 migration, 1.0.232's post-migrate, writes each backup destination's
 retention in the form it must now have (spaces gone, the unit in capitals,
 an empty one as `3M`) and names in the log any it leaves invalid, the
@@ -129,33 +263,9 @@ panel already holds, marked as backfilled; each mark in a savepoint of its
 own, and what fails is logged without breaking the update. A third,
 1.0.232's `post-translations`, reloads the module's translations, so the
 Spanish name of the cron of unused managed backends says *almacenamiento
-gestionado de copias* on a running panel too. A fourth, 1.0.232's
-`end-stale-holds`, closes the failures a conflict answered before 1.0.220
-left holding an instance's queue, and cancels what waited behind them.
+gestionado de copias* on a running panel too.
 
 ### Added
-
-- **Known SSH keys of a server.** In **Metrics → Security**, an
-  Administrator adds a key the team signs in with (the line of its `.pub`
-  file, the line `ssh-keygen -lf` prints, or its SHA256 fingerprint; only
-  the fingerprint is kept and a private key is refused), with a name and,
-  optionally, the addresses it may sign in from. A sign-in with it, from
-  the moment it was added until it is removed, is listed as *known key:
-  <name>* and raises no `security_ssh_login_foreign`; from outside its
-  addresses it raises that alert naming the key. The panel's own key, and
-  the one it replaced, cannot be added. Each addition is audited, raises
-  the critical alert `security_known_key_added` (one per key, left open
-  when the key is removed) and emails every Administrator and the
-  account's holder, with no daily quota. Keys are added and removed only
-  by the server's routes (an Administrator's session: no API key, no
-  agent), never edited but for their name, and a removed key stays listed
-  and never comes back; a server keeps 20 active keys at most, and the
-  alert says whether a key is limited to some addresses, never which. A
-  list that cannot be read alerts as if no key were known. A known key
-  covers the sign-in alone: `sudo` and
-  the changes to watched files of its session alert as before. Developers
-  see the list without its addresses. Where security logs are not
-  available, there is no list.
 
 - **SFTP backup destinations (#93).** A destination's type is S3
   compatible or SFTP, chosen when it is created. An SFTP one names a
@@ -319,55 +429,6 @@ left holding an instance's queue, and cancels what waited behind them.
 
 ### Fixed
 
-- **Every line of Monitoring's Load per core names its server.** The
-  fleet's load is the 15-minute load divided by the cores, matched on the
-  account and the server's id, and a division matched on some labels keeps
-  only those: the lines reached the legend without the server's name, as
-  a dash or as an account alone. The division keeps it now
-  (`group_left`), and the board names each server as the panel names it
-  when the reader can open it, by the name its agents report otherwise,
-  and as *Server <id>* without one, so a legend never has an unnamed line
-  and a renamed server reads by its new name at once.
-- **A server's charts and table name an instance with its project.**
-  *CPU per instance*, *Memory per instance*, the other charts by instance
-  and the *Right now* table of a server's board took the instance's own
-  name, which repeats from one project to the next (`prod`) and says
-  nothing where instances are named by a code. They read
-  `project/instance`, as the job history does
-  (`cloud.instance._metrics_label`), for the instances the reader can
-  open; any other keeps the name its agents report. The server's
-  diagnosis names the instance to look at the same way. A legend entry
-  wider than its chart, as such a name can be on a phone, keeps its two
-  ends around an ellipsis instead of being cut at the chart's edge
-  (`fitLabel`); the tooltip keeps the whole name.
-- **The boards of Monitoring leave no empty column on a wide screen.**
-  Where three cards fit in a row, the fleet's fourth chart stood alone
-  with *Are the servers reporting?* in a section of its own below, and a
-  server's *Load per core* and *Waiting for resources* left the third
-  column empty over a full-width *Memory in use*. *Are the servers
-  reporting?* is now a card of the fleet's charts, on the row the fourth
-  leaves; a server's load, waiting and memory share a row; its two charts
-  by instance and its two of traffic take half the width each, and its
-  four of disk make two rows of two. A narrower screen shows them in two
-  columns, a phone in one, as before.
-
-
-- **A conflict answered before 1.0.220 no longer holds its instance's
-  queue.** Until 1.0.220 closing a `pip_conflict` or `addon_conflict` left
-  open the `job_failed` of the job that failed on it, and that alert held
-  the instance's queue: what was asked for behind it never started (a
-  rebuild and a listing of backups waited a week on a panel).
-  1.0.220 closed both from then on; the update closes the failures left
-  so, and cancels what waited behind them with a note to ask for it again
-  (`cloud.job._close_stale_conflict_holds_on`). What passes the hold (a
-  delete, a move's rollback, the retry, a push's rebuild that supersedes
-  it), the heads of the queue and a queue another failure still holds are
-  left alone. A failure raised after its conflict was closed, by the run
-  that resolving it started again, is the job's own and is not touched.
-  What waited behind a chain cancelled so, in a queue where that chain
-  came first and no failure of its own holds, is cancelled too. A failure
-  whose conflict alert was deleted after its 60 days counts when its
-  message is the pre-flight's and no conflict is open on its instance.
 - **Deleting a server whose proxy was never deployed takes the panel's
   access off it.** `/cloud/delete_host` archived such a host at once, with
   no teardown, so a server hardened before a Full Setup that failed kept
@@ -592,40 +653,6 @@ left holding an instance's queue, and cancels what waited behind them.
   the relay's settings are unchanged. An instance with an OAuth2 relay
   takes the new image on its next deploy or rebuild (RB-31).
 
-- **Monitoring's Fleet view is the panel's own servers, on every panel.**
-  The panel that deployed the central holds the central's operator
-  credential, which reads every account, and its Fleet view read with
-  it: the figures counted, and the charts and *Are the servers
-  reporting?* named, the servers of every other panel that writes to
-  that central, each with its account. A panel's fleet is the servers it
-  manages, and no panel lists or charts another account's. The board is
-  now read with the panel's own account alone, as a server's and an
-  instance's boards are, so the central filters it; should a gateway
-  that does not filter answer a series of another account, it is dropped
-  before the answer is built (`cloud.host._fleet_own_servers`), and the
-  answer carries no account at all. `/cloud/fleet/resource_series` has no
-  `scope` any more, and the heading always reads *Your servers*. The
-  Security figures of that view count the panel's own servers too. The
-  operator credential stays what deletes series; nothing in the panel
-  reads with it.
-
-- **The central has no cross-account read any more.** Its gateway served
-  the operator's `/admin-r/` (the accounts' `query` and `query_range` and
-  `/health`) to the panel's address under the public name and the single
-  name. Nothing read it since the Fleet view above, and the route is
-  gone: vmauth's operator user keeps the series deletion alone,
-  `/admin-d/api/v1/admin/tsdb/delete_series`, and is left out of the list
-  while the central has no deletion key; the proxy's `ic-central-read`
-  router is gone and the single name's operator router serves `/admin-d/`
-  only. A request to `/admin-r/` meets no route. The deployment and the
-  account sync prove the gateway with the panel's own account instead,
-  `/r/api/v1/query?query=vector(1)`, rather than the operator's
-  `/admin-r/health`. The central's revision is now 4, so the
-  reconciliation cron deploys every central again after the update. The
-  setting *Who may delete series and read the fleet on the central* is
-  now *Who may delete series on the central*, and its help, like the
-  operator credential's, says only that.
-
 - **Deleting a server takes the panel's access off it.** The teardown
   stopped the agents and the proxy but left the panel's key in the
   server's `authorized_keys`, the operator account hardening creates and
@@ -774,9 +801,6 @@ left holding an instance's queue, and cancels what waited behind them.
   and bringing it back.
 - *Connect a server* says that the automatic placement chooses a
   `Compatible` server only with 14 GB free.
-- RB-11 and RB-36 check the central through `/r/` with the panel's own
-  account, which the operator's `/admin-r/` no longer serves, and RB-11
-  names the read user's cap of 8 requests in flight.
 
 ### Migration
 
@@ -785,10 +809,6 @@ left holding an instance's queue, and cancels what waited behind them.
   the server's creation, a deployed instance, at the instance's, and the
   oldest backup listed. Nothing is written where a layer turns the steps
   off.
-- 1.0.232's `end-stale-holds` closes, `auto`, the `job_failed` alerts left
-  holding an instance's queue after their conflict was closed, and cancels
-  what waited behind them; one savepoint per instance, and what fails is
-  logged without breaking the update.
 
 ## [1.0.231] — unreleased
 

@@ -1,4 +1,4 @@
-"""End-migrate for 1.0.232 — the queues a conflict closed before 1.0.220 holds.
+"""End-migrate for 1.0.235 — the queues a conflict closed before 1.0.220 holds.
 
 Until 1.0.220 closing a conflict alert (``pip_conflict``,
 ``addon_conflict``) left open the ``job_failed`` of the job that failed on

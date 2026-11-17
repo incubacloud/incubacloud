@@ -608,7 +608,7 @@ class TestHold(_QueueCase):
 
 
 class TestStaleConflictHolds(_QueueCase):
-    """A failure whose conflict was closed before 1.0.220 holds no queue (1.0.232).
+    """A failure whose conflict was closed before 1.0.220 holds no queue (1.0.235).
 
     Until 1.0.220 closing a conflict left its job's ``job_failed`` open,
     and that alert held the instance's queue for good. The update closes
@@ -924,8 +924,8 @@ class TestStaleConflictHolds(_QueueCase):
 
     def test_a_queue_that_fails_leaves_the_others_and_the_update_going(self):
         spec = importlib.util.spec_from_file_location(
-            "end_stale_holds_1_0_232",
-            file_path("incubacloud/migrations/1.0.232/end-stale-holds.py"),
+            "end_stale_holds_1_0_235",
+            file_path("incubacloud/migrations/1.0.235/end-stale-holds.py"),
         )
         migration = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(migration)
@@ -943,16 +943,16 @@ class TestStaleConflictHolds(_QueueCase):
         with patch.object(
             type(self.Job), "_close_stale_conflict_holds_on", autospec=True,
             side_effect=fail_on_broken,
-        ), self.assertLogs("end_stale_holds_1_0_232", level="ERROR") as logs:
-            migration.migrate(self.env.cr, "19.0.1.0.231")
+        ), self.assertLogs("end_stale_holds_1_0_235", level="ERROR") as logs:
+            migration.migrate(self.env.cr, "19.0.1.0.234")
         self.env.invalidate_all()
         self.assertEqual((kept.state, released.state), ("active", "dismissed"))
         self.assertIn(f"dismiss alert(s) {kept.id} by hand", logs.output[0])
 
     def test_the_migration_runs_on_an_update_only(self):
         spec = importlib.util.spec_from_file_location(
-            "end_stale_holds_1_0_232",
-            file_path("incubacloud/migrations/1.0.232/end-stale-holds.py"),
+            "end_stale_holds_1_0_235",
+            file_path("incubacloud/migrations/1.0.235/end-stale-holds.py"),
         )
         migration = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(migration)
@@ -961,7 +961,7 @@ class TestStaleConflictHolds(_QueueCase):
         migration.migrate(self.env.cr, None)
         self.env.invalidate_all()
         self.assertEqual((failure.state, restart.state), ("active", "queued"))
-        migration.migrate(self.env.cr, "19.0.1.0.231")
+        migration.migrate(self.env.cr, "19.0.1.0.234")
         self.env.invalidate_all()
         self.assertEqual(
             (failure.state, restart.state), ("dismissed", "cancelled"),
