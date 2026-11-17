@@ -64,6 +64,11 @@ class ObservabilityExecutorCase(TransactionCase):
             # The paths of before: the single name has tests of its own
             # (test_central_single_path.py).
             "metrics_central_single_path": False,
+            # A read credential never rotated, as on a new panel: on a copy
+            # of a master whose rotation has run, the account's own user
+            # no longer writes and no rotation is due again.
+            "metrics_read_rotated": False,
+            "metrics_read_token_next": False,
         })
         self.host = self.env["cloud.host"].create({
             "name": "HX",
