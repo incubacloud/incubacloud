@@ -114,16 +114,17 @@ class TestTheHeadersSent(HttpCase):
     """The headers a browser gets from the panel, with no proxy in front."""
 
     def setUp(self):
-        """Create an internal user of its own to sign in with.
+        """Create a Stakeholder of its own to sign in with.
 
         The database's admin may not have the password ``admin`` (a copy
         of a real panel is neutralized with another), so the pages behind
-        a sign-in are read as a user whose password the test knows.
+        a sign-in are read as a user whose password the test knows. A
+        role, because the panel is not found by a user with none.
         """
         super().setUp()
         new_test_user(
             self.env, login="framing-user", password="framing-user-pw",
-            groups="base.group_user",
+            groups="base.group_user,incubacloud.group_cloud_user",
         )
 
     def _get(self, path):
