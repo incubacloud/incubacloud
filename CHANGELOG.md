@@ -18,7 +18,7 @@ database that lost the panel's cron bot updates again.
 
 The update adds the table `cloud_host_known_key`, empty, and the column
 `owner_type` to the GitHub App, empty on an App there is. Its data
-migration, 1.0.235's `end-stale-holds`, closes the failures a conflict
+migration, 1.0.236's `end-stale-holds`, closes the failures a conflict
 answered before 1.0.220 left holding an instance's queue, and cancels what
 waited behind them; the cron bot's end-migration recreates the bot only
 when it is missing.
@@ -242,7 +242,7 @@ when it is missing.
 
 ### Migration
 
-- 1.0.235's `end-stale-holds` closes, `auto`, the `job_failed` alerts left
+- 1.0.236's `end-stale-holds` closes, `auto`, the `job_failed` alerts left
   holding an instance's queue after their conflict was closed, and cancels
   what waited behind them; one savepoint per instance, and what fails is
   logged without breaking the update.

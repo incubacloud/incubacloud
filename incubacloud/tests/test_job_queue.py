@@ -608,7 +608,7 @@ class TestHold(_QueueCase):
 
 
 class TestStaleConflictHolds(_QueueCase):
-    """A failure whose conflict was closed before 1.0.220 holds no queue (1.0.235).
+    """A failure whose conflict was closed before 1.0.220 holds no queue (1.0.236).
 
     Until 1.0.220 closing a conflict left its job's ``job_failed`` open,
     and that alert held the instance's queue for good. The update closes
@@ -925,7 +925,7 @@ class TestStaleConflictHolds(_QueueCase):
     def test_a_queue_that_fails_leaves_the_others_and_the_update_going(self):
         spec = importlib.util.spec_from_file_location(
             "end_stale_holds_1_0_235",
-            file_path("incubacloud/migrations/1.0.235/end-stale-holds.py"),
+            file_path("incubacloud/migrations/1.0.236/end-stale-holds.py"),
         )
         migration = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(migration)
@@ -952,7 +952,7 @@ class TestStaleConflictHolds(_QueueCase):
     def test_the_migration_runs_on_an_update_only(self):
         spec = importlib.util.spec_from_file_location(
             "end_stale_holds_1_0_235",
-            file_path("incubacloud/migrations/1.0.235/end-stale-holds.py"),
+            file_path("incubacloud/migrations/1.0.236/end-stale-holds.py"),
         )
         migration = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(migration)
