@@ -45,9 +45,20 @@ class _FirstStepsBase(TransactionCase):
         # What the database of the test held before: only what each test
         # creates counts.
         self.env.cr.execute("DELETE FROM cloud_first_step")
+        # Only the jobs of the types a mark reads: on a copy of production
+        # every job ended was hundreds of thousands of rows, rewritten in
+        # each test, and the database gave out (QA of candidate S, [6c]).
+        codes = tuple(sorted({
+            code
+            for kinds in self.Steps._job_types().values()
+            for types in kinds.values()
+            for code in types
+        }))
         self.env.cr.execute(
             "UPDATE cloud_job SET state = 'cancelled'"
-            " WHERE state IN ('done', 'failed')"
+            " WHERE state IN ('done', 'failed') AND job_type_id IN"
+            " (SELECT id FROM cloud_job_type WHERE code IN %s)",
+            [codes],
         )
         self.env.cr.execute("DELETE FROM cloud_instance_domain")
         self.env.cr.execute("DELETE FROM cloud_instance_backup")
