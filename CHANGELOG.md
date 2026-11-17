@@ -216,7 +216,10 @@ gestionado de copias* on a running panel too.
   `project/instance`, as the job history does
   (`cloud.instance._metrics_label`), for the instances the reader can
   open; any other keeps the name its agents report. The server's
-  diagnosis names the instance to look at the same way.
+  diagnosis names the instance to look at the same way. A legend entry
+  wider than its chart, as such a name can be on a phone, keeps its two
+  ends around an ellipsis instead of being cut at the chart's edge
+  (`fitLabel`); the tooltip keeps the whole name.
 - **The boards of Monitoring leave no empty column on a wide screen.**
   Where three cards fit in a row, the fleet's fourth chart stood alone
   with *Are the servers reporting?* in a section of its own below, and a

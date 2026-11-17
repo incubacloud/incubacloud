@@ -13,6 +13,7 @@ import { MetricsBoard, REFRESH_MS } from "@incubacloud/components/metrics/metric
 import { OnDemandPanel } from "@incubacloud/components/metrics/on_demand_panel";
 import {
     TimeSeriesChart,
+    fitLabel,
     timeUnit,
     toChartPoints,
 } from "@incubacloud/components/metrics/time_series_chart";
@@ -67,6 +68,19 @@ describe("TimeSeriesChart helpers", () => {
         const points = toChartPoints([[0, 1], [30, 2], [300, 3]], 30);
         expect(points.map((p) => p.y)).toEqual([1, 2, null, 3]);
         expect(points[2].x).toBe(60 * 1000);
+    });
+
+    test("a legend entry wider than its chart keeps both of its ends", () => {
+        // Seven pixels a character, as a fixed-width font would measure.
+        const measure = (text) => text.length * 7;
+        const name = "Talleres Hermanos Gutiérrez/ic-tenant-9c41d07a";
+        expect(fitLabel(name, 400, measure)).toBe(name);
+        const short = fitLabel(name, 210, measure);
+        expect(short).toBe("Talleres Herman…enant-9c41d07a");
+        expect(measure(short)).toBeLessThan(211);
+        // No room at all still names it by its first letter.
+        expect(fitLabel(name, 5, measure)).toBe("T…");
+        expect(fitLabel("", 5, measure)).toBe("");
     });
 
     test("the time axis unit follows the span", () => {

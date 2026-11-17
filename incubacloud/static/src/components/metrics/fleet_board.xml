@@ -99,8 +99,8 @@
                                 <span class="rl-ovtitle" id="ic-fb-ingest">Are the servers reporting?</span>
                                 <span class="ic-mb-hint">
                                     a sample at each step of the window
-                                    <span class="ic-fb-legend-ok" aria-hidden="true"/>reporting
-                                    <span class="ic-fb-legend-silent" aria-hidden="true"/>silent
+                                    <span class="ic-fb-legend"><span class="ic-fb-legend-ok" aria-hidden="true"/>reporting</span>
+                                    <span class="ic-fb-legend"><span class="ic-fb-legend-silent" aria-hidden="true"/>silent</span>
                                 </span>
                             </div>
                             <p t-if="panelError('ingest')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('ingest')"/>

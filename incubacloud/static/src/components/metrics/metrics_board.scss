@@ -430,6 +430,11 @@
   }
 }
 
+// A colour of the ingestion line with its word: never apart on a wrap.
+.ic-fb-legend {
+  white-space: nowrap;
+}
+
 .ic-fb-legend-ok,
 .ic-fb-legend-silent {
   display: inline-block;
