@@ -22172,6 +22172,16 @@ msgid "GitLab"
 msgstr "GitLab"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid ""
+"GitLab does not let the panel read this token's permissions (fine-grained "
+"tokens do not allow it). To deploy, it is enough that git works."
+msgstr ""
+"GitLab no deja leer los permisos de este token (los tokens fine-grained no "
+"lo permiten). Para desplegar basta con que git funcione."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
 msgid "GitLab of Acme"

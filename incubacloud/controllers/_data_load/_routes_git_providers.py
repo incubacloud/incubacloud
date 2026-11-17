@@ -34,8 +34,9 @@ def git_error_message(code):
     """Return what a read or API failure *code* means, translated.
 
     The codes of ``net.git_reader.GitReaderError`` and
-    ``gitlab.client.GitLabError``, and the route's own ``no_api`` and
-    ``no_credential``. Nothing in the text comes from the remote.
+    ``gitlab.client.GitLabError``, and the route's own ``no_api``,
+    ``no_credential`` and ``token_unreadable``. Nothing in the text comes
+    from the remote.
 
     :param str code: the failure code
     :rtype: str
@@ -81,6 +82,11 @@ def git_error_message(code):
             "No credential covers this repository: it is read as a public "
             "one."
         ),
+        'token_unreadable': _(
+            "GitLab does not let the panel read this token's permissions "
+            "(fine-grained tokens do not allow it). To deploy, it is "
+            "enough that git works."
+        ),
     }
     return messages.get(code) or _("The Git server answered with an error.")
 
@@ -97,6 +103,18 @@ def _cause_code(exc):
     if isinstance(cause, OutboundError):
         return 'private_address'
     return 'http'
+
+
+def _token_unreadable(exc):
+    """Return whether GitLab refused (403) to describe the token itself.
+
+    A fine-grained token cannot read its own data, so the introspection
+    of one that git can use ends in a 403: the token is not wrong.
+
+    :param UserError exc: what ``cloud.git.credential._introspect`` raised
+    :rtype: bool
+    """
+    return _cause_code(exc) == 'forbidden'
 
 
 def _constraint_message(env, exc):
@@ -193,10 +211,12 @@ class GitProvidersMixin:
         of the provider left out of the list is removed; an empty token
         keeps the stored one. A new token that is not a deploy token is
         introspected; a failure there keeps what was saved and comes back
-        as a warning.
+        as a warning, or as a notice when GitLab only refuses to describe
+        the token (403, as a fine-grained token does).
 
         :param dict vals: the provider as the SPA edits it
-        :return: ``{ok, provider, warnings}`` or ``{ok: False, error}``
+        :return: ``{ok, provider, warnings, notices}`` or
+            ``{ok: False, error}``
         :rtype: dict
         """
         self._sec()._check_can_manage_settings()
@@ -232,15 +252,20 @@ class GitProvidersMixin:
                 "asking GitLab what they are. Test the provider later."
             ))
             to_introspect = env['cloud.git.credential']
+        notices = []
         for cred in to_introspect:
             try:
                 cred._introspect()
             except UserError as exc:
-                warnings.append(str(exc))
+                if _token_unreadable(exc):
+                    notices.append(git_error_message('token_unreadable'))
+                else:
+                    warnings.append(str(exc))
         return {
             'ok': True,
             'provider': _serialize_provider(provider, True),
             'warnings': warnings,
+            'notices': notices,
         }
 
     def _write_git_provider(self, vals):
@@ -348,7 +373,11 @@ class GitProvidersMixin:
         :param int provider_id: the provider
         :param str url: a repository of the provider
         :return: ``{ok, git: {code, message}, api: {code, message},
-            provider}`` or ``{ok: False, error}``
+            notice, provider}`` or ``{ok: False, error}``; ``notice`` is
+            ``{code, message}`` when git works and GitLab refuses to
+            describe the token (403, as for a fine-grained token): the
+            panel treats its scopes as unread, which is nothing to fix,
+            and None otherwise
         :rtype: dict
         """
         self._sec()._check_can_manage_settings()
@@ -374,10 +403,17 @@ class GitProvidersMixin:
             'last_check_git': git_code,
             'last_check_api': api_code,
         })
+        notice = None
+        if git_code == 'ok' and api_code == 'forbidden':
+            notice = {
+                'code': 'token_unreadable',
+                'message': git_error_message('token_unreadable'),
+            }
         return {
             'ok': True,
             'git': {'code': git_code, 'message': git_error_message(git_code)},
             'api': {'code': api_code, 'message': git_error_message(api_code)},
+            'notice': notice,
             'provider': _serialize_provider(provider, True),
         }
 

@@ -100,6 +100,9 @@
                         <t t-foreach="state.warnings[provider.id] || []" t-as="warning" t-key="warning_index">
                             <p class="rl-set-inline-msg rl-set-inline-msg--error" t-esc="warning"/>
                         </t>
+                        <t t-foreach="state.notices[provider.id] || []" t-as="notice" t-key="notice_index">
+                            <p class="rl-set-inline-msg rl-set-inline-msg--info ic-gitp-notice" t-esc="notice"/>
+                        </t>
 
                         <t t-if="state.canManage">
                             <div class="rl-frow ic-gitp-test">
@@ -127,6 +130,8 @@
                                     <p t-att-class="'rl-set-inline-msg rl-set-inline-msg--' + (result.api.code === 'ok' ? 'success' : 'info')">
                                         <strong>API:</strong> <t t-esc="result.api.message"/>
                                     </p>
+                                    <p t-if="result.notice" class="rl-set-inline-msg rl-set-inline-msg--info ic-gitp-notice"
+                                       t-esc="result.notice.message"/>
                                 </t>
                             </t>
                             <p t-if="state.deleteError[provider.id]"
