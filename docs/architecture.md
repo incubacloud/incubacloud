@@ -1001,13 +1001,16 @@ IncubaCloud supports GitHub App authentication for private repository access and
 ```
 1. User opens Settings → GitHub App
 2. GET /cloud/github/setup
+   → Asks where to create the App: the user's account or an organization
+   → POST /cloud/github/setup checks the organization's name (a GitHub login)
    → Generates App manifest (branded, fleet-unique app name)
-   → Redirects to github.com/apps/manifest-code
+   → Posts it to github.com/settings/apps/new, or to
+     github.com/organizations/<org>/settings/apps/new
 
 3. User installs app on GitHub org
    → GitHub redirects to GET /cloud/github/callback?code=...
    → Exchanges code for (app_id, private_key, webhook_secret, owner)
-   → Stores in cloud.github.app (singleton), owner_login included
+   → Stores in cloud.github.app (singleton), owner_login and owner_type included
 
 3b. The installation id
    → installation.created on the App owner's account: taken from the webhook

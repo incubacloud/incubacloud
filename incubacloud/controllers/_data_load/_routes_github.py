@@ -284,6 +284,8 @@ class GitHubMixin:
             'has_webhook_secret': _has_encrypted(app, 'webhook_secret'),
             'has_private_key': _has_encrypted(app.sudo(), 'private_key'),
             'has_pat': _has_pat(request.env),
+            'owner_login': app.owner_login or '',
+            'owner_type': app.owner_type or '',
             'slug': slug,
             'install_url': f'https://github.com/apps/{slug}/installations/new' if slug else '',
         }

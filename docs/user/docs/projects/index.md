@@ -36,6 +36,13 @@ GitHub**: the **GitHub App**, or a **Personal Access Token**, which also reaches
 repositories the App cannot (`odoo/enterprise`, for instance). A token written
 inside the repository's URL is refused.
 
+When you create the App from **Settings → GitHub**, the setup page asks where
+to create it: **My account** or **An organization**, named as it appears in
+its GitHub URL. Creating it under an organization needs you to be an owner or
+an app manager of that organization; otherwise GitHub refuses. An App created
+under your account can still be installed on any organization, because it is
+public.
+
 Only the App receives GitHub's push and pull request notifications, which
 **Auto-rebuild** and [pull request previews](../instances/index.md#pull-request-previews)
 need, and only on a panel GitHub can reach from the internet. A token gives

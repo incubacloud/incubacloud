@@ -40,6 +40,8 @@ export class GithubSettingsBlock extends Component {
             hasPat: false,
             slug: "",
             installUrl: "",
+            ownerLogin: "",
+            ownerType: "",
             isHttps: window.location.protocol === "https:",
             testing: false,
             // The answer of Test connection or Re-detect, under the buttons.
@@ -73,6 +75,8 @@ export class GithubSettingsBlock extends Component {
                 hasPat: Boolean(data.has_pat),
                 slug: data.slug || "",
                 installUrl: data.install_url || "",
+                ownerLogin: data.owner_login || "",
+                ownerType: data.owner_type || "",
             });
             Object.assign(this.state.form, {
                 app_id: data.app_id || "",
@@ -119,6 +123,21 @@ export class GithubSettingsBlock extends Component {
             return 1;
         }
         return this.state.form.installation_id ? 3 : 2;
+    }
+
+    /** @returns {string} whom the App belongs to on GitHub; empty when unknown */
+    get ownerText() {
+        const login = this.state.ownerLogin;
+        if (!login) {
+            return "";
+        }
+        if (this.state.ownerType === "organization") {
+            return _t("The App belongs to the GitHub organization %s.", login);
+        }
+        if (this.state.ownerType === "user") {
+            return _t("The App belongs to the GitHub account %s.", login);
+        }
+        return _t("The App belongs to %s on GitHub.", login);
     }
 
     /** @returns {string} the status chip of a connected App */

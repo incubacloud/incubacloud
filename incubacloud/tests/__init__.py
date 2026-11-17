@@ -227,6 +227,7 @@ from . import test_success_before_cancel
 from . import test_cancel_no_return
 from . import test_reconcile_lost_jobs
 from . import test_github_setup_state
+from . import test_github_app_owner
 from . import test_repo_url_not_a_repo
 from . import test_repo_url_host
 from . import test_git_urls

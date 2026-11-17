@@ -153,6 +153,12 @@ msgstr ""
 "copias borre las antiguas, o nadie."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid "An organization"
+msgstr "Una organización"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid ""
@@ -163,6 +169,22 @@ msgstr ""
 "Otro servidor u otro puerto quita la clave de servidor de confianza. Lea la "
 "nueva y confíe en ella antes del siguiente despliegue o reconstrucción de "
 "las instancias de este destino: hasta entonces se rechazan."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__owner_type
+msgid "App Owner Type"
+msgstr "Tipo de propietario de la App"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid ""
+"As it appears in GitHub's URL: github.com/name. You must be an owner or app "
+"manager of the organization; otherwise GitHub refuses."
+msgstr ""
+"Tal como aparece en la URL de GitHub: github.com/nombre. Debe ser "
+"propietario o administrador de apps de la organización; si no, GitHub lo "
+"rechaza."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -321,6 +343,12 @@ msgid "Keys"
 msgstr "Claves"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid "My account"
+msgstr "Mi cuenta"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid "New key generated: add it to the server."
@@ -347,6 +375,23 @@ msgstr "Solo un destino SFTP tiene clave."
 #: code:addons/incubacloud/models/cloud_backup_backend.py:0
 msgid "Only an SFTP destination has a server key."
 msgstr "Solo un destino SFTP tiene clave de servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid "Opening GitHub…"
+msgstr "Abriendo GitHub…"
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_github_app__owner_type__organization
+msgid "Organization"
+msgstr "Organización"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid "Organization name"
+msgstr "Nombre de la organización"
 
 
 #. module: incubacloud
@@ -484,10 +529,44 @@ msgid "Sftp Host Key Trusted By"
 msgstr "Clave del servidor confiada por"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/github_settings_block.xml:0
+msgid ""
+"Step 1 of 2. The panel sends you to GitHub to create an App with the right\n"
+"                            permissions and webhook already set. You choose "
+"whether it is created in your\n"
+"                            GitHub account or in an organization, and you "
+"can then install it on any\n"
+"                            organization you manage."
+msgstr ""
+"Paso 1 de 2. El panel le lleva a GitHub para crear una App con los permisos "
+"y el webhook ya configurados. Usted elige si se crea en su cuenta de GitHub "
+"o en una organización, y después puede instalarla en cualquier organización "
+"que administre."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
 msgid "Testing this type of destination is not supported."
 msgstr "No se admite la prueba de este tipo de destino."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/github_settings_block.js:0
+msgid "The App belongs to %s on GitHub."
+msgstr "La App pertenece a %s en GitHub."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/github_settings_block.js:0
+msgid "The App belongs to the GitHub account %s."
+msgstr "La App pertenece a la cuenta de GitHub %s."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/github_settings_block.js:0
+msgid "The App belongs to the GitHub organization %s."
+msgstr "La App pertenece a la organización de GitHub %s."
 
 #. module: incubacloud
 #. odoo-python
@@ -677,6 +756,17 @@ msgstr "El usuario no puede escribir en %(path)s."
 #: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
 msgid "This destination is not SFTP."
 msgstr "Este destino no es SFTP."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid ""
+"This is not a GitHub organization name: use the name in the organization's "
+"URL, letters, digits and single hyphens, at most 39 characters."
+msgstr ""
+"Este no es un nombre de organización de GitHub: use el que aparece en la URL "
+"de la organización, con letras, dígitos y guiones sueltos, de 39 caracteres "
+"como máximo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -18583,6 +18673,12 @@ msgid "Type the instance name to confirm:"
 msgstr "Escriba el nombre de la instancia para confirmar:"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid "Type the organization's name."
+msgstr "Escriba el nombre de la organización."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Type to search hosts…"
@@ -18931,6 +19027,11 @@ msgstr "Usuario"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__user_agent
 msgid "User Agent"
 msgstr "Agente de usuario"
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_github_app__owner_type__user
+msgid "User account"
+msgstr "Cuenta de usuario"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -19678,6 +19779,12 @@ msgstr ""
 "operaciones, no estados."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid "Where to create it"
+msgstr "Dónde crearla"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
 msgid ""
@@ -19699,6 +19806,15 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__traefik_deployed
 msgid "Whether the Traefik reverse proxy has been deployed on this host."
 msgstr "Si el proxy inverso Traefik ha sido desplegado en este host."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_github_app__owner_type
+msgid ""
+"Whether the account that owns the App is a user account or an organization, "
+"as the manifest flow answered it."
+msgstr ""
+"Si la cuenta propietaria de la App es una cuenta de usuario o una "
+"organización, según la respuesta del flujo del manifiesto."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__hardening_cdn_only
@@ -24456,18 +24572,6 @@ msgstr "Origen: la excepción de arriba."
 #: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
 msgid "Source: the platform's CDN, refreshed daily."
 msgstr "Origen: la CDN de la plataforma, actualizada a diario."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/github_settings_block.xml:0
-msgid ""
-"Step 1 of 2. The panel sends you to GitHub to create an App with the right\n"
-"                            permissions and webhook already set. It is created in your GitHub account,\n"
-"                            and you can then install it on any organization you manage."
-msgstr ""
-"Paso 1 de 2. El panel le lleva a GitHub para crear una App con los permisos "
-"y el webhook ya configurados. Se crea en su cuenta de GitHub, y después "
-"puede instalarla en cualquier organización que administre."
 
 #. module: incubacloud
 #. odoo-javascript

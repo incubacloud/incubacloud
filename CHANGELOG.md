@@ -8,8 +8,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.233] — unreleased
 
-Two fixes for a panel on Odoo.sh. The update changes no table and has no
-data migration.
+Two fixes for a panel on Odoo.sh, and the GitHub App can be created under
+an organization, chosen on the setup page. The update adds the column
+`owner_type` to the GitHub App, empty on an App there is, and has no data
+migration.
+
+### Added
+
+- **The GitHub App under an organization.** The setup page asks where
+  GitHub creates the App: *My account*, as before, or *An organization*,
+  named as in its GitHub URL. The name must be a GitHub login (letters,
+  digits and single hyphens, neither first nor last, at most 39
+  characters); anything else is refused on the page, and nothing but the
+  organization's segment of
+  `https://github.com/organizations/<name>/settings/apps/new` comes from
+  it. GitHub creates the App there only for an owner or App manager of the
+  organization. The page's form comes back to the panel, which then sends
+  the manifest on to GitHub; the state is signed as before. Settings →
+  GitHub says whom the App belongs to, a GitHub account or an organization,
+  kept from the callback in `owner_type`.
 
 ### Fixed
 
@@ -30,6 +47,12 @@ data migration.
   constraint. The bot and its partner are now created with the ORM,
   where every installed module's defaults apply, whichever module adds
   the column.
+
+### Documentation
+
+- *Projects* says that the GitHub App can be created under an organization,
+  by its owners and App managers, and that one created under your account
+  can still be installed on an organization.
 
 ## [1.0.232] — unreleased
 

@@ -65,6 +65,15 @@ class CloudGitHubApp(models.Model):
             " taken from the webhook by itself."
         ),
     )
+    owner_type = fields.Selection(
+        [("user", "User account"), ("organization", "Organization")],
+        string="App Owner Type",
+        readonly=True,
+        help=(
+            "Whether the account that owns the App is a user account or an"
+            " organization, as the manifest flow answered it."
+        ),
+    )
     slug = fields.Char(
         string="App Slug",
         readonly=True,
