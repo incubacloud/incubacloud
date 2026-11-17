@@ -84,7 +84,8 @@ class SecurityEventsCase(TransactionCase):
         # The cron writes the servers' rows on a READ COMMITTED cursor of
         # its own: in test mode it rides on this transaction, outside it
         # would be a connection that sees nothing of the test.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.Events = self.env["cloud.security.events"]
         self.now = time.time_ns()
         self.lines = {"accepted": [], "sudo": [], "auditd": []}

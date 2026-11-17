@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, test } from "@odoo/hoot";
 import { click, edit, queryOne, waitFor } from "@odoo/hoot-dom";
 import { animationFrame } from "@odoo/hoot-mock";
 import { Component, useState, xml } from "@odoo/owl";
-import { allowTranslations, mountWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, mountWithCleanup } from "@web/../tests/web_test_helpers";
 import { relayIcon } from "@incubacloud/utils/icons";
 import { PasswordInput } from "@incubacloud/components/password_input/password_input";
 
 // The hint and the placeholder are translated, read here as text.
-beforeEach(() => allowTranslations());
+beforeEach(() => patchTranslations());
 
 describe("PasswordInput — class structure", () => {
     test("template name is set", () => {

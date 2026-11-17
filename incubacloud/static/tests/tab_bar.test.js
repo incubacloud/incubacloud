@@ -3,7 +3,7 @@ import { click, edit, press, queryAll, queryOne, waitFor } from "@odoo/hoot-dom"
 import { animationFrame } from "@odoo/hoot-mock";
 import { Component, useState, xml } from "@odoo/owl";
 import {
-    allowTranslations,
+    patchTranslations,
     mountWithCleanup,
     patchWithCleanup,
 } from "@web/../tests/web_test_helpers";
@@ -71,7 +71,7 @@ async function mountBar({ tabs = BAR, more = MORE } = {}) {
 }
 
 describe("TabBar «More»", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("the bar shows its tabs and the button, the list closed", async () => {
         await mountBar();
@@ -187,7 +187,7 @@ describe("TabBar.place", () => {
 });
 
 describe("InstanceDetail — tabs and marks", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     /**
      * A stand-in of the page on the shipped getters.
@@ -341,7 +341,7 @@ describe("InstanceDetail — tabs and marks", () => {
 });
 
 describe("InstanceDetail — the new-instance page, mounted", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     /** Mount the page of a new instance; resolves with the toasts it raised. */
     async function mountNew() {

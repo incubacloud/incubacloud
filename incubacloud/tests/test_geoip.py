@@ -155,7 +155,7 @@ class TestGeoip(TransactionCase):
         self.settings.security_geoip = True
         self.tmp = tempfile.mkdtemp(prefix="test-geoip-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.startPatcher(patch.dict(config.options.maps[0], {
+        self.startPatcher(patch.dict(config.options, {
             "geoip_country_db": os.path.join(self.tmp, "missing.mmdb"),
         }))
         self.addCleanup(geoip._READERS.clear)
@@ -172,7 +172,7 @@ class TestGeoip(TransactionCase):
         """
         path = Path(self.tmp, "GeoLite2-Country.mmdb")
         path.write_bytes(_mmdb(networks, "GeoLite2-Country"))
-        config.options.maps[0]["geoip_country_db"] = str(path)
+        config.options["geoip_country_db"] = str(path)
 
     def _stored(self):
         """Return the stored DB-IP attachment."""
@@ -215,7 +215,7 @@ class TestGeoip(TransactionCase):
         """An Odoo database that does not open counts as none."""
         path = Path(self.tmp, "broken.mmdb")
         path.write_bytes(b"not a database")
-        config.options.maps[0]["geoip_country_db"] = str(path)
+        config.options["geoip_country_db"] = str(path)
         self._store_october()
         self.assertEqual(geoip.country(self.env, "8.8.8.8"), "ES")
 

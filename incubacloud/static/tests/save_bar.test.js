@@ -1,7 +1,7 @@
 import { animationFrame, beforeEach, describe, expect, test, tick } from "@odoo/hoot";
 import { click, edit, queryOne } from "@odoo/hoot-dom";
 import { Component, useState, xml } from "@odoo/owl";
-import { allowTranslations, mountWithCleanup, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, mountWithCleanup, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import {
     restoreForm, SaveBar, unsavedCount,
@@ -268,7 +268,7 @@ class SecretPage extends Component {
 describe("SaveBar — Discard and a password field", () => {
     beforeEach(() => {
         // The field's placeholder is translated, read here as text.
-        allowTranslations();
+        patchTranslations();
         patchWithCleanup(rpc, { _rpc: () => Promise.resolve(false) });
     });
 

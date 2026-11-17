@@ -53,9 +53,10 @@ class CloudSecurityEvent(models.Model):
     code = fields.Char(required=True, readonly=True)
     event_at = fields.Datetime(readonly=True)
 
-    _identity_uniq = models.Constraint(
-        "unique (identity)", "A security event is remembered once.",
-    )
+    _sql_constraints = [
+        ("identity_uniq", "unique (identity)",
+         "A security event is remembered once."),
+    ]
 
     @api.model
     def _known(self, identities):

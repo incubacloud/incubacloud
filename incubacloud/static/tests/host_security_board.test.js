@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
 import { animationFrame } from "@odoo/hoot-mock";
 import {
-    allowTranslations,
+    patchTranslations,
     mountWithCleanup,
     patchWithCleanup,
     preloadBundle,
@@ -79,7 +79,7 @@ function figuresOnly() {
 }
 
 describe("HostSecurityBoard", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("reads its server's view in one route, the filter beside it", () => {
         const comp = viewWith(null);
@@ -121,7 +121,7 @@ describe("HostSecurityBoard", () => {
 
 describe("HostSecurityBoard, mounted", () => {
     preloadBundle("web.chartjs_lib");
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     for (const [state, words] of [
         ["unavailable", "not available on this panel yet"],
