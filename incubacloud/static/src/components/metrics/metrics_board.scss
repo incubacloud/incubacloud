@@ -696,6 +696,46 @@
   overflow: auto;
 }
 
+// The known keys' card: the form that adds one, its buttons and the
+// removed keys under the list.
+.ic-sb-keyform {
+  display: grid;
+  gap: 10px;
+  max-inline-size: 640px;
+  margin-block: 6px 12px;
+
+  input,
+  textarea {
+    inline-size: 100%;
+  }
+}
+
+.ic-sb-addkey {
+  margin-inline-start: auto;
+}
+
+.ic-sb-keyactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ic-sb-removed {
+  margin-block-start: 10px;
+  color: var(--rl-fg2);
+  font-size: 12.5px;
+
+  summary {
+    cursor: pointer;
+  }
+}
+
+.ic-sb-removedlist {
+  margin: 6px 0 0;
+  padding-inline-start: 18px;
+  overflow-wrap: anywhere;
+}
+
 // On a phone every table of the app becomes cards (app.scss, "Lists
 // become cards"): here a card is the row's name on a line of its own,
 // then each figure with its label, wrapping as the width allows.

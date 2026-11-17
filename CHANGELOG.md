@@ -24,7 +24,9 @@ stays, also when the record behind it is deleted. Agents read an
 instance's metrics by the hour, and the assistant's Stop takes effect at
 once. A move's cut is measured from the drain and broken down by part, a
 job hands its scripts to the server in one exchange, and the cutover sees
-the destination healthy within half a second.
+the destination healthy within half a second. A server keeps the SSH keys
+its Administrators sign in with as known keys: their sign-ins are listed
+and raise no alert, and each key added raises a critical alert of its own.
 
 The update adds the SFTP columns of backup destinations (`sftp_host`,
 `sftp_port`, `sftp_user`, `sftp_path`, `sftp_private_key`,
@@ -32,7 +34,8 @@ The update adds the SFTP columns of backup destinations (`sftp_host`,
 `sftp_host_key_trusted_at`, `sftp_host_key_trusted_by`), all empty on the
 destinations there are, the table `cloud_host_reboot`, seven columns on
 hosts for their restart and `backup_path_suffix`, `move_cut_parts` and
-`move_last_cut_breakdown` on instances. Its data
+`move_last_cut_breakdown` on instances, and the table
+`cloud_host_known_key`, empty. Its data
 migration, 1.0.232's post-migrate, writes each backup destination's
 retention in the form it must now have (spaces gone, the unit in capitals,
 an empty one as `3M`) and names in the log any it leaves invalid, the
@@ -48,6 +51,28 @@ Spanish name of the cron of unused managed backends says *almacenamiento
 gestionado de copias* on a running panel too.
 
 ### Added
+
+- **Known SSH keys of a server.** In **Metrics → Security**, an
+  Administrator adds a key the team signs in with (the line of its `.pub`
+  file, the line `ssh-keygen -lf` prints, or its SHA256 fingerprint; only
+  the fingerprint is kept and a private key is refused), with a name and,
+  optionally, the addresses it may sign in from. A sign-in with it, from
+  the moment it was added until it is removed, is listed as *known key:
+  <name>* and raises no `security_ssh_login_foreign`; from outside its
+  addresses it raises that alert naming the key. The panel's own key, and
+  the one it replaced, cannot be added. Each addition is audited, raises
+  the critical alert `security_known_key_added` (one per key, left open
+  when the key is removed) and emails every Administrator and the
+  account's holder, with no daily quota. Keys are added and removed only
+  by the server's routes (an Administrator's session: no API key, no
+  agent), never edited but for their name, and a removed key stays listed
+  and never comes back; a server keeps 20 active keys at most, and the
+  alert says whether a key is limited to some addresses, never which. A
+  list that cannot be read alerts as if no key were known. A known key
+  covers the sign-in alone: `sudo` and
+  the changes to watched files of its session alert as before. Developers
+  see the list without its addresses. Where security logs are not
+  available, there is no list.
 
 - **SFTP backup destinations (#93).** A destination's type is S3
   compatible or SFTP, chosen when it is created. An SFTP one names a

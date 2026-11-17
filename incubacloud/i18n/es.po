@@ -6859,8 +6859,11 @@ msgid "Filter repos…"
 msgstr "Filtrar repos…"
 
 #. module: incubacloud
+#. odoo-javascript
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_known_key__fingerprint
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__fingerprint
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__fingerprint
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
 msgid "Fingerprint"
 msgstr "Huella"
 
@@ -28360,3 +28363,448 @@ msgstr "· opcional"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Use a port between 1 and 65535."
 msgstr "Use un puerto entre 1 y 65535."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "Paste the public key or its SHA256 fingerprint."
+msgstr "Pegue la clave pública o su huella SHA256."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid ""
+"This is a private key. Paste the public key (the .pub file) or its "
+"fingerprint; the private key was not saved."
+msgstr ""
+"Esto es una clave privada. Pegue la clave pública (el archivo .pub) o su "
+"huella; la clave privada no se ha guardado."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid ""
+"This is a certificate. Paste the public key it certifies (the .pub file) or "
+"that key's fingerprint."
+msgstr ""
+"Esto es un certificado. Pegue la clave pública que certifica (el archivo "
+".pub) o la huella de esa clave."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "Paste a single line: one public key or one fingerprint."
+msgstr "Pegue una sola línea: una clave pública o una huella."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid ""
+"This is an MD5 fingerprint. The servers log SHA256 ones: paste the public "
+"key, or what ssh-keygen -lf prints for it."
+msgstr ""
+"Esto es una huella MD5. Los servidores registran huellas SHA256: pegue la "
+"clave pública o lo que muestra ssh-keygen -lf para ella."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "That is not a public key or a SHA256 fingerprint."
+msgstr "Eso no es una clave pública ni una huella SHA256."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "%(value)s is not an address or a network."
+msgstr "%(value)s no es una dirección ni una red."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "%(value)s means any address: leave Only from empty instead."
+msgstr "%(value)s significa cualquier dirección: deje vacío «Solo desde»."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "Only from may name %(count)s addresses or networks at most."
+msgstr "«Solo desde» admite como máximo %(count)s direcciones o redes."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "Give the key a name, such as the laptop it is on."
+msgstr "Ponga un nombre a la clave, como el del portátil en el que está."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "A key's name has %(count)s characters at most."
+msgstr "El nombre de una clave tiene como máximo %(count)s caracteres."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "A known key needs its server."
+msgstr "Una clave conocida necesita su servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "That is the panel's own key for this server."
+msgstr "Esa es la clave del propio panel para este servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "A removed key cannot be added back: add it again as a new key."
+msgstr ""
+"Una clave quitada no puede volver: añádala de nuevo como una clave nueva."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid ""
+"A known key's fingerprint, addresses and dates never change: remove it and "
+"add it again."
+msgstr ""
+"La huella, las direcciones y las fechas de una clave conocida no cambian "
+"nunca: quítela y añádala de nuevo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid ""
+"A known key is never deleted: remove it, and it stays listed as removed."
+msgstr ""
+"Una clave conocida nunca se borra: quítela y seguirá en la lista como "
+"quitada."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "This key is already known on this server."
+msgstr "Esta clave ya es conocida en este servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "Another known key of this server has that name."
+msgstr "Otra clave conocida de este servidor tiene ese nombre."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "That key is not a known key of this server."
+msgstr "Esa clave no es una clave conocida de este servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid ""
+"%(host)s: %(user)s added the known SSH key «%(label)s» (%(fingerprint)s): "
+"its sign-ins no longer raise an alert. If you did not expect it, remove it "
+"in Metrics → Security of the server."
+msgstr ""
+"%(host)s: %(user)s ha añadido la clave SSH conocida «%(label)s» "
+"(%(fingerprint)s): sus inicios de sesión ya no generan alertas. Si no lo "
+"esperaba, quítela en Métricas → Seguridad del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "It may sign in only from some addresses."
+msgstr "Solo puede iniciar sesión desde algunas direcciones."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_security_events.py:0
+msgid "with the known key «%(label)s» from an address it may not sign in from"
+msgstr ""
+"con la clave conocida «%(label)s» desde una dirección desde la que no puede "
+"iniciar sesión"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid ""
+"If you did not expect it, remove the key in Metrics → Security of the "
+"server, and take away the access to the panel of whoever added it: Users, "
+"then Remove."
+msgstr ""
+"Si no lo esperaba, quite la clave en Métricas → Seguridad del servidor y "
+"quítele el acceso al panel a quien la añadió: Usuarios y luego Eliminar."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid ""
+"%(actor)s added the SSH key %(door)s to the known keys of the server "
+"%(server)s on %(place)s: its sign-ins there no longer raise an alert."
+msgstr ""
+"%(actor)s ha añadido la clave SSH %(door)s a las claves conocidas del "
+"servidor %(server)s en %(place)s: sus inicios de sesión allí ya no generan "
+"alertas."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "Known SSH key added to %(server)s: %(door)s"
+msgstr "Clave SSH conocida añadida a %(server)s: %(door)s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Known keys"
+msgstr "Claves conocidas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "sign-ins with them are recorded, without an alert"
+msgstr "sus inicios de sesión se registran, sin alerta"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Add a key"
+msgstr "Añadir una clave"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "e.g. Ana's laptop"
+msgstr "p. ej., portátil de Ana"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Public key or fingerprint"
+msgstr "Clave pública o huella"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid ""
+"Paste the line of the .pub file (ssh-ed25519 AAAA…) or its SHA256 "
+"fingerprint, as ssh-keygen -lf prints it. Never the private key."
+msgstr ""
+"Pegue la línea del archivo .pub (ssh-ed25519 AAAA…) o su huella SHA256, tal "
+"como la muestra ssh-keygen -lf. Nunca la clave privada."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Only from (optional)"
+msgstr "Solo desde (opcional)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid ""
+"Addresses or networks, separated by commas. A sign-in with this key from "
+"anywhere else raises a critical alert. Empty: any address."
+msgstr ""
+"Direcciones o redes separadas por comas. Un inicio de sesión con esta clave "
+"desde cualquier otro sitio genera una alerta crítica. Vacío: cualquier "
+"dirección."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid ""
+"Its sign-ins will no longer raise an alert. Every administrator is told of "
+"this key."
+msgstr ""
+"Sus inicios de sesión dejarán de generar alertas. Se avisará de esta clave a"
+" todos los administradores."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Add the key"
+msgstr "Añadir la clave"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid ""
+"No known key. Every SSH sign-in with a key that is not the panel's raises a "
+"critical alert. If you sign in to this server with your own key, add its "
+"fingerprint here."
+msgstr ""
+"No hay claves conocidas. Todo inicio de sesión por SSH con una clave que no "
+"sea la del panel genera una alerta crítica. Si usted inicia sesión en este "
+"servidor con su propia clave, añada aquí su huella."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "known key: %s"
+msgstr "clave conocida: %s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "known key «%s» from an address it may not sign in from"
+msgstr "clave conocida «%s» desde una dirección no permitida para ella"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "a known key"
+msgstr "una clave conocida"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Added by %(user)s on %(date)s"
+msgstr "Añadida por %(user)s el %(date)s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "last used %s"
+msgstr "último uso: %s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "never used"
+msgstr "sin usar"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Removed by %(user)s on %(date)s"
+msgstr "Quitada por %(user)s el %(date)s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "any address"
+msgstr "cualquier dirección"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "some addresses only"
+msgstr "solo algunas direcciones"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Could not save the key."
+msgstr "No se pudo guardar la clave."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Sign-ins with «%s» will raise an alert again."
+msgstr "Los inicios de sesión con «%s» volverán a generar alertas."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
+msgid "Removed keys (%s)"
+msgstr "Claves quitadas (%s)"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_host_known_key
+msgid "Known SSH key of a server"
+msgstr "Clave SSH conocida de un servidor"
+
+#. module: incubacloud
+#. odoo-javascript
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_known_key__allowed_networks
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Only from"
+msgstr "Solo desde"
+
+#. module: incubacloud
+#. odoo-javascript
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_known_key__added_at
+#: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+msgid "Added"
+msgstr "Añadida"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_known_key__removed_at
+msgid "Removed"
+msgstr "Quitada"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_known_key__removed_by
+msgid "Removed by"
+msgstr "Quitada por"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__security_known_key_ids
+msgid "Known SSH keys"
+msgstr "Claves SSH conocidas"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_known_key__name
+msgid ""
+"Who or what holds the key, as the alerts and the Security view name it."
+msgstr ""
+"Quién o qué tiene la clave, tal como la nombran las alertas y la vista "
+"Seguridad."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_known_key__fingerprint
+msgid "The key's SHA256 fingerprint, as sshd logs it."
+msgstr "La huella SHA256 de la clave, tal como la registra sshd."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_known_key__allowed_networks
+msgid ""
+"The addresses or networks a sign-in with this key may come from; from "
+"anywhere else it raises a critical alert. Empty: any address."
+msgstr ""
+"Las direcciones o redes desde las que puede llegar un inicio de sesión con "
+"esta clave; desde cualquier otro sitio genera una alerta crítica. Vacío: "
+"cualquier dirección."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_known_key__added_at
+msgid "From when its sign-ins raise no alert."
+msgstr "Desde cuándo sus inicios de sesión no generan alertas."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_known_key__last_used_at
+msgid "The last sign-in with it the security events' check read."
+msgstr ""
+"El último inicio de sesión con ella que leyó la comprobación de eventos de "
+"seguridad."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "%(value)s is an IPv4 address written as IPv6: write it as IPv4."
+msgstr ""
+"%(value)s es una dirección IPv4 escrita como IPv6: escríbala como IPv4."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid ""
+"%(value)s is too wide: a network of Only from is a /%(prefix)s or narrower."
+msgstr ""
+"%(value)s es demasiado amplia: una red de «Solo desde» es una /%(prefix)s o "
+"más estrecha."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "A server has %(count)s known keys at most: remove one first."
+msgstr ""
+"Un servidor tiene como máximo %(count)s claves conocidas: quite una primero."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "The key was not added: its alert could not be raised."
+msgstr "La clave no se ha añadido: no se pudo generar su alerta."

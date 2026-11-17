@@ -310,6 +310,7 @@ from . import test_security_logs
 from . import test_agents_credential
 from . import test_security_logs_parse
 from . import test_security_events
+from . import test_known_keys
 from . import test_central_without_grafana
 from . import test_geoip
 from . import test_security_board

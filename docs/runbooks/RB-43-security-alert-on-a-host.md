@@ -2,7 +2,7 @@
 
 **Severity:** critical (`security_ssh_login_foreign`,
 `security_ssh_login_panel_key_elsewhere`, `security_sensitive_change`,
-`security_f2b_ineffective`) · warning (`security_ssh_login_unconfirmed`,
+`security_f2b_ineffective`, `security_known_key_added`) · warning (`security_ssh_login_unconfirmed`,
 `security_sudo_foreign`, `security_ssh_bruteforce`,
 `security_weblogin_bruteforce`, `security_logs_silent`,
 `security_events_backlog`) · **When:** one of them is raised, or someone
@@ -19,7 +19,8 @@ Most alerts are someone of the team working by hand. Before anything
 else, ask, and compare with the alert's time:
 
 - a sign-in with a personal key, from the provider's console or from a
-  laptop (`security_ssh_login_foreign`);
+  laptop (`security_ssh_login_foreign`): a key the team signs in with
+  every day belongs in the server's known keys (section 6);
 - a user added or an SSH setting changed by hand (`security_sensitive_change`,
   a warning when it was `root`);
 - a `sudo` by a user created for an incident (`security_sudo_foreign`);
@@ -129,6 +130,45 @@ you found and when, even if you conclude that nothing was exposed.
   one kind in five minutes. Nothing is lost, the alerts come late. Look
   for the server that writes them (often a script calling `sudo` in a loop)
   in the *Security lines* chart of each server's Security view.
+
+## 6. Known keys
+
+A server's known keys (**Metrics → Security**, *Known keys*) are the keys
+the team signs in with by hand: a sign-in with one, from the addresses it
+may sign in from, is listed as *known key: <name>* and raises nothing. Only
+an Administrator adds or removes one, from that card; nobody edits one.
+
+- **`security_known_key_added`** is raised by every addition, critical, one
+  per key, and stays open when the key is removed. Whoever added it is in
+  its text and in the audit log (*Known SSH key added*, with the server).
+  Not expected: remove the key, then read the sign-ins with it as in
+  section 2.
+- **A key counts from its addition.** A sign-in from before it keeps its
+  alert, also one the cron reads late. Each pass reads the known keys when
+  it starts: a sign-in in the minutes the key is being added can still
+  raise one `security_ssh_login_foreign`, on the safe side. Add the key
+  before signing in with it, and dismiss that one alert if it comes.
+- **Two clocks.** A key's addition and removal are the panel's clock; a
+  sign-in's instant is the server's, as its journal wrote it. Keep both on
+  NTP: a server whose clock is N seconds off moves the key's window by N
+  for its lines, at its addition as at its removal.
+- **From outside *Only from*** the sign-in is `security_ssh_login_foreign`
+  and the text names the key: treat it as a copied key (section 3).
+- **It covers the sign-in, nothing else.** `sudo` and the changes to the
+  watched files in that session alert as anyone's: the lines carry no
+  session that ties them to the sign-in. A change made as `root` is a
+  warning outside the panel's jobs, consoles and terminals. auditd only
+  watches, on a server the panel hardened, `passwd`, `shadow`, `sudoers`
+  (with `sudoers.d`) and `/etc/ssh`: other changes made with a known key
+  raise nothing.
+- **Fails closed.** A list of keys that cannot be read, a database error
+  included, judges the sign-in as if no key were known: it alerts, and the
+  error is in the log (`[security] the known keys of cloud.host(id=…) not
+  read`). A last use that cannot be written is logged and the pass goes on.
+- A sign-in with a known key is not kept in `cloud.security.event`: each
+  pass that reads it again judges it again, so removing the key never
+  turns an old sign-in into an alert, and a new one after the removal
+  alerts.
 
 ## Rollback
 

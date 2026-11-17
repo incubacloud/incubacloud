@@ -26,10 +26,12 @@ where an Administrator sees the addresses, users and lines behind it.
 **`security_ssh_login_foreign`** · critical. Someone signed in to the server
 over SSH in a way the panel never does: with another key, with a password
 where the panel uses a key, or as another user. The text names the user, the
-address and the time.
+address and the time. A known key used from outside the addresses it may
+sign in from raises it too, and the text names the key.
 
 - If it was you or a colleague (a key of your own, your provider's console),
-  dismiss it.
+  dismiss it. To stop the alerts of a key of your own, add it to the
+  server's [known keys](../hosts/security.md#known-keys).
 - If nobody you know signed in, treat the server as taken over: limit who may
   reach SSH (**Apply Hardening** with the server's allowed SSH IPs), remove
   the keys you do not know from `~/.ssh/authorized_keys` of every user, and
@@ -45,6 +47,17 @@ it connects from, and it was another one. The key may have been copied.
   new public key on the server and remove the old one from
   `authorized_keys`.
 - Then look, as above, at what was done from that address.
+
+**`security_known_key_added`** · critical. An Administrator added a key to
+the server's [known keys](../hosts/security.md#known-keys): its sign-ins no
+longer raise an alert. The text names who added it and the key's name and
+fingerprint, and says whether the key may sign in from some addresses only,
+never which. Removing the key does not close it.
+
+- If you expected it, dismiss it.
+- If not, remove the key in **Metrics → Security**, talk to whoever added it,
+  or take away their access to the panel, and look at **Sign-ins over SSH**
+  for what the key was used for.
 
 **`security_ssh_login_unconfirmed`** · warning. A sign-in with the panel's key
 or user came from an address the panel was not seen using, and the panel

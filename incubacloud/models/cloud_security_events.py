@@ -22,6 +22,17 @@ Loki (F3, C1); this cron reads them back with the account's credential
 - a sudo command by a user that is not the panel's
   (``security_sudo_foreign``, warning).
 
+**Known keys.** A sign-in with a key an administrator added to the
+server's known keys (``cloud_host_known_key.py``), within the key's
+window (from its addition to its removal, against the line's instant,
+the server's own clock), raises nothing and is not remembered as an
+event: each pass that reads it again judges it again. The panel's own
+key is looked at first, so a known key never covers it from elsewhere.
+From outside the addresses a key may sign in from, it is
+``security_ssh_login_foreign`` (critical). Its sudo and its changes to
+the watched files are judged as everyone's: the lines carry no session
+to tie them to the sign-in.
+
 **Three queries, each with its cursor.** Sign-ins, sudo and auditd are
 read apart, so a deployment's sudo lines never fill the pages before a
 sign-in, and the panel's own sudo is left out in Loki. Each window runs
@@ -61,6 +72,7 @@ from odoo import api, fields, models
 
 from . import logs
 from ._concurrency import is_concurrency_error, read_committed_cursor
+from .cloud_host_known_key import match_known_key
 from .cloud_host_observability import _panel_source_network
 from .cloud_security_event import event_identity
 
@@ -140,6 +152,10 @@ NOTICE_EVERY = timedelta(hours=1)
 
 #: A sign-in left for the next pass: no connection left to confirm it.
 HOLD = "hold"
+
+#: A sign-in with one of the server's known keys, from where it may sign
+#: in from: nobody's alert.
+KNOWN = "known"
 
 
 def _to_datetime(ns):
@@ -254,7 +270,9 @@ class _Pass:
         self.known = set()
         self.span = None
         self._fingerprints = {}
+        self._known = {}
         self._windows = {}
+        self.used = {}
 
     def fingerprints(self, host):
         """Return the panel's key fingerprints for *host*, read once a pass.
@@ -264,6 +282,15 @@ class _Pass:
         if host.id not in self._fingerprints:
             self._fingerprints[host.id] = host._panel_key_fingerprints()
         return self._fingerprints[host.id]
+
+    def known_keys(self, host):
+        """Return *host*'s known keys, removed ones included, read once a pass.
+
+        :rtype: list[cloud_host_known_key.KnownKey]
+        """
+        if host.id not in self._known:
+            self._known[host.id] = host._security_known_keys()
+        return self._known[host.id]
 
     def windows(self, host, reader):
         """Return the panel's windows on *host* over the span, read once.
@@ -608,6 +635,8 @@ class CloudSecurityEvents(models.AbstractModel):
             verdict = self._security_isolated(host, judge, run, host, line)
             if verdict == HOLD:
                 hold = line.ns if hold is None else min(hold, line.ns)
+        if query == "accepted":
+            self._security_note_used(run)
         return hold
 
     def _security_isolated(self, host, judge, *args):
@@ -653,13 +682,15 @@ class CloudSecurityEvents(models.AbstractModel):
         verdict = self._security_login_verdict(run, host, record, line.ns)
         if verdict is None or verdict == HOLD:
             return verdict
-        code, level, reason = verdict
+        code, level, reason = verdict[:3]
         at = _to_datetime(line.ns)
         detail = {
             "user": record["user"], "ip": record["ip"],
             "method": logs.sanitize(record["method"], 32), "reason": reason,
             "time": fields.Datetime.to_string(at),
         }
+        if len(verdict) > 3:
+            detail["key_label"] = verdict[3]
         if code == CODE_UNCONFIRMED:
             # Only the two sign-in alerts carry the address (D2).
             del detail["ip"]
@@ -679,13 +710,16 @@ class CloudSecurityEvents(models.AbstractModel):
         - on a server the panel signs in to with a password (or a key it
           cannot read), by user and address: another user is someone
           else's; the panel's user from another address, the connection
-          decides.
+          decides;
+        - a key that is not the panel's but one of the server's known
+          keys in its window: nobody's alert, from the addresses it may
+          sign in from; from another, someone else's.
 
         :param _Pass run: this pass.
         :param host: the ``cloud.host``.
         :param dict record: what ``logs.parse_sshd`` gave.
         :param int ns: the line's instant.
-        :return: None, :data:`HOLD` or ``(code, level, reason)``.
+        :return: None, :data:`HOLD` or ``(code, level, reason[, label])``.
         """
         fingerprints = run.fingerprints(host)
         if fingerprints:
@@ -694,9 +728,15 @@ class CloudSecurityEvents(models.AbstractModel):
             if record["fingerprint"] not in fingerprints and not (
                 self._security_previous_key(host, record["fingerprint"], ns)
             ):
-                return (CODE_FOREIGN, "critical", "key")
+                known = self._security_known_key(run, host, record, ns)
+                if known is None:
+                    return (CODE_FOREIGN, "critical", "key")
+                return None if known == KNOWN else known
             mismatch = (CODE_ELSEWHERE, "critical", None)
         else:
+            known = self._security_known_key(run, host, record, ns)
+            if known is not None:
+                return None if known == KNOWN else known
             if record["user"] != logs.sanitize(host.user, logs.USER_MAX):
                 return (CODE_FOREIGN, "critical", "user")
             mismatch = (CODE_FOREIGN, "critical", "address")
@@ -710,6 +750,70 @@ class CloudSecurityEvents(models.AbstractModel):
         if outcome == "mismatch":
             return mismatch
         return (CODE_UNCONFIRMED, "warning", None)
+
+    def _security_known_key(self, run, host, record, ns):
+        """Judge a sign-in by the server's known keys.
+
+        :param _Pass run: this pass; a sign-in with a known key is noted
+            in ``run.used`` for :meth:`_security_note_used`.
+        :param host: the ``cloud.host``.
+        :param dict record: what ``logs.parse_sshd`` gave.
+        :param int ns: the line's instant, the server's clock.
+        :return: None when no known key covers it, :data:`KNOWN` when one
+            does from an address it may sign in from, or
+            ``(CODE_FOREIGN, "critical", "known_key_address", label)``.
+        """
+        at = _to_datetime(ns)
+        try:
+            # A savepoint of its own: a database error reading the list
+            # would otherwise leave the event's transaction aborted, and
+            # its alert could not be written.
+            with self.env.cr.savepoint():
+                keys = run.known_keys(host)
+            key = match_known_key(keys, record["fingerprint"], at)
+        except Exception as exc:  # noqa: BLE001 — judged as if no key were known
+            if is_concurrency_error(exc):
+                raise
+            # Fail closed: a list that cannot be read must not silence the
+            # sign-in, which the event's own savepoint would skip.
+            _logger.exception(
+                "[security] the known keys of cloud.host(id=%s) not read: %s",
+                host.id, exc,
+            )
+            return None
+        if key is None:
+            return None
+        if not key.allows(record["ip"]):
+            return (CODE_FOREIGN, "critical", "known_key_address", key.name)
+        if key.removed_at is None:
+            run.used[key.id] = max(at, run.used.get(key.id, at))
+        return KNOWN
+
+    def _security_note_used(self, run):
+        """Write when each known key was last used, on a cursor of its own.
+
+        One write per key and pass, never backwards; on a cursor of its
+        own for the reason of :meth:`_security_heard`. A failure is logged
+        and leaves the pass as it was.
+
+        :param _Pass run: this pass.
+        """
+        if not run.used:
+            return
+        used, run.used = run.used, {}
+        try:
+            with read_committed_cursor(self.env.registry) as cr:
+                Key = self.env["cloud.host.known.key"].with_env(
+                    self.env(cr=cr),
+                ).sudo().with_context(active_test=False)
+                for key in Key.browse(list(used)).exists():
+                    moment = used[key.id].replace(microsecond=0)
+                    if not key.last_used_at or key.last_used_at < moment:
+                        key.write({"last_used_at": moment})
+        except Exception:  # noqa: BLE001 — the pass's alerts matter more than a date
+            # A last use is a convenience: the pass and its alerts stand.
+            _logger.exception("[security] the known keys' last use not written")
+        self.env["cloud.host.known.key"].invalidate_model(["last_used_at"])
 
     def _security_previous_key(self, host, fingerprint, ns):
         """Return whether *fingerprint* was the panel's key at *ns*.
@@ -1047,7 +1151,9 @@ class CloudSecurityEvents(models.AbstractModel):
         if code in (CODE_FOREIGN, CODE_ELSEWHERE):
             values.update(user=detail["user"], ip=detail["ip"])
         if code == CODE_FOREIGN:
-            values["reason"] = self._security_reason(detail.get("reason"))
+            values["reason"] = self._security_reason(
+                detail.get("reason"), detail.get("key_label"),
+            )
             if count == 1:
                 return _(
                     "%(host)s: SSH sign-in as %(user)s from %(ip)s at "
@@ -1132,13 +1238,20 @@ class CloudSecurityEvents(models.AbstractModel):
             "of the server.", **values,
         )
 
-    def _security_reason(self, reason):
+    def _security_reason(self, reason, label=None):
         """Return why a sign-in is not the panel's, as the text says it.
 
-        :param str reason: ``key``, ``password``, ``user`` or ``address``.
+        :param str reason: ``key``, ``password``, ``user``, ``address`` or
+            ``known_key_address``.
+        :param str label: the known key's name, for ``known_key_address``.
         :rtype: str
         """
         _ = self.env._
+        if reason == "known_key_address":
+            return _(
+                "with the known key «%(label)s» from an address it may not "
+                "sign in from", label=label or "",
+            )
         if reason == "password":
             return _("with a password, while the panel signs in to it with a key")
         if reason == "user":

@@ -112,6 +112,31 @@ describe("HostSecurityBoard", () => {
         expect(comp.countryText("local")).toBe("local");
     });
 
+    test("a sign-in with a known key reads with its name, from elsewhere marked", () => {
+        const comp = viewWith(null);
+        expect(comp.attributionText("known_key", "Ana's laptop")).toBe("known key: Ana's laptop");
+        expect(comp.attributionText("known_key_elsewhere", "CI")).toMatch(/known key «CI» from an address/);
+        expect(comp.attributionBad("known_key")).toBe(false);
+        expect(comp.attributionBad("known_key_elsewhere")).toBe(true);
+        expect(comp.keyText("known")).toBe("a known key");
+    });
+
+    test("the known keys split into the active ones and the removed ones", () => {
+        const comp = viewWith({ known_keys: { can_edit: false, rows: [
+            { id: 1, name: "Laptop", active: true, only_from: false, added_by: "Ana", added_at: null, last_used_at: null },
+            { id: 2, name: "Old", active: false, only_from: true, removed_by: "Bea", removed_at: null },
+        ] } });
+        expect(comp.activeKeys.map((k) => k.id)).toEqual([1]);
+        expect(comp.removedKeys.map((k) => k.id)).toEqual([2]);
+        expect(comp.keyOnlyFromText(comp.activeKeys[0])).toBe("any address");
+        expect(comp.keyOnlyFromText(comp.removedKeys[0])).toBe("some addresses only");
+        expect(comp.keyAddedText(comp.activeKeys[0])).toMatch(/Added by Ana .* never used/);
+        expect(comp.keyRemovedText(comp.removedKeys[0])).toMatch(/Removed by Bea/);
+        expect(comp.removedKeysTitle).toBe("Removed keys (1)");
+        comp.state.board.known_keys.removed_count = 25;
+        expect(comp.removedKeysTitle).toBe("Removed keys (25)");
+    });
+
     test("a cut sample says it counts the last lines", () => {
         const comp = viewWith({ tables: { ssh_sources: { rows: [], cut: true, sample: 5000 } } });
         expect(comp.sampleText("ssh_sources")).toMatch(/5.?000/);
@@ -154,6 +179,69 @@ describe("HostSecurityBoard, mounted", () => {
         expect("[data-table]").toHaveCount(0);
         expect(".ic-sb-lines").toHaveCount(0);
         expect("#ic-sb-instance").toHaveCount(0);
+    });
+
+    test("a Developer reads the known keys without a button", async () => {
+        const board = figuresOnly();
+        board.known_keys = { can_edit: false, rows: [
+            { id: 1, name: "Laptop", fingerprint: "SHA256:abc", key_type: "ED25519", active: true,
+              only_from: true, added_by: "Ana", added_at: "2026-11-17T10:00:00Z", last_used_at: null },
+        ] };
+        answer({ "/cloud/host/security_board": board });
+        await mountWithCleanup(HostSecurityBoard, { props: { hostId: 3 }, env: ENV, noMainContainer: true });
+        await animationFrame();
+        expect("[data-card=known_keys] [data-list=known_keys] tbody tr").toHaveCount(1);
+        expect("[data-card=known_keys] [data-list=known_keys] tbody tr").toHaveText(/some addresses only/);
+        expect("[data-action=add_key]").toHaveCount(0);
+        expect("[data-action=remove_key]").toHaveCount(0);
+        expect("[data-table]").toHaveCount(0);
+    });
+
+    test("a manager adds a key from the empty card", async () => {
+        const board = figuresOnly();
+        board.detail = true;
+        board.known_keys = { can_edit: true, rows: [] };
+        const added = { ok: true, known_keys: { can_edit: true, rows: [
+            { id: 4, name: "Laptop", fingerprint: "SHA256:abc", key_type: "", active: true,
+              only_from: true, allowed_networks: "192.0.2.15/32", added_by: "Ana",
+              added_at: "2026-11-17T10:00:00Z", last_used_at: null },
+        ] } };
+        const { params } = answer({ "/cloud/host/security_board": board, "/cloud/host/known_key_add": added });
+        const comp = await mountWithCleanup(HostSecurityBoard, { props: { hostId: 3 }, env: ENV, noMainContainer: true });
+        await animationFrame();
+        expect("[data-empty=known_keys]").toHaveText(/No known key/);
+        comp.openKeyForm();
+        await animationFrame();
+        expect("[data-form=known_key]").toHaveCount(1);
+        Object.assign(comp.state.keyForm, { name: "Laptop", key: "SHA256:abc", networks: "192.0.2.15" });
+        await comp.addKey();
+        await animationFrame();
+        expect(params["/cloud/host/known_key_add"]).toEqual({
+            host_id: 3, key: "SHA256:abc", name: "Laptop", networks: "192.0.2.15",
+        });
+        expect("[data-form=known_key]").toHaveCount(0);
+        expect("[data-list=known_keys] tbody tr").toHaveText(/192\.0\.2\.15\/32/);
+        expect("[data-action=remove_key]").toHaveCount(1);
+    });
+
+    test("a refused key leaves the field empty and says why", async () => {
+        const board = figuresOnly();
+        board.detail = true;
+        board.known_keys = { can_edit: true, rows: [], removed_count: 0 };
+        answer({
+            "/cloud/host/security_board": board,
+            "/cloud/host/known_key_add": { ok: false, error: "This is a private key." },
+        });
+        const comp = await mountWithCleanup(HostSecurityBoard, { props: { hostId: 3 }, env: ENV, noMainContainer: true });
+        await animationFrame();
+        comp.openKeyForm();
+        Object.assign(comp.state.keyForm, { name: "Oops", key: "-----BEGIN OPENSSH PRIVATE KEY-----" });
+        await comp.addKey();
+        await animationFrame();
+        expect(comp.state.keyForm.key).toBe("");
+        expect(comp.state.keyForm.name).toBe("Oops");
+        expect("#ic-sb-key-key").toHaveValue("");
+        expect("[data-form=known_key] .ic-field-error").toHaveText("This is a private key.");
     });
 
     test("a manager's answer draws its tables, an empty one with its words", async () => {
