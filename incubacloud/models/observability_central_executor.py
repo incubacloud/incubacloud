@@ -53,7 +53,10 @@ _LOKI_URL = "http://loki:3100/"
 #:    configuration changes; the agents' write-only users (plan #84, C1).
 #: 3. 15-nov-2026: Loki splits a query by day and queues 2 048 subqueries
 #:    per account, so a week of security lines is not refused with 429.
-CENTRAL_REVISION = 3
+#: 4. 17-nov-2026: the operator's cross-account read, ``/admin-r/``, is
+#:    gone from vmauth and from the proxy's routers; the operator keeps
+#:    series deletion only.
+CENTRAL_REVISION = 4
 
 #: Its existence keeps what Grafana left on the central through the
 #: deployments, for an operator who wants it before the update removes it
@@ -83,16 +86,11 @@ _ACCOUNT_READ_PATHS = f"/r/api/v1/({_READ_ENDPOINTS})"
 _ACCOUNT_LOG_WRITE_PATH = "/lw/loki/api/v1/push"
 _ACCOUNT_LOG_READ_PATHS = f"/lr/loki/api/v1/({_READ_ENDPOINTS})"
 
-#: The operator's cross-account read: the accounts' read endpoints and
-#: ``health``. It was ``/admin-r/.*``, the whole backend: imports,
-#: snapshots, flags. Closed (12-nov-2026) before the route can be opened
-#: under the public name to the addresses in
-#: ``metrics_central_operator_sources``. ``health`` reveals nothing and
-#: is what the deployment, the account sync and RB-11 probe.
-_OPERATOR_READ_PATHS = f"/admin-r/(health|api/v1/({_READ_ENDPOINTS}))"
-
-#: The operator's deletion route. Exact, so the key it carries opens
-#: ``delete_series`` and no other endpoint that honours ``authKey``.
+#: The operator's deletion route, its only one. Exact, so the key it
+#: carries opens ``delete_series`` and no other endpoint that honours
+#: ``authKey``. The operator also had a cross-account read, ``/admin-r/``,
+#: until 17-nov-2026: a panel reads only its own account, through
+#: ``/r/``, and no credential reads across accounts.
 _OPERATOR_DELETE_PATH = "/admin-d/api/v1/admin/tsdb/delete_series"
 
 #: Requests the operator may have in flight at once; vmauth answers the
@@ -100,8 +98,8 @@ _OPERATOR_DELETE_PATH = "/admin-d/api/v1/admin/tsdb/delete_series"
 #: route, so a user that writes has no cap: while an account's user was
 #: shared by its agents' writes, its logs and its panel, a cap there
 #: refused writes while reads ran — and after an outage every host empties
-#: its queue at once (12-nov-2026). The operator never writes; 16 covers
-#: four fleet boards at four queries each. An account's read user is capped
+#: its queue at once (12-nov-2026). The operator never writes and only
+#: deletes series, a few requests per purge. An account's read user is capped
 #: too once it no longer writes (``READ_MAX_CONCURRENT``). VictoriaMetrics
 #: queues the reads themselves (``-search.maxConcurrentRequests``, twice
 #: the cores, 10 s wait).
@@ -345,8 +343,9 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         Per account: its own user (reads its own series and logs, and
         writes them until its credential is rotated), its agents' user
         (writes only) and, while a read credential is rotated in, the same
-        user with the new password (reads only). Then one operator (the
-        cross-account read of the same endpoints, and series deletion).
+        user with the new password (reads only). Then one operator, which
+        only deletes series, and only while there is a deletion key: a
+        vmauth user without a route is a configuration vmauth refuses.
         Only users that never write have a cap on concurrent requests
         (``_OPERATOR_MAX_CONCURRENT``, ``READ_MAX_CONCURRENT``). There is
         deliberately NO ``unauthorized_user`` section:
@@ -369,10 +368,11 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
 
         :param accounts: the vmauth users, as
             ``cloud.settings._vmauth_users`` returns them.
-        :param operator_token: the cross-account operator credential.
+        :param operator_token: the operator credential, for series
+            deletion.
         :param delete_key: VictoriaMetrics' ``-deleteAuthKey``; empty
-            leaves the deletion route out, for a central not yet started
-            with a key.
+            leaves the operator out, for a central not yet started with a
+            key.
         :return: the YAML document as a string.
         """
         users = []
@@ -391,26 +391,44 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 write=account.get("write", True),
             )
             users.append(user)
-        operator_map = [
-            {
-                "src_paths": [_OPERATOR_READ_PATHS],
-                "url_prefix": _VM_URL,
-                "drop_src_path_prefix_parts": 1,
-            },
-        ]
         if delete_key:
-            operator_map.append({
-                "src_paths": [_OPERATOR_DELETE_PATH],
-                "url_prefix": f"{_VM_URL}?authKey={delete_key}",
-                "drop_src_path_prefix_parts": 1,
+            users.append({
+                "username": "operator",
+                "password": operator_token,
+                "max_concurrent_requests": _OPERATOR_MAX_CONCURRENT,
+                "url_map": [{
+                    "src_paths": [_OPERATOR_DELETE_PATH],
+                    "url_prefix": f"{_VM_URL}?authKey={delete_key}",
+                    "drop_src_path_prefix_parts": 1,
+                }],
             })
-        users.append({
-            "username": "operator",
-            "password": operator_token,
-            "max_concurrent_requests": _OPERATOR_MAX_CONCURRENT,
-            "url_map": operator_map,
-        })
         return yaml.safe_dump({"users": users}, sort_keys=False)
+
+    def _probe_credential(self, accounts):
+        """Return the credential the playbook proves the gateway with.
+
+        This panel's own account, as the list being shipped grants it: a
+        query through ``/r/`` with it crosses vmauth's check of the
+        credential, the account's read route and VictoriaMetrics, the path
+        every chart of the panel takes. It was the operator's, through
+        ``/admin-r/health``, until that route closed (17-nov-2026).
+
+        :param accounts: the vmauth users being shipped, as
+            ``cloud.settings._vmauth_users`` returns them.
+        :return: ``(user, password)``; ``("", "")`` when the list grants
+            this panel no read, which the probe then reports as a 401.
+        :rtype: tuple
+        """
+        own = self.env["cloud.settings"].sudo()._get_system().metrics_account
+        for account in accounts:
+            if (
+                own
+                and account["username"] == own
+                and account.get("read", True)
+                and account["password"]
+            ):
+                return account["username"], account["password"]
+        return "", ""
 
     def pre_run_checks(self):
         """Refuse a run that would orphan the central or publish it wrongly.
@@ -571,6 +589,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 "⚠ No metrics account resolved, so this central will "
                 "accept no writes from anyone."
             )
+        probe_user, probe_plain = self._probe_credential(accounts)
         public = self._public_endpoint(settings)
         single = self._single_name_vars()
         keep_grafana = bool(
@@ -592,10 +611,11 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             # same key sits on the operator's deletion route above;
             # nothing else has it.
             "ic_delete_auth_key": delete_key,
-            # The post-deploy health check has to *use* the credential, not
-            # just verify it, so the plaintext travels. It never lands on
-            # disk in clear: the tasks that consume it are ``no_log``.
-            "ic_operator_plain": operator_token,
+            # The post-deploy probe reads as this panel's own account, so
+            # the plaintext travels. It never lands on disk in clear: the
+            # task that consumes it is ``no_log``.
+            "ic_probe_user": probe_user,
+            "ic_probe_plain": probe_plain,
             # False while the parameter exists: what Grafana left stays.
             "ic_purge_grafana": not keep_grafana,
             # Empty keeps the central on this host's docker bridge only,

@@ -20,18 +20,19 @@
   changed_when: true
 
 - name: Wait for vmauth to answer
-  # Through the front door, with the operator credential: this proves
+  # Through the front door, with this panel's own account: this proves
   # the whole path works, not just that VictoriaMetrics is alive.
-  # /admin-r/health -> vmauth drops /admin-r -> VM /health.
+  # /r/api/v1/query -> vmauth checks the credential, forces the
+  # account's filter and drops /r -> VM answers the query. It was the
+  # operator's /admin-r/health until that route closed (17-nov-2026).
   ansible.builtin.uri:
-    url: "http://{{ ic_gateway_bind }}/admin-r/health"
+    url: "http://{{ ic_gateway_bind }}/r/api/v1/query?query=vector(1)"
     status_code: [200]
-    url_username: operator
-    # No default on purpose: omitting the password turns a missing
-    # credential into a 401 from vmauth, which is indistinguishable
-    # from the boundary itself having broken. Undefined must fail as
-    # undefined.
-    url_password: "{{ ic_operator_plain }}"
+    # No default on purpose: omitting the credential turns it into a
+    # 401 from vmauth, which is indistinguishable from the boundary
+    # itself having broken. Undefined must fail as undefined.
+    url_username: "{{ ic_probe_user }}"
+    url_password: "{{ ic_probe_plain }}"
     force_basic_auth: true
   register: ic_vm_health
   retries: 10

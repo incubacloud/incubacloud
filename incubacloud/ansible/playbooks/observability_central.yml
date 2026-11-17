@@ -56,8 +56,8 @@
     # on the host's ``direct`` entrypoint for the platform's own servers.
     # Empty changes nothing in the compose file.
     ic_direct_host: ""
-    # Who may reach the operator's read and series-deletion routes under
-    # the public name.
+    # Who may reach the operator's series-deletion route under the public
+    # name.
     ic_operator_sources: []
     # The central's single name (``metrics_central_single_path``): published
     # on the host's platform port (the ``direct`` entrypoint,
@@ -69,9 +69,10 @@
     ic_central_port: 0
     ic_central_cert: ""
     ic_central_key: ""
-    # Who may reach the operator's routes under the single name: the host,
-    # the private ranges (a panel beside the central arrives through
-    # Docker's DNAT with a container's address) and the operator's own.
+    # Who may reach the operator's deletion route under the single name:
+    # the host, the private ranges (a panel beside the central arrives
+    # through Docker's DNAT with a container's address) and the
+    # operator's own.
     ic_single_operator_sources: []
     ic_traefik_dir: "{{ ansible_env.HOME }}/traefik"
     # The public name reaches this host through a CDN, whose edge opens
@@ -388,8 +389,8 @@
               # as the hand-written gateway of a central next to its panel
               # (docs/observability-operations.md, «Publishing the central»): the
               # account prefixes for everyone (vmauth asks each for its
-              # credential), the operator's read and deletion routes for
-              # the addresses in ``ic_operator_sources`` only.
+              # credential), the operator's deletion route for the
+              # addresses in ``ic_operator_sources`` only.
               networks:
                 - default
                 - inverseproxy_shared
@@ -413,15 +414,7 @@
           {% if ic_public_forwarded %}
                 traefik.http.middlewares.ic-central-delete-sources.ipwhitelist.ipstrategy.depth: "1"
           {% endif %}
-                # The cross-account read, behind the same list as the
-                # deletion: vmauth serves only the accounts' read
-                # endpoints and health there. Empty list: this host only.
-                traefik.http.routers.ic-central-read.rule: "Host(`{{ ic_public_host }}`) && PathPrefix(`/admin-r/`)"
-                traefik.http.routers.ic-central-read.entrypoints: https
-                traefik.http.routers.ic-central-read.service: ic-central-gateway
-                traefik.http.routers.ic-central-read.priority: "30"
-                traefik.http.routers.ic-central-read.middlewares: ic-central-delete-sources
-          {% for router in ['ic-central-data', 'ic-central-delete', 'ic-central-read'] %}
+          {% for router in ['ic-central-data', 'ic-central-delete'] %}
           {% if ic_public_tls == 'default' %}
                 traefik.http.routers.{{ router }}.tls: "true"
           {% else %}
@@ -448,7 +441,7 @@
           {% if ic_single_host %}
                 # The single name, on the platform port: the account prefixes
                 # for every address the port admits (vmauth asks each for
-                # its credential), the operator's routes for
+                # its credential), the operator's deletion route for
                 # ``ic_single_operator_sources`` only. Its certificate is the
                 # file above, chosen by SNI; it outranks the entrypoint's
                 # catch-all refusal (priority 10000).
@@ -459,8 +452,7 @@
                 traefik.http.routers.ic-central.priority: "10010"
                 traefik.http.routers.ic-central.tls: "true"
                 traefik.http.routers.ic-central.tls.options: ic-central@file
-                traefik.http.routers.ic-central-operator.rule: "Host(`{{ ic_single_host }}`) && (PathPrefix(`/admin-r/`)
-                  || PathPrefix(`/admin-d/`))"
+                traefik.http.routers.ic-central-operator.rule: "Host(`{{ ic_single_host }}`) && PathPrefix(`/admin-d/`)"
                 traefik.http.routers.ic-central-operator.entrypoints: direct
                 traefik.http.routers.ic-central-operator.service: ic-central-gateway
                 traefik.http.routers.ic-central-operator.priority: "10020"

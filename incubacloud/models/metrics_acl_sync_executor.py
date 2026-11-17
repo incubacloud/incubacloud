@@ -63,6 +63,7 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
         new = users - granted
         revoked = granted - users
         names = {account["account"] for account in accounts}
+        probe_user, probe_plain = self._probe_credential(accounts)
         self._sys(
             f"Syncing the access-control list on {self._host().name}: "
             f"{len(names)} account(s) total, {len(new)} user(s) to grant, "
@@ -75,13 +76,14 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
             "ic_vmauth_config": self._vmauth_config(
                 accounts, operator_token, delete_key,
             ),
-            # The boundary probe authenticates AS the operator, so the
-            # plaintext has to travel alongside the document that grants
-            # it. Left out, the probe authenticates with no password at
-            # all and vmauth answers 401 — which reads as the frontier
-            # being broken rather than the caller, and strands every
-            # account minted since the last sync.
-            "ic_operator_plain": operator_token,
+            # The boundary probe reads as this panel's own account, so
+            # the plaintext has to travel alongside the document that
+            # grants it. Left out, the probe authenticates with no
+            # password at all and vmauth answers 401 — which reads as the
+            # frontier being broken rather than the caller, and strands
+            # every account minted since the last sync.
+            "ic_probe_user": probe_user,
+            "ic_probe_plain": probe_plain,
         }
 
     def parse_results(self, results):

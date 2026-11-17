@@ -400,8 +400,8 @@ settingsBlocks.add("core-monitoring", {
         {
             id: "metrics_central_operator_sources", type: "textarea", width: "l", mono: true, rows: 2,
             advanced: true, placeholder: "203.0.113.10/32", block: _t("Observability"),
-            label: _t("Who may delete series and read the fleet on the central"),
-            help: _t("One range per line: the panel's public address, which deletes series and reads every account's. Used only with a public name."),
+            label: _t("Who may delete series on the central"),
+            help: _t("One range per line: the panel's public address, which deletes series. Used only with a public name."),
             synonyms: ["allowlist", "metrics"],
             validate: rangesProblem,
         },

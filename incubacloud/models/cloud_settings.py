@@ -725,11 +725,10 @@ class CloudSettings(models.Model):
              'Stored encrypted; written to each host as root-only 0600.',
     )
     metrics_operator_token = EncryptedChar(
-        string='Operator read credential',
+        string='Operator credential',
         groups='base.group_system',
-        help='Second credential, for the UNFILTERED read of every '
-             "account's series (the fleet's board) and for deleting "
-             'series. Only meaningful on the panel that owns the central, '
+        help='Second credential, for deleting series. Only meaningful on '
+             'the panel that owns the central, '
              'and deliberately never written to any host — that is the '
              'whole point of keeping it apart from the account credential '
              'above.',
@@ -779,13 +778,12 @@ class CloudSettings(models.Model):
              'panel cannot read it from another server.',
     )
     metrics_central_operator_sources = fields.Text(
-        string='Who may delete series and read the fleet on the central',
+        string='Who may delete series on the central',
         help='Address ranges, one per line (e.g. 198.51.100.7/32), allowed '
              "to reach the central's series-deletion route under its "
-             "public name: the panel's own public address. They may also "
-             "read every account's series there, through the operator's "
-             "read-only route. Empty: only the central's host itself, "
-             'which is right while the panel runs there.',
+             "public name: the panel's own public address. Empty: only "
+             "the central's host itself, which is right while the panel "
+             'runs there.',
     )
     security_geoip = fields.Boolean(
         string="Show the country of addresses",
@@ -820,10 +818,10 @@ class CloudSettings(models.Model):
         return account
 
     def _ensure_operator_credential(self):
-        """Return the unfiltered read credential, generating it if absent.
+        """Return the operator credential, generating it if absent.
 
-        Deliberately separate from the account credential: this one grants
-        a view across every account, so it must never be written to a
+        Deliberately separate from the account credential: this one
+        deletes series of any account, so it must never be written to a
         host. Only the panel that owns the central holds it.
 
         :return: the plaintext operator password.
@@ -925,9 +923,9 @@ class CloudSettings(models.Model):
         credentials: the user half is now the account, because the central
         derives the forced label from whoever authenticated.
 
-        :param operator: when True, return the unfiltered operator
-            credential instead of this panel's own account. Only the panel
-            that owns the central has one.
+        :param operator: when True, return the operator credential, which
+            only deletes series, instead of this panel's own account. Only
+            the panel that owns the central has one.
         :return: ``(user, password)``, or ``('', '')`` when unset — callers
             must treat that as "no credentials" and not as anonymous
             access being acceptable.

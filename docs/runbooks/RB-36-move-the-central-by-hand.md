@@ -20,7 +20,7 @@ central's public name and `PORT` its platform port.
    From `ORIGIN`: `curl -sk https://DEST_ADDRESS:PORT/` answers 403 or 421 (the port is
    open, nothing routed yet).
 2. If the panel itself runs on `ORIGIN`, add `ORIGIN`'s address to **Who may delete
-   series and read the fleet on the central** (`/32`).
+   series on the central** (`/32`).
 
 ## Steps
 
@@ -51,10 +51,11 @@ central's public name and `PORT` its platform port.
    If the archives differ by order, compare a file list with sizes instead
    (`find /v -type f -printf '%P %s\n' | sort`).
 4. On `DEST`: `docker compose -p incubacloud-central up -d`, then read through the name
-   at `DEST`'s address; the answer is 200 with series older than the cut:
+   at `DEST`'s address with the panel's own account (RB-11 says where its credential
+   is); the answer is 200 with series older than the cut:
    ```bash
    curl -sS --cacert ~/observability/central-ca.pem --resolve NAME:PORT:DEST_ADDRESS \
-     -u operator:… "https://NAME:PORT/admin-r/api/v1/query?query=count(up)"
+     -u ACCOUNT:… "https://NAME:PORT/r/api/v1/query?query=count(up)"
    ```
 5. **Point `NAME`'s A record at `DEST`.** The panel's next check (or **Check now**)
    closes the pending alert once `DEST`'s resolvers return the new address (about a

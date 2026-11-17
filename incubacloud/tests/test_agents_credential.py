@@ -34,7 +34,6 @@ from odoo.addons.incubacloud.models.observability_central_executor import (
     _ACCOUNT_LOG_WRITE_PATH,
     _ACCOUNT_READ_PATHS,
     _ACCOUNT_WRITE_PATH,
-    _OPERATOR_READ_PATHS,
     CENTRAL_REVISION,
     ObservabilityCentralExecutor,
 )
@@ -457,10 +456,6 @@ class TestReadEndpointsNarrowed(AgentsCase):
             "/lr/loki/api/v1/label/job/values", "/lr/loki/api/v1/index/stats",
         ):
             self.assertFalse(any(re.fullmatch(p, path) for p in patterns), path)
-        for path in ("/admin-r/health", "/admin-r/api/v1/query", "/admin-r/api/v1/query_range"):
-            self.assertTrue(re.fullmatch(_OPERATOR_READ_PATHS, path), path)
-        for path in ("/admin-r/api/v1/series", "/admin-r/api/v1/labels"):
-            self.assertFalse(re.fullmatch(_OPERATOR_READ_PATHS, path), path)
 
 
 class TestLokiLimits(TransactionCase):
@@ -514,7 +509,7 @@ class TestLokiLimits(TransactionCase):
         )
 
     def test_the_central_is_deployed_again(self):
-        self.assertEqual(CENTRAL_REVISION, 3)
+        self.assertGreaterEqual(CENTRAL_REVISION, 3)
 
 
 class TestThePanelsAddresses(AgentsCase):

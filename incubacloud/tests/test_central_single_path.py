@@ -413,6 +413,11 @@ class TestTheComposeFile(BaseCase):
 
     def test_the_operator_routes_answer_the_named_sources_only(self):
         labels = self._single()["services"]["vmauth"]["labels"]
+        # Series deletion alone: the cross-account read closed (17-nov-2026).
+        self.assertEqual(
+            labels["traefik.http.routers.ic-central-operator.rule"],
+            f"Host(`{NAME}`) && PathPrefix(`/admin-d/`)",
+        )
         self.assertEqual(
             labels["traefik.http.routers.ic-central-operator.middlewares"],
             "ic-central-operator-sources",

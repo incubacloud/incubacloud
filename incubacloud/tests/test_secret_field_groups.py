@@ -690,8 +690,8 @@ class TestMetricsCentralSecrets(_SecretFieldCase):
     """The central's credentials on ``cloud.settings``.
 
     Readable by every Manager through the ORM, although only the panel's
-    code uses them: the account's write token, the operator's unfiltered
-    read credential and VictoriaMetrics' deletion key, which only the
+    code uses them: the account's write token, the operator's credential,
+    which deletes series, and VictoriaMetrics' deletion key, which only the
     gateway may present.
     """
 
