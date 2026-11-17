@@ -124,6 +124,7 @@ nav:
     - Panel on an internal network: hosts/internal-network.md
     - Order a VPS: hosts/hire.md
     - Security logs: hosts/security.md
+    - Access: hosts/access.md
   - Backups:
     - backups/index.md
     - Restore a backup: backups/restore.md

@@ -49,6 +49,16 @@ gestionado de copias* on a running panel too.
 
 ### Added
 
+- **A server's Access tab.** For whoever manages servers, beside Audit
+  Logs: the account, address and port the panel signs in with, the
+  fingerprint of the panel's key and of the server's host key, the last ten
+  SSH sign-ins of seven days from the server's security logs, each told as
+  the panel's or another's (`/cloud/host/access`, reading the Security
+  view's table), and what deleting the server from the panel takes off it.
+  A read of the sign-ins that fails reaches the browser as an error alone,
+  which the tab words itself; what went wrong goes to the server's log.
+  Documented in `docs/user/docs/hosts/access.md`.
+
 - **SFTP backup destinations (#93).** A destination's type is S3
   compatible or SFTP, chosen when it is created. An SFTP one names a
   server, port, user and folder; the panel generates its Ed25519 key pair

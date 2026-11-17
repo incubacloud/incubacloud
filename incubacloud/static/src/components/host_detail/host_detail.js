@@ -22,6 +22,7 @@ import { confirmVia } from "../../utils/use_confirm";
 import { HostHardeningModal } from "../host_hardening_modal/host_hardening_modal";
 import { HostBoard } from "../metrics/host_board";
 import { HostSecurityBoard } from "../metrics/host_security_board";
+import { HostAccess } from "../host_access/host_access";
 
 /** Tabs a link may open the page on (``?tab=``). */
 const LINKABLE_TABS = new Set(["overview", "metrics"]);
@@ -82,7 +83,7 @@ export class HostDetail extends Component {
     static template = "incubacloud.HostDetail";
     static components = {
         PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog, RlSelect, IcPager,
-        HostHardeningModal, IcMenu, HostBoard, HostSecurityBoard, SaveBar, SettingAdvanced,
+        HostHardeningModal, IcMenu, HostBoard, HostSecurityBoard, HostAccess, SaveBar, SettingAdvanced,
     };
 
     /** Rows per page for the server-paginated audit log. */
@@ -529,6 +530,12 @@ export class HostDetail extends Component {
         if (tab === 'activity' && !this.state.auditLog.length && !this.state.auditLogLoading) {
             this._loadAuditLog();
         }
+    }
+
+    /** The Access tab's link to the Security view of the Metrics tab. */
+    openSecurityView() {
+        this.state.metricsView = "security";
+        this.setTab("metrics");
     }
 
     async _loadAuditLog() {

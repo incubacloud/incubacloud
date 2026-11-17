@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="incubacloud.HostAccess">
+        <div class="ic-host-access">
+            <t t-if="state.loading">
+                <div class="history-loading">Loading…</div>
+            </t>
+            <p t-elif="state.error" class="rl-tabnote ic-host-access-error" t-esc="state.error"/>
+            <t t-else="">
+                <t t-set="a" t-value="state.access"/>
+                <div class="rl-ovcards">
+                    <div class="rl-ovcard" data-card="how">
+                        <div class="rl-ovtitle">How the panel signs in</div>
+                        <div class="rl-ovrow">
+                            <span class="rl-l">Account</span>
+                            <span class="rl-v rl-mono" t-esc="a.user || '—'"/>
+                        </div>
+                        <div class="rl-ovrow">
+                            <span class="rl-l">Address</span>
+                            <span class="rl-v rl-mono" t-esc="a.address + ':' + a.port"/>
+                        </div>
+                        <div class="rl-ovrow">
+                            <span class="rl-l">Panel's key</span>
+                            <span t-if="a.panel_key_fingerprint" class="rl-v rl-mono" t-esc="a.panel_key_fingerprint"/>
+                            <span t-elif="a.login_type === 'password'" class="rl-v muted">None: the panel signs in with a password</span>
+                            <span t-else="" class="rl-v muted">—</span>
+                        </div>
+                        <div class="rl-ovrow">
+                            <span class="rl-l">Server's host key</span>
+                            <span t-if="a.host_key_fingerprint" class="rl-v rl-mono" t-esc="a.host_key_fingerprint"/>
+                            <span t-else="" class="rl-v warn">Not trusted yet</span>
+                        </div>
+                        <p class="rl-tabnote">The panel keeps the private half of this key encrypted. It signs in only to run its jobs, the ones you start and the scheduled ones (backups, health checks, security updates), and the consoles you open. Root access is yours: what you change outside the panel is yours too.</p>
+                    </div>
+
+                    <div class="rl-ovcard" data-card="teardown">
+                        <div class="rl-ovtitle">When you delete this server from the panel</div>
+                        <p class="rl-tabnote">Before the panel forgets the server, it takes off it:</p>
+                        <ul class="ic-host-access-list">
+                            <li>its metrics and security log agents, and their schedules;</li>
+                            <li>the proxy (Traefik) and its directory, and the guard on the proxy network;</li>
+                            <li>the panel's key, from every account that lists it;</li>
+                            <li>the operator account and its sudo rule, when the panel's hardening made them and no other key uses them.</li>
+                        </ul>
+                        <p class="rl-tabnote">Your accounts, root's keys, the SSH configuration and the firewall rules the hardening wrote stay as they are. The job's log says what it removed and what it left. If the panel cannot reach the server, the job fails and says so; a server where the panel deployed its proxy stays in the panel, so that you can try again.</p>
+                    </div>
+                </div>
+
+                <div class="rl-card ic-mb-card ic-mb-wide" data-table="sign-ins">
+                    <div class="ic-mb-cardhead">
+                        <span class="rl-ovtitle">Last sign-ins over SSH</span>
+                        <span class="ic-mb-hint">last 7 days · newest first</span>
+                        <button t-if="props.onOpenSecurity" type="button"
+                                class="rl-btn rl-btn-ghost rl-btn-sm ic-host-access-more"
+                                t-on-click="openSecurity">Security view</button>
+                    </div>
+                    <t t-set="s" t-value="signIns"/>
+                    <p t-if="s.state === 'off'" class="ic-mb-empty">This server does not send its security logs: turn them on in the Metrics tab, Security view.</p>
+                    <p t-elif="s.state === 'unavailable'" class="ic-mb-empty">This panel does not receive security logs.</p>
+                    <p t-elif="s.state === 'error'" class="ic-mb-empty ic-mb-panel-error">The security logs could not be read now.</p>
+                    <div t-elif="s.rows.length" class="ic-mb-tablebox">
+                        <table class="rl-table ic-mb-table">
+                            <thead><tr><th>When</th><th>User</th><th>From</th><th>Whose</th></tr></thead>
+                            <tbody>
+                                <t t-foreach="s.rows" t-as="row" t-key="row_index">
+                                    <tr t-att-class="attributionBad(row.attribution) ? 'ic-mb-blocked' : ''">
+                                        <td class="ic-mb-num" t-esc="fmtAt(row.at)"/>
+                                        <td class="ic-mb-mono" t-esc="row.user"/>
+                                        <td class="ic-mb-mono" t-esc="row.address"/>
+                                        <td t-att-data-attribution="row.attribution" t-esc="attributionText(row.attribution)"/>
+                                    </tr>
+                                </t>
+                            </tbody>
+                        </table>
+                        <p t-if="s.more" class="ic-mb-hint">More in the Security view.</p>
+                    </div>
+                    <p t-else="" class="ic-mb-empty">Nobody signed in over SSH in the last 7 days.</p>
+                </div>
+            </t>
+        </div>
+    </t>
+</templates>

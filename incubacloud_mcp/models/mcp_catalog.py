@@ -52,6 +52,12 @@ _SECURITY_LINES = (
     "(D4); no tool reads them."
 )
 
+_HOST_ACCESS = (
+    "A server's Access tab: the account, address, port and key the panel "
+    "signs in with, and the last sign-ins of its security logs with their "
+    "addresses, for whoever manages servers alone (D4); no tool reads it."
+)
+
 _CENTRAL_HISTORY = (
     "Leaves the metrics central's history behind: a person decides it in "
     "Settings › Monitoring, after a confirmation."
@@ -127,6 +133,7 @@ CORE_EXCLUDED = {
     "/cloud/fleet/resource_series": _METRICS_BOARD,
     "/cloud/host/security_board": _METRICS_BOARD,
     "/cloud/host/security_lines": _SECURITY_LINES,
+    "/cloud/host/access": _HOST_ACCESS,
     "/cloud/instance/db_activity": _METRICS_BOARD,
     "/cloud/instance/slow_routes": _METRICS_BOARD,
     "/cloud/monitoring/empty_central": _CENTRAL_HISTORY,
