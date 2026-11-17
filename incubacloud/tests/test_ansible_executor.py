@@ -283,3 +283,25 @@ class TestEarlyGuardsLogBeforeRaising(AnsibleExecutorCase):
             with self.assertRaises(RuntimeError) as caught:
                 asyncio.run(self.executor._async_entry())
         self.assertEqual(str(caught.exception), "past the guards")
+
+
+class TestRunnerEnvironment(AnsibleExecutorCase):
+    """ansible-runner looks ``ansible-playbook`` up in the ``PATH`` it is given."""
+
+    def test_the_path_handed_to_ansible_has_its_tilde_expanded(self):
+        """Odoo.sh's ``PATH`` holds ``~/.local/bin``, where pip put ansible-playbook."""
+        if ansible_executor_module.ansible_runner is None:
+            self.skipTest("ansible-runner is not installed")
+        runner_module = MagicMock(spec=ansible_executor_module.ansible_runner)
+        runner_module.run.return_value = MagicMock(
+            spec=ansible_executor_module.ansible_runner.Runner, rc=0, status="successful",
+        )
+        with (
+            patch.object(ansible_executor_module, "ansible_runner", runner_module),
+            patch.dict(os.environ, {"HOME": "/home/odoo", "PATH": "~/.local/bin:/usr/bin"}),
+            tempfile.TemporaryDirectory() as root,
+        ):
+            self.assertEqual(self.executor._run_playbook(root), (0, "successful"))
+        envvars = runner_module.run.call_args.kwargs["envvars"]
+        self.assertEqual(envvars["PATH"], "/home/odoo/.local/bin:/usr/bin")
+        self.assertEqual(envvars["ANSIBLE_NOCOLOR"], "True")

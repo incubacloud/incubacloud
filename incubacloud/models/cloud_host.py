@@ -19,6 +19,7 @@ from odoo.exceptions import UserError, ValidationError
 from odoo.sql_db import Cursor
 from odoo.tools import config, file_open
 
+from ..local_path import expanded_path
 from ..net.hostname import (
     InvalidHostname,
     is_host_address,
@@ -255,11 +256,12 @@ def _sshpass_available():
 
     Ansible needs it to log in to a host with a password; the panel's
     own SSH (asyncssh) does not. Looked up once per process: installing
-    it takes a restart to be seen.
+    it takes a restart to be seen. Looked up in the ``PATH`` Ansible gets,
+    ``~/.local/bin`` included.
 
     :rtype: bool
     """
-    return shutil.which("sshpass") is not None
+    return shutil.which("sshpass", path=expanded_path()) is not None
 
 
 class CloudHost(models.Model):
