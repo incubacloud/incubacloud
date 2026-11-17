@@ -27,6 +27,7 @@ from pathlib import Path
 
 import yaml
 
+from ..local_path import expanded_path
 from .abstract_executor import AbstractExecutor, _looks_like_error
 
 _logger = logging.getLogger(__name__)
@@ -213,6 +214,9 @@ class AnsibleExecutor(AbstractExecutor):
                 # Ansible's own colour codes would reach the log viewer
                 # as escape noise; the panel does its own styling.
                 "ANSIBLE_NOCOLOR": "True",
+                # ansible-playbook is looked up in this PATH, and Odoo.sh's
+                # names ~/.local/bin, where pip puts it, with the tilde.
+                "PATH": expanded_path(),
             },
             event_handler=self._on_runner_event,
             cancel_callback=lambda: self._cancel_requested,
