@@ -175,11 +175,11 @@
                       />
                                             </div>
                                             <div class="rl-frow ic-w-m">
-                                                <label for="bbd-retention_owner">Retention owner</label>
+                                                <label for="bbd-retention_owner">Who deletes old backups</label>
                                                 <RlSelect
                         id="'bbd-retention_owner'"
                         value="state.form.retention_owner"
-                        ariaLabel="'Retention owner'"
+                        ariaLabel="'Who deletes old backups'"
                         ariaDescribedby="'bbd-retention_owner-note'"
                         options="retentionOwnerOptions"
                         onChange="(value) => this.onInput('retention_owner', { target: { value: value } })"
@@ -187,7 +187,7 @@
                                                 <span
                         class="ic-form-note"
                         id="bbd-retention_owner-note"
-                      >Who deletes old backups.</span>
+                      >Backups older than the retention period are deleted by this.</span>
                                                 <t
                         t-if="!isNew and !state.retention_owner_declared"
                       >

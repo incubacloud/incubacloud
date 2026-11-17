@@ -327,9 +327,9 @@ export class BackupBackendDetail extends Component {
   /** @returns {Array} the retention owners this type of destination has */
   get retentionOwnerOptions() {
     const options = [
-      {value: "cron", label: _t("Duplicity cron")},
-      {value: "lifecycle", label: _t("Bucket lifecycle")},
-      {value: "none", label: _t("Nobody — infinite archive")},
+      {value: "cron", label: _t("The backup service (Duplicity)")},
+      {value: "lifecycle", label: _t("A lifecycle rule on the bucket")},
+      {value: "none", label: _t("Nobody: keep everything")},
     ];
     return this.isSftp ? options.filter((o) => o.value !== "lifecycle") : options;
   }

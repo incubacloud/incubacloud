@@ -147,21 +147,25 @@ the line.
   Nothing is trusted on its own: check the new key with your provider and
   trust it again.
 
-Retention works as for S3, except that there is no bucket lifecycle: the
-**Duplicity cron** deletes old backups, or **Nobody** does. The backups are
-encrypted with the destination's passphrase before they leave the host, so
-the SFTP server only holds encrypted files.
+Retention works as for S3, except that a server has no bucket for a lifecycle
+rule: under **Who deletes old backups**, choose **The backup service
+(Duplicity)** or **Nobody: keep everything**. The backups are encrypted with
+the destination's passphrase before they leave the host, so the SFTP server
+only holds encrypted files.
 
 ## How long backups are kept
 
 Every backup backend has a **retention period** (under **Advanced** on its
 **General** tab) — 3 months unless you change it (`30D`, `3M`, `1Y`…) — and a
-**retention owner**, who deletes the backups older than that:
+**Who deletes old backups** setting, which says who removes the backups older
+than that:
 
-- **Duplicity cron** (the default) — the instance's backup service deletes them.
-- **Bucket lifecycle** — a lifecycle rule you set up on the bucket, outside
-  IncubaCloud, deletes them.
-- **Nobody** — nothing is deleted, and the archive keeps growing.
+- **The backup service (Duplicity)** (the default) — the instance's backup
+  service deletes them.
+- **A lifecycle rule on the bucket** — a lifecycle rule you set up on the
+  bucket, outside IncubaCloud, deletes them.
+- **Nobody: keep everything** — nothing is deleted, and the archive keeps
+  growing.
 
 A manual backup of a production instance runs the same job as the nightly one,
 into the same bucket, and expires under the same rules.

@@ -208,10 +208,11 @@ class CloudBackupBackend(models.Model):
 
     retention_owner = fields.Selection(
         [
-            ("cron", "Duplicity cron"),
-            ("lifecycle", "Bucket lifecycle"),
-            ("none", "Nobody — infinite archive"),
+            ("cron", "The backup service (Duplicity)"),
+            ("lifecycle", "A lifecycle rule on the bucket"),
+            ("none", "Nobody: keep everything"),
         ],
+        string="Who deletes old backups",
         default="cron",
         required=True,
         help="Who deletes old backups: the daily deletion cron inside "
@@ -725,8 +726,8 @@ class CloudBackupBackend(models.Model):
         copier's answers: a host is a DNS name or an IPv4 address (an IPv6
         literal would need brackets duplicity does not write), the user
         and the path are limited to characters nothing reads twice
-        (``sftp_dst``). There is no bucket lifecycle on a server, so only
-        the cron or nobody can own the retention.
+        (``sftp_dst``). A server has no bucket to hold a lifecycle rule, so
+        only the backup service or nobody can delete old backups.
 
         :raise ValidationError: on the first value refused
         """
@@ -759,8 +760,9 @@ class CloudBackupBackend(models.Model):
                 )) from exc
             if rec.retention_owner == "lifecycle":
                 raise ValidationError(_(
-                    "An SFTP server has no bucket lifecycle: let the backup "
-                    "cron delete old backups, or nobody."
+                    "An SFTP server has no bucket for a lifecycle rule: let "
+                    "the backup service (Duplicity) delete old backups, or "
+                    "choose Nobody."
                 ))
 
     @api.constrains("backend_type", "s3_bucket", "s3_path")
@@ -1516,9 +1518,9 @@ class CloudBackupBackend(models.Model):
                 self._RETENTION_ALERT_CODE,
                 f"Backup backend '{backend.display_name}' has an "
                 f"unconfirmed retention policy — old backups may "
-                f"never be deleted. Open it and pick who owns "
-                f"retention (Duplicity cron / bucket lifecycle / "
-                f"nobody).",
+                f"never be deleted. Open it and pick who deletes old "
+                f"backups (the backup service (Duplicity) / a lifecycle "
+                f"rule on the bucket / nobody).",
                 key=backend._alert_key(),
                 payload={"backup_backend_id": backend.id},
             )

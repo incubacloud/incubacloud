@@ -209,6 +209,16 @@ gestionado de copias* on a running panel too.
   preview, which goes to its production's server, is refused only under
   the Check's 10 GB.
 
+- **A backup destination's retention owner says who deletes old backups.**
+  Under Advanced, the field reads *Who deletes old backups*, with the note
+  *Backups older than the retention period are deleted by this.* and the
+  options *The backup service (Duplicity)*, *A lifecycle rule on the
+  bucket* and *Nobody: keep everything*, in the form and in the model's
+  selection alike, and in the alert of an unconfirmed retention and the
+  refusal of a lifecycle rule on an SFTP server. The values (`cron`, `lifecycle`,
+  `none`) and the behaviour are the same. The Spanish says *Quién borra las
+  copias antiguas*.
+
 ### Fixed
 
 - **Deleting a server whose proxy was never deployed takes the panel's
@@ -583,6 +593,9 @@ gestionado de copias* on a running panel too.
   and bringing it back.
 - *Connect a server* says that the automatic placement chooses a
   `Compatible` server only with 14 GB free.
+- *Backups* names the retention options as the panel does: *Who deletes old
+  backups*, with *The backup service (Duplicity)*, *A lifecycle rule on the
+  bucket* and *Nobody: keep everything*.
 
 ### Migration
 

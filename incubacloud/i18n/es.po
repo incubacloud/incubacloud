@@ -146,11 +146,12 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_backup_backend.py:0
 msgid ""
-"An SFTP server has no bucket lifecycle: let the backup cron delete old "
-"backups, or nobody."
+"An SFTP server has no bucket for a lifecycle rule: let the backup service "
+"(Duplicity) delete old backups, or choose Nobody."
 msgstr ""
-"Un servidor SFTP no tiene ciclo de vida de bucket: deje que el cron de "
-"copias borre las antiguas, o nadie."
+"Un servidor SFTP no tiene un bucket para una regla de ciclo de vida: deje "
+"que el servicio de copias (Duplicity) borre las copias antiguas, o elija "
+"Nadie."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3067,8 +3068,8 @@ msgstr "El bucket es obligatorio"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__retention_owner__lifecycle
-msgid "Bucket lifecycle"
-msgstr "Ciclo de vida del bucket"
+msgid "A lifecycle rule on the bucket"
+msgstr "Una regla de ciclo de vida del bucket"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5993,8 +5994,8 @@ msgstr "Volcando la base de datos actual sobre la marcha."
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__retention_owner__cron
-msgid "Duplicity cron"
-msgstr "Cron de Duplicity"
+msgid "The backup service (Duplicity)"
+msgstr "El servicio de copias (Duplicity)"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12207,8 +12208,8 @@ msgstr "Aún no hay webhooks."
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__retention_owner__none
-msgid "Nobody — infinite archive"
-msgstr "Nadie — archivo infinito"
+msgid "Nobody: keep everything"
+msgstr "Nadie: se guarda todo"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance_backup__size
@@ -14912,11 +14913,6 @@ msgid "Result"
 msgstr "Resultado"
 
 #. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__retention_owner
-msgid "Retention Owner"
-msgstr "Propietario de retención"
-
-#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__retention_owner_declared
 msgid "Retention Owner Declared"
 msgstr "Propietario de retención declarado"
@@ -14941,8 +14937,9 @@ msgstr "El período de retención es obligatorio"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
-msgid "Retention owner"
-msgstr "Propietario de retención"
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__retention_owner
+msgid "Who deletes old backups"
+msgstr "Quién borra las copias antiguas"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -19807,8 +19804,8 @@ msgstr "Quién puede abrir SSH."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
-msgid "Who deletes old backups."
-msgstr "Quién elimina los backups antiguos."
+msgid "Backups older than the retention period are deleted by this."
+msgstr "Las copias con más antigüedad que el período de retención las borra esto."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__retention_owner
