@@ -36,6 +36,8 @@ import subprocess
 import tempfile
 import time
 
+from ..local_path import expanded_path
+
 #: ``ls-remote`` from a panel route: what the editor waits for.
 LS_REMOTE_TIMEOUT = 15
 
@@ -360,6 +362,8 @@ class _Session:
             "XDG_CONFIG_HOME": self.home,
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_TERMINAL_PROMPT": "0",
+            # The HOME above is the session's: a ~ of the PATH is the panel's.
+            "PATH": expanded_path(),
         })
         if self.config:
             env["GIT_CONFIG_COUNT"] = str(len(self.config))

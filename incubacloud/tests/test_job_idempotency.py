@@ -6,13 +6,16 @@ specification or an exemption that says why, and the coverage test
 fails on one that has neither: a type added later is either specified
 or exempted on purpose.
 
-Specified here: ``delete_instance`` and ``restore_instance``, and
-``relay_test_mail``, which came with the relay's test mail. The rest wait.
+Specified here: ``delete_instance`` and ``restore_instance``,
+``relay_test_mail``, which came with the relay's test mail, and
+``check_admin_password``, which came with the check of the admin's default
+password. The rest wait.
 """
 import contextlib
 import dataclasses
 import json
 import shlex
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -245,6 +248,58 @@ RELAY_TEST_SPEC = JobSpec(
 )
 
 
+def _admin_check_setup(case):
+    """A running production still to be checked, and its dispatched check."""
+    host = _host(case, "idem-admin", "192.0.2.85")
+    inst = _deployed_instance(case, host, "idem-admin-inst")
+    inst.sudo().write({"running": True})
+    return case.dispatched_job("check_admin_password", host, inst)
+
+
+def _admin_check_remote(_case, job):
+    """The instance's database, its admin still on Odoo's default."""
+    return {(job.host_id.id, "admin:default")}
+
+
+def _the_database_answers(ledger, host, method, detail):
+    """``admin_password.sh`` against the database the ledger pictures.
+
+    On the default it changes the password, marks the change with the
+    second it was made (``admin:mark:<epoch>``) and answers ``changed``;
+    on a password of its own it answers ``changed`` again only when the
+    mark is newer than the ``since`` it was given, as the script does.
+    """
+    if method not in ("execute", "run") or "admin_password.sh" not in detail:
+        return None
+    since = int(shlex.split(detail)[-1])
+    if (host.id, "admin:default") in ledger.remote:
+        ledger.remote.discard((host.id, "admin:default"))
+        ledger.remote.add((host.id, f"admin:mark:{int(time.time())}"))
+        answer = "changed"
+    else:
+        marks = [
+            int(path.rsplit(":", 1)[1]) for where, path in ledger.remote
+            if where == host.id and path.startswith("admin:mark:")
+        ]
+        answer = "changed" if marks and max(marks) > since else "own"
+    return CommandResult(stdout=f"ADMIN_PASSWORD {answer}\n", exit_status=0)
+
+
+#: The check of a running instance's admin password. Its one step changes
+#: the password and, in the same transaction, marks the change in the
+#: instance's database: an attempt cut after that step, its answer lost,
+#: is followed by one that finds the mark newer than the instance's last
+#: answer and answers ``changed`` again, so the alert and the state are
+#: the reference's. One that finds the state kept by an attempt before it
+#: is skipped.
+ADMIN_CHECK_SPEC = JobSpec(
+    code="check_admin_password",
+    setup=_admin_check_setup,
+    remote=_admin_check_remote,
+    answer=_the_database_answers,
+)
+
+
 class TestCoreJobTypesRunTwice(IdempotencyCase):
     """The specified core types leave one attempt's world, whatever happens."""
 
@@ -259,6 +314,10 @@ class TestCoreJobTypesRunTwice(IdempotencyCase):
     def test_relay_test_mail(self):
         """A test whose commit is lost does not send its mail again."""
         self.check_spec(RELAY_TEST_SPEC)
+
+    def test_check_admin_password(self):
+        """A change whose answer is lost is told by the next attempt."""
+        self.check_spec(ADMIN_CHECK_SPEC)
 
 
 def _the_relay_takes_it_and_the_host_changes(ledger, host, method, detail):
@@ -291,12 +350,42 @@ class TestARepeatedOnceCallKeepsTheWorld(IdempotencyCase):
             self.check_spec(spec)
 
 
+def _the_database_forgets_its_mark(ledger, host, method, detail):
+    """As ``_the_database_answers``, with no mark: ``own`` after a change."""
+    answer = _the_database_answers(ledger, host, method, detail)
+    if answer and (host.id, "admin:default") not in ledger.remote:
+        seen = (host.id, "admin:answered")
+        if seen in ledger.remote:
+            return CommandResult(stdout="ADMIN_PASSWORD own\n", exit_status=0)
+        ledger.remote.add(seen)
+    return answer
+
+
+class TestALostAnswerNeedsTheMark(IdempotencyCase):
+    """Without the mark, a check cut after its change loses the change."""
+
+    def test_a_check_that_forgets_its_change_leaves_another_world(self):
+        """The cut after the step: the next attempt says ``own``, and the
+        alert the reference raised is never raised."""
+        spec = dataclasses.replace(
+            ADMIN_CHECK_SPEC, answer=_the_database_forgets_its_mark,
+        )
+        with patch.object(
+            type(self), "subTest",
+            lambda _self, **_kw: contextlib.nullcontext(),
+        ), self.assertRaisesRegex(AssertionError, "another world"):
+            self.check_spec(spec)
+
+
 class TestEveryCoreJobTypeIsSpecified(TransactionCase):
     """A core job type has a specification or an exemption with its reason."""
 
     def test_no_type_is_left_out(self):
         """The registry's core types are all accounted for."""
-        specs = {DELETE_SPEC.code, RESTORE_SPEC.code, RELAY_TEST_SPEC.code}
+        specs = {
+            DELETE_SPEC.code, RESTORE_SPEC.code, RELAY_TEST_SPEC.code,
+            ADMIN_CHECK_SPEC.code,
+        }
         missing, unreasoned = uncovered_job_types(
             self.env, CORE_ROOT, specs, EXEMPT,
         )

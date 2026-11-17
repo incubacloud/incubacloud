@@ -52,9 +52,18 @@ class RestartInstanceExecutor(AbstractSSHExecutor):
         )
 
     async def on_success(self, results):
+        """Say so; queue the admin password's check if it is still to do.
+
+        A restart may start an instance that was stopped before its
+        admin's password was checked: its check is queued now, behind this
+        job, rather than at the next hourly sweep
+        (``cloud.instance._queue_admin_password_checks``).
+        """
         inst = self._inst()
         self._sys(f"✓ Instance '{inst.name}' restarted.")
         inst.write({**inst._running_confirmed_vals(), "status": "ok"})
+        if not inst.admin_password_state:
+            inst._queue_admin_password_checks(limit=1, instances=inst)
 
     async def on_failure(self, results, errors):
         """Mark the instance in error, unless nothing was touched.

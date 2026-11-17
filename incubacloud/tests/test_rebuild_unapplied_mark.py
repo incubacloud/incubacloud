@@ -138,7 +138,9 @@ class TestStartOverAMark(_MarkCase):
         ):
             with self.subTest(code=code):
                 executor = self._executor(code)
-                (step,) = executor.get_commands()
+                # The start's check of the admin password, still to be
+                # done on this instance, comes after: not what is read here.
+                step = executor.get_commands()[0]
                 self.assertIn(COMPOSE_OP_EXIT_PREVIOUS_BUILD, step[2]["continue_on"])
                 results = {label: {
                     "stdout": "", "exit_status": COMPOSE_OP_EXIT_PREVIOUS_BUILD,

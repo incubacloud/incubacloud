@@ -746,9 +746,8 @@ class TestAlertNotifyDigest(TransactionCase):
         # incubacloud's test classes, so these are the very first
         # res.users.create() calls in the whole module's test run —
         # before account's autopost_bills default (required, contributed
-        # to res.partner via _inherit) is resolvable by the ORM. Same gap
-        # _incubacloud_ensure_cron_bot works around in res_users_ext.py:
-        # pre-create the partner via raw SQL with that column filled,
+        # to res.partner via _inherit) is resolvable by the ORM. So the test
+        # pre-creates the partner via raw SQL with that column filled,
         # then create res.users directly against it.
         self.env.cr.execute(
             "SELECT column_name FROM information_schema.columns "

@@ -44,6 +44,13 @@
 # the instance down (``modules=failed`` in the result). The guard is
 # needed beside this script only then.
 #
+# A database that replaced the previous one also has Odoo's default admin
+# password, if it still holds it, replaced with a random one before the
+# stack comes up (core's ``admin_password.sh``, copied next to this script
+# for the process when the caller staged it and names <db>): ``admin=`` in
+# the result says ``changed``, ``own``, ``absent``, ``failed`` or
+# ``unchecked``. Neither of the last two keeps the instance down.
+#
 # ``restore-cancel`` stops it: a TERM to that process, which puts back what
 # it changed, and a wait for the result. Up to the promotion of the
 # restored database; from there it goes on to the end, update included,
@@ -551,6 +558,10 @@ EOF
         if [ "$update" = 1 ]; then
             install -m 755 "$here/cron_guard.sh" "$RESTORE/bin/cron_guard.sh"
         fi
+        if [ -n "$db" ] && [ -f "$here/admin_password.sh" ]; then
+            [[ "$db" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || ic_die "bad database: $db"
+            install -m 755 "$here/admin_password.sh" "$RESTORE/bin/admin_password.sh"
+        fi
         install -m 644 "$here/lib/common.sh" "$RESTORE/bin/lib/common.sh"
         : > "$RESTORE/log"
         setsid nohup bash "$RESTORE/bin/pitr.sh" restore-run "$dir" "$user" "$job" \
@@ -571,7 +582,11 @@ EOF
         fetcher="pitr-fetch-$job"
         stamp="$(date -u +%Y%m%dT%H%M%SZ)"
         state=starting; staged=0; promoted=0; new_timeline=""; promoted_at=0; fs=no
-        modules=skipped
+        modules=skipped; admin=unchecked
+        # Only a change of the admin's password this restore makes counts
+        # (``admin_password.sh``'s <since>): not one the restored database
+        # carries from before.
+        admin_since="$(date +%s)"
         # The step running in the background (``background``), if any.
         child=""
         say() { printf '[incubacloud] %s %s\n' "$(date -u +%H:%M:%S)" "$*"; }
@@ -680,6 +695,22 @@ EOF
                 say "updating the modules failed (exit $rc): Odoo starts on the restored database, partly updated; the lines above name the module"
             fi
         }
+        # Replace Odoo's default admin password of the restored database,
+        # with Odoo stopped, and keep the answer in ``admin``. A failure
+        # does not keep the instance down: the panel checks it again once
+        # it runs.
+        replace_default_admin_password() {
+            local out
+            admin=failed
+            if out="$(bash "$here/admin_password.sh" "$dir" "$db" stopped "$admin_since")"; then
+                case "$out" in
+                    *"ADMIN_PASSWORD changed"*) admin=changed ;;
+                    *"ADMIN_PASSWORD own"*) admin=own ;;
+                    *"ADMIN_PASSWORD absent"*) admin=absent ;;
+                esac
+            fi
+            say "admin password: $admin"
+        }
         finish() {
             local rc=$? stopped_at="$state" cancelled=0
             set +e
@@ -714,6 +745,11 @@ EOF
             if [ "$promoted" -eq 1 ] && [ "$update" = 1 ]; then
                 update_modules
             fi
+            # Then, as the last write before Odoo serves it, Odoo's
+            # default admin password, if the database still has it.
+            if [ "$promoted" -eq 1 ] && [ -f "$here/admin_password.sh" ]; then
+                replace_default_admin_password
+            fi
             # Whatever happened, the instance runs again.
             docker compose up -d
             # A cancel that came during the update went unheard: said too.
@@ -729,6 +765,7 @@ EOF
                 echo "promoted_at=$promoted_at"
                 echo "filestore=$fs"
                 echo "modules=$modules"
+                echo "admin=$admin"
                 echo "cancelled=$cancelled"
             } > "$RESTORE/result"
             rm -f "$RESTORE/lock" "$RESTORE/pid" "$RESTORE/armed"
