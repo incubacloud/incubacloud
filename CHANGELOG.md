@@ -43,6 +43,16 @@ waited behind them.
   see the list without its addresses. Where security logs are not
   available, there is no list.
 
+- **A server's Access tab.** For whoever manages servers, beside Audit
+  Logs: the account, address and port the panel signs in with, the
+  fingerprint of the panel's key and of the server's host key, the last ten
+  SSH sign-ins of seven days from the server's security logs, each told as
+  the panel's or another's (`/cloud/host/access`, reading the Security
+  view's table), and what deleting the server from the panel takes off it.
+  A read of the sign-ins that fails reaches the browser as an error alone,
+  which the tab words itself; what went wrong goes to the server's log.
+  Documented in `docs/user/docs/hosts/access.md`.
+
 ### Fixed
 
 - **Every line of Monitoring's Load per core names its server.** The

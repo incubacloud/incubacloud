@@ -25,8 +25,10 @@ Once a host is registered and you run **Full Setup**, we deploy:
   Odoo's public `/website/info` page on every instance. An instance can allow it
   ([how](../instances/index.md#odoos-website-info-page-is-blocked)).
 
-The host stays under your control — root access is yours. VPS ordered through
-the platform are billed on your IncubaCloud subscription invoice.
+The host stays under your control — root access is yours. Its **Access** tab
+says how the panel signs in and who signed in lately ([Access](access.md)).
+VPS ordered through the platform are billed on your IncubaCloud subscription
+invoice.
 
 ## Hosts behind a CDN
 

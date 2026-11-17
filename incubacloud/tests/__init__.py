@@ -315,6 +315,7 @@ from . import test_known_keys
 from . import test_central_without_grafana
 from . import test_geoip
 from . import test_security_board
+from . import test_host_access
 from . import test_fleet_security
 from . import test_central_delete_guard
 from . import test_central_single_path

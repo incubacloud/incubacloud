@@ -215,6 +215,13 @@
                                 t-on-click="() => this.setTab('metrics')">Metrics</button>
                     </t>
                     <t t-if="!isNew and env.permissions?.can_manage_hosts">
+                        <button t-att-class="state.tab === 'access' ? 'rl-tab active' : 'rl-tab'"
+                                role="tab"
+                                t-att-aria-selected="state.tab === 'access' ? 'true' : 'false'"
+                                data-tab="access"
+                                t-on-click="() => this.setTab('access')">Access</button>
+                    </t>
+                    <t t-if="!isNew and env.permissions?.can_manage_hosts">
                         <button t-att-class="state.tab === 'activity' ? 'rl-tab active' : 'rl-tab'"
                                 role="tab"
                                 t-att-aria-selected="state.tab === 'activity' ? 'true' : 'false'"
@@ -946,6 +953,12 @@
                                 <HostSecurityBoard t-if="state.metricsView === 'security'" hostId="props.host_id" canConfigure="canConfigureObservability"/>
                                 <HostBoard t-else="" hostId="props.host_id" canConfigure="canConfigureObservability"/>
                             </div>
+                        </t>
+
+                        <!-- ── Access: how the panel signs in, who did, and
+                             what deleting the server takes off it. -->
+                        <t t-if="state.tab === 'access' and !isNew">
+                            <HostAccess hostId="props.host_id" onOpenSecurity.bind="openSecurityView"/>
                         </t>
 
                         <!-- ── Audit Logs ───────────────────────────────────── -->

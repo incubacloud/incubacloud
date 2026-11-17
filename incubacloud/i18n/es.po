@@ -28896,3 +28896,166 @@ msgstr ""
 #: code:addons/incubacloud/models/cloud_host_known_key.py:0
 msgid "The key was not added: its alert could not be raised."
 msgstr "La clave no se ha añadido: no se pudo generar su alerta."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "How the panel signs in"
+msgstr "Cómo inicia sesión el panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "Account"
+msgstr "Cuenta"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "Panel's key"
+msgstr "Clave del panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "None: the panel signs in with a password"
+msgstr "Ninguna: el panel inicia sesión con contraseña"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "Server's host key"
+msgstr "Clave de host del servidor"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "Not trusted yet"
+msgstr "Aún no es de confianza"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid ""
+"The panel keeps the private half of this key encrypted. It signs in only to "
+"run its jobs, the ones you start and the scheduled ones (backups, health "
+"checks, security updates), and the consoles you open. Root access is yours: "
+"what you change outside the panel is yours too."
+msgstr ""
+"El panel guarda cifrada la mitad privada de esta clave. Solo inicia sesión "
+"para ejecutar sus trabajos, los que usted lanza y los programados (copias de"
+" seguridad, comprobaciones de estado, actualizaciones de seguridad), y las "
+"consolas que usted abre. El acceso root es suyo: lo que cambie fuera del "
+"panel también es responsabilidad suya."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "When you delete this server from the panel"
+msgstr "Cuando borre este servidor del panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "Before the panel forgets the server, it takes off it:"
+msgstr "Antes de olvidar el servidor, el panel retira de él:"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "its metrics and security log agents, and their schedules;"
+msgstr ""
+"sus agentes de métricas y de registros de seguridad, y sus tareas "
+"programadas;"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid ""
+"the proxy (Traefik) and its directory, and the guard on the proxy network;"
+msgstr ""
+"el proxy (Traefik) y su directorio, y la protección de la red del proxy;"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "the panel's key, from every account that lists it;"
+msgstr "la clave del panel, de todas las cuentas que la tienen;"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid ""
+"the operator account and its sudo rule, when the panel's hardening made them"
+" and no other key uses them."
+msgstr ""
+"la cuenta de operador y su regla de sudo, cuando las creó el endurecimiento "
+"del panel y ninguna otra clave las usa."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid ""
+"Your accounts, root's keys, the SSH configuration and the firewall rules the"
+" hardening wrote stay as they are. The job's log says what it removed and "
+"what it left. If the panel cannot reach the server, the job fails and says "
+"so; a server where the panel deployed its proxy stays in the panel, so that "
+"you can try again."
+msgstr ""
+"Sus cuentas, las claves de root, la configuración de SSH y las reglas de "
+"cortafuegos que escribió el endurecimiento se quedan como están. El registro"
+" del trabajo dice qué retiró y qué dejó. Si el panel no llega al servidor, "
+"el trabajo falla y lo dice; un servidor en el que el panel desplegó su proxy"
+" sigue en el panel para que pueda volver a intentarlo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "Last sign-ins over SSH"
+msgstr "Últimos inicios de sesión por SSH"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "Security view"
+msgstr "Vista Seguridad"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid ""
+"This server does not send its security logs: turn them on in the Metrics "
+"tab, Security view."
+msgstr ""
+"Este servidor no envía sus registros de seguridad: actívelos en la pestaña "
+"Métricas, vista Seguridad."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "This panel does not receive security logs."
+msgstr "Este panel no recibe registros de seguridad."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "The security logs could not be read now."
+msgstr "Ahora no se pudieron leer los registros de seguridad."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.xml:0
+msgid "More in the Security view."
+msgstr "Más en la vista Seguridad."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Access"
+msgstr "Acceso"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_access/host_access.js:0
+msgid "The server's access could not be read."
+msgstr "No se pudo leer el acceso al servidor."

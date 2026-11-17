@@ -554,6 +554,22 @@ class OpsMixin:
             range_key, start, end, instance_id=instance_id, detail=detail,
         ))
 
+    @http.route(["/cloud/host/access"], type="jsonrpc", auth="user")
+    def cloud_host_access(self, host_id):
+        """Return a server's Access tab: how the panel signs in, and who did.
+
+        For whoever manages servers, as the Security view's tables: the
+        account, the address and the sign-ins are theirs to see
+        (``cloud.host._access_summary``).
+
+        :param int host_id: the server.
+        """
+        self._sec()._check_can_manage_hosts()
+        host = self._security_host(host_id)
+        if not host:
+            return {"ok": False, "error": _("Host not found")}
+        return {"ok": True, **host._access_summary()}
+
     @http.route(["/cloud/host/security_lines"], type="jsonrpc", auth="user")
     def cloud_host_security_lines(self, host_id, source="all", range_key="24h",
                                   instance_id=None):
