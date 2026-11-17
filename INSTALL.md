@@ -256,7 +256,7 @@ channels = root:3,root.user:2,root.bg:1
 | `limit_time_real_cron` | Default, or `0` | The panel's scheduled checks visit every host in one run ([RB-18](docs/runbooks/RB-18-tune-host-edge-protection.md)). Its default follows `limit_time_real`, which is enough at 3600; `0` removes the limit. |
 | `max_cron_threads` | At least `1` | The panel's scheduled actions start its background work (health checks, metrics), start any job queue left waiting (every 2 minutes) and close the jobs a lost worker left (every 5). With one thread, one that never ends holds them all: a heartbeat service outside the panel can say so ([RB-38](docs/runbooks/RB-38-scheduled-actions-heartbeat.md)). |
 | `proxy_mode` | `True` | Behind a proxy, Odoo then believes its `X-Forwarded-*` headers for the scheme, the host name and the visitor's address. |
-| `db_name` or `dbfilter` | The panel's database, by name | Without a session, Odoo picks a database only when exactly one matches, and the agents' endpoint (`/mcp`) answers 404 otherwise. Filter by name (`db_name`, or `dbfilter = ^<name>$`), not by host name: the job runner calls its own Odoo on `http_interface` and `http_port` (`0.0.0.0:8069` by default) with the database in a header, and Odoo checks that name against `dbfilter` with that address as the host, so a filter built on `%h` or `%d` rejects it and no job runs. |
+| `db_name` or `dbfilter` | The panel's database, by name | Without a session, Odoo picks a database only when exactly one matches, and the agents' endpoint (`/mcp`) answers 404 otherwise. Filter by name (`db_name`, or `dbfilter = ^<name>$`), not by host name: the job runner calls its own Odoo on `http_interface` and `http_port` (`0.0.0.0:8069` by default), or on `[queue_job] host` and `port` when they are set, with the database in a header, and Odoo checks that name against `dbfilter` with that address as the host, so a filter built on `%h` or `%d` rejects it and no job runs. |
 
 ### Job channels
 
@@ -294,6 +294,38 @@ If the panel ever holds back jobs that should run, `channel_gate = off` in the
 `[incubacloud]` section of odoo.conf stops it keeping slots until the cause is
 found: jobs then go to `queue_job` as soon as they are asked for, and a rebuild
 that comes back waits its turn.
+
+### On Odoo.sh
+
+The settings go in `~/.config/odoo/odoo.conf`, from the branch's shell. What
+changes from the table above:
+
+| Setting | On Odoo.sh |
+|---|---|
+| `server_wide_modules` | As above, with `queue_job`. |
+| `[queue_job] channels` | As above. |
+| `[queue_job] scheme`, `host`, `port` | Add them: `https`, the project's host name (`<project>.odoo.com`, or its custom domain) and `443`. The job runner cannot reach its own server on `http_interface` and `http_port`: it calls Odoo through the project's public address. Without them, jobs are queued but never start. |
+| `workers`, `limit_time_real`, `limit_time_cpu`, the memory limits, `max_cron_threads` | Odoo.sh sets them, and what the file says is not used. Its time limit is 900 seconds: the panel works with it, leaving its long steps running on the server. |
+| `proxy_mode` | Nothing to set: Odoo.sh's proxy sends what Odoo needs. |
+| `db_name`, `dbfilter` | Odoo.sh sets them: each branch has one database, and the job runner's calls reach it through the project's address. |
+
+```ini
+[options]
+server_wide_modules = base,rpc,web,queue_job
+
+[queue_job]
+channels = root:3,root.user:2,root.bg:1
+scheme = https
+host = <project>.odoo.com
+port = 443
+```
+
+Odoo reads the file when it starts: after editing it, run `odoosh-restart cron`
+in the branch's shell so the job runner picks up the change.
+
+Odoo.sh also bears on the panel's [own address](#network), where the
+[encryption key](#the-encryption-key) is kept, where the metrics central runs
+(same section) and [HTTPS](#https-as-odoo-sees-it).
 
 ### With `workers = 0`
 
