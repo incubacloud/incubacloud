@@ -23,10 +23,14 @@ import logging
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 import yaml
 
+from odoo.tools import config
+
+from .. import ansible_noshm
 from ..local_path import expanded_path
 from .abstract_executor import AbstractExecutor, _looks_like_error
 
@@ -41,6 +45,15 @@ except ImportError:
     _logger.debug(
         "ansible-runner is not installed — Ansible-backed jobs are unavailable.",
     )
+
+#: What a playbook leaves of the request's ``limit_time_real`` for the
+#: job's closing hooks and the removal of its private directory, in
+#: seconds (18-nov-2026). ansible-runner checks its time limit every 5 s
+#: and gives the process 5 s more to end; the hooks write to the database
+#: and send the panel's notices. Past the limit Odoo kills the request
+#: (with ``workers = 0``, the whole server), which leaves the job to be
+#: retried from the start and the run's key and variables on the disk.
+PLAYBOOK_LIMIT_MARGIN_S = 60
 
 
 class AnsibleExecutor(AbstractExecutor):
@@ -199,15 +212,50 @@ class AnsibleExecutor(AbstractExecutor):
             source = "stderr" if _looks_like_error(truncated) else "stdout"
             self._log_buffer.append((truncated, source))
 
-    def _run_playbook(self, root):
-        """Run the playbook synchronously. Returns ``(rc, status)``."""
+    def _playbook_timeout(self):
+        """Return how long the playbook may run, in seconds, or None.
+
+        What this attempt has left of the server's ``limit_time_real``,
+        less ``PLAYBOOK_LIMIT_MARGIN_S``, and at least one second: past
+        it ansible-runner stops the playbook and the run ends as a
+        ``timeout``, through ``on_failure``, with its private directory
+        removed. The server's own limit, not the one a configured
+        ``attempt_budget_seconds`` stands for: that budget only decides
+        when a job parks, and a playbook never parks. None when nothing
+        cuts the request, or when this attempt's clock was not started.
+
+        :rtype: int | None
+        """
+        limit = config.get("limit_time_real") or 0
+        if limit <= 0 or self._attempt_started is None:
+            return None
+        elapsed = time.monotonic() - self._attempt_started
+        return max(1, int(limit - elapsed - PLAYBOOK_LIMIT_MARGIN_S))
+
+    def _run_playbook(self, root, semaphore_error=None):
+        """Run the playbook synchronously. Returns ``(rc, status)``.
+
+        :param str root: the run's private data directory
+        :param semaphore_error: why this server cannot make a semaphore
+            (``ansible_noshm.semaphore_error``), or None: ansible-playbook
+            then runs as it is installed; otherwise through the launcher
+            of ``ansible_noshm``, on locks over pipes
+        """
+        options = ["--check"] if self._check_mode else []
+        if semaphore_error is None:
+            launch = {
+                "playbook": self._playbook,
+                "cmdline": " ".join(options) or None,
+            }
+        else:
+            launch = ansible_noshm.launch_arguments(root, self._playbook, options)
         runner = ansible_runner.run(
             private_data_dir=root,
             project_dir=os.path.join(root, "project"),
-            playbook=self._playbook,
             inventory=os.path.join(root, "inventory", "hosts.yml"),
             extravars=self.get_extra_vars(),
-            cmdline="--check" if self._check_mode else None,
+            timeout=self._playbook_timeout(),
+            **launch,
             envvars={
                 "ANSIBLE_HOST_KEY_CHECKING": "True",
                 "ANSIBLE_RETRY_FILES_ENABLED": "False",
@@ -293,6 +341,16 @@ class AnsibleExecutor(AbstractExecutor):
 
         mode = " (check mode)" if self._check_mode else ""
         self._sys(f"Running playbook {self._playbook}{mode} on {self.host}...")
+        # Odoo.sh mounts /dev/shm read-only, where ansible-core's queues
+        # need their semaphores; elsewhere nothing changes.
+        semaphore_error = ansible_noshm.semaphore_error()
+        if semaphore_error is not None:
+            self._sys(
+                f"/dev/shm is not writable on this server "
+                f"({ansible_noshm.describe(semaphore_error)}: "
+                f"{semaphore_error.strerror or semaphore_error}): "
+                f"Ansible runs with its locks over pipes."
+            )
         root = tempfile.mkdtemp(prefix="incubacloud-ansible-")
         os.chmod(root, 0o700)
         try:
@@ -301,7 +359,7 @@ class AnsibleExecutor(AbstractExecutor):
             # the job closes through ``on_failure``.
             self._step_results = {}
             rc, status = await asyncio.get_running_loop().run_in_executor(
-                None, self._run_playbook, root,
+                None, self._run_playbook, root, semaphore_error,
             )
         except Exception as e:
             _logger.exception("[ansible] playbook failed: %s", e)
@@ -312,6 +370,13 @@ class AnsibleExecutor(AbstractExecutor):
             # runner artifacts; it never outlives the job.
             shutil.rmtree(root, ignore_errors=True)
 
+        if status == "timeout":
+            self._sys(
+                "✗ The playbook was stopped: it ran past the time this "
+                "request has left before the server's limit_time_real "
+                f"({config.get('limit_time_real')} s), less "
+                f"{PLAYBOOK_LIMIT_MARGIN_S} s for closing the job."
+            )
         self._sys(f"Playbook finished: {status} (rc={rc}).")
         results = {
             self._playbook: {"stdout": "", "exit_status": rc},
