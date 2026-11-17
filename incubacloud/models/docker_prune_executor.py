@@ -141,11 +141,12 @@ BUILD_CACHE_RESERVED = "5GB"
 #: 16-nov-2026, Docker 29.10: a Doodba image of 18.0 or 19.0 weighs
 #: 3.1-3.2 GiB in the overlay2 image store and 4.5-4.7 GiB in containerd's,
 #: the default of a new Docker 29. 4 keeps a first deploy's need (9 GiB with
-#: the reserve) under the 10 GB the automatic placement asks of a server
-#: (``cloud.host._MIN_DISK_FREE_GB``), so a server it chose is not refused.
-#: A first build on a server that lacks the Doodba base image too writes
-#: more (8.1-8.5 GiB in containerd, 3.6-3.7 GiB in overlay2): the reserve
-#: takes the difference there.
+#: the reserve) under the 10 GB of the Check (``host_probe_executor.MIN_DISK_GB``),
+#: so a compatible server is not refused. A first build on a server that
+#: lacks the Doodba base image too writes more (8.1-8.5 GiB in containerd,
+#: 3.6-3.7 GiB in overlay2): the reserve takes the difference on a server
+#: chosen by hand, and the 14 GB the automatic placement asks
+#: (``cloud.host._MIN_DISK_FREE_GB``, since 17-nov-2026) leave it whole.
 BUILD_IMAGE_ESTIMATE_GB = 4
 
 #: What a build writes, as a multiple of the image it rebuilds: the peak of
