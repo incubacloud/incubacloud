@@ -3,7 +3,7 @@
 Until 1.0.220 closing a conflict alert (``pip_conflict``,
 ``addon_conflict``) left open the ``job_failed`` of the job that failed on
 it, and that alert held the instance's queue: what was asked for behind it
-never started (an Odoo 18 instance on a tenant's panel, a rebuild and a
+never started (an Odoo 18 instance on a panel, a rebuild and a
 listing of backups waiting a week, 9-nov-2026). 1.0.220 closes both from
 then on (``cloud.alert._close_conflict_failures``) and left the pairs that
 were already there.

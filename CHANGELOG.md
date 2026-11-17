@@ -250,7 +250,7 @@ left holding an instance's queue, and cancels what waited behind them.
   queue.** Until 1.0.220 closing a `pip_conflict` or `addon_conflict` left
   open the `job_failed` of the job that failed on it, and that alert held
   the instance's queue: what was asked for behind it never started (a
-  rebuild and a listing of backups waited a week on a tenant's panel).
+  rebuild and a listing of backups waited a week on a panel).
   1.0.220 closed both from then on; the update closes the failures left
   so, and cancels what waited behind them with a note to ask for it again
   (`cloud.job._close_stale_conflict_holds_on`). What passes the hold (a

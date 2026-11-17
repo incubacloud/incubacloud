@@ -3634,7 +3634,7 @@ class CloudJob(models.Model):
         ``addon_conflict``) left the ``job_failed`` of the job that failed
         on it open, and that alert held the instance's queue for good: a
         person had answered the conflict, and nothing behind the failure
-        started any more (an Odoo 18 instance on a tenant's panel, a week,
+        started any more (an Odoo 18 instance on a panel, a week,
         9-nov-2026). From 1.0.220 the close closes both
         (``cloud.alert._close_conflict_failures``); these are the ones it
         would have closed. The same pair may come from a step of a chain.
