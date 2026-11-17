@@ -679,7 +679,20 @@ class CloudHost(models.Model):
             ram = host.allocated_ram_gb / host.ram_total_gb if host.ram_total_gb else 0
             host.usage_ratio = max(cpu, ram)
 
-    _MIN_DISK_FREE_GB = 10
+    #: Free disk, in GB, a host needs for the automatic placement
+    #: (``select_best_host``) to choose it. 14 since 17-nov-2026 (10
+    #: before): the first build of an instance on a server without the
+    #: Doodba base image writes 8.1-8.5 GiB in containerd's image store,
+    #: the default of a new Docker 29 (1.79 times the image), and the
+    #: build's room check (``docker_prune_executor.build_room_needed``)
+    #: keeps 5 GiB more for the server's other instances, refusing the
+    #: build without them: 8.5 + 5, rounded up, so a server chosen here
+    #: is not refused at its first build. Above, on purpose, the Check's
+    #: own figure (``host_probe_executor.MIN_DISK_GB``, 10 GB), which
+    #: marks the host degraded, fails Full Setup and starts the build
+    #: cache's cleanup: a host between the two keeps its instances and
+    #: takes those placed on it by hand, but no new one by itself.
+    _MIN_DISK_FREE_GB = 14
 
     #: Active alert codes that mark a host as measurably unhealthy for
     #: placement. All are produced by the metrics pipeline from real
@@ -723,6 +736,8 @@ class CloudHost(models.Model):
         place instances while any inheriting auto-provisioning layer
         reacts to the saturation signal independently.
         Only returns empty when there is no compatible host at all.
+        A host with less than ``_MIN_DISK_FREE_GB`` free is not
+        eligible, whatever its CPU and memory.
 
         ``additional_domain`` is an optional extra search domain ANDed
         into the eligibility filter (and therefore the fallback too), so

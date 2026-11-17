@@ -209,25 +209,18 @@ gestionado de copias* on a running panel too.
   was running when its step died is answered *Outcome unknown* instead of
   *Not run*. The panel keeps the state the bus delivered while Stop was on
   its way, instead of replacing it with the older answer.
-- **A move's cut, measured by part.** The source's stop uploads its
-  scripts before it stamps the start of the cut, so the cut no longer
-  counts the seconds the instance was still serving. Each job of the cut
-  notes when it started, connected, prepared and uploaded, when it ended
-  and what each step took (a step's result carries `seconds`), and the
-  cutover keeps `move_last_cut_breakdown`: drain, dns, fingerprint, dump,
-  relay, restore, start, health, overhead, queue and other, with the
-  total, and `incomplete` when a part is missing. A note that cannot be
-  written is logged and the job goes on.
-- **Scripts reach the server in one exchange.** A job hands its scripts
-  to the server as one tar on the input of `mkdir … && tar -x` instead of
-  an SFTP round trip per file, 2-3 s less per job between regions. When
-  the tar fails on the server, or the transport cannot feed a command's
-  input (`run_with_stdin`, new and not abstract), the job uploads them file
-  by file as before. The files unpack 0600 in 0700 directories.
-- **The cutover's health check every half second.** It finds the Odoo
-  container once and probes it with `docker exec` every 0.5 s, `curl`
-  allowed 2 s, up to 120 s in all; a container recreated meanwhile is found
-  again. It probed every 3 s through `docker compose exec`.
+- **The automatic placement asks for 14 GB free, not 10.** The first build
+  of an instance on a server that does not have the Doodba base image yet
+  writes up to 8.5 GiB in containerd's image store, the default of a new
+  Docker 29, and the build's room check keeps 5 GiB for the server's other
+  instances: a server chosen with 10 to 13 GB free could see that first
+  build refused. `cloud.host._MIN_DISK_FREE_GB` is now 14 and is the
+  placement's alone. The Check keeps its 10 GB (`MIN_DISK_GB`): under it
+  the server is `Degraded`, Full Setup fails and a build first empties the
+  build cache, as before. A server between the two stays `Compatible` and
+  keeps taking instances placed on it by hand; a pull or merge request
+  preview, which goes to its production's server, is refused only under
+  the Check's 10 GB.
 
 ### Fixed
 
@@ -266,8 +259,8 @@ gestionado de copias* on a running panel too.
   cache at 5 GB (`--reserved-space`, or `--keep-storage` where Docker does
   not know it); it never fails. A flow that builds no image has neither. A
   pull or merge request preview is no longer created on a server whose
-  measured free disk is under the 10 GB the automatic placement asks of a
-  server: its request hears why.
+  measured free disk is under the 10 GB under which the Check marks it
+  `Degraded`: its request hears why.
   The figures are measured on a rebuild with the base image unchanged (it
   writes 0.66-0.72 of the previous image in containerd's image store, 0.42-0.46
   in overlay2; the factor is 1). A full rebuild (`--pull --no-cache`) after
@@ -517,6 +510,8 @@ gestionado de copias* on a running panel too.
 
 - *Get started* explains the first steps list: who sees it, folding, closing
   and bringing it back.
+- *Connect a server* says that the automatic placement chooses a
+  `Compatible` server only with 14 GB free.
 
 ### Migration
 

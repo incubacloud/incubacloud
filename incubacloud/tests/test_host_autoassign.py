@@ -250,6 +250,36 @@ class TestSelectBestHost(TransactionCase):
         best = self.env['cloud.host'].select_best_host(3.75, 3.75)
         self.assertFalse(best)
 
+    def test_twelve_gb_free_is_not_chosen(self):
+        """12 GB: compatible for the Check, short of a first build and the
+        other instances' reserve, so the placement passes it over
+        (17-nov-2026)."""
+        self.host_a.disk_free_gb = 12.0
+        best = self.env['cloud.host'].select_best_host(3.75, 3.75)
+        self.assertEqual(best, self.host_b)
+        self.host_b.disk_free_gb = 12.0
+        self.assertFalse(self.env['cloud.host'].select_best_host(3.75, 3.75))
+
+    def test_fourteen_gb_free_is_chosen(self):
+        self.host_a.disk_free_gb = 14.0
+        self.host_b.disk_free_gb = 12.0
+        best = self.env['cloud.host'].select_best_host(3.75, 3.75)
+        self.assertEqual(best, self.host_a)
+
+    def test_the_figure_covers_a_first_build_and_is_over_the_checks(self):
+        """The placement asks more than the Check, which keeps its own 10
+        GB for degraded, and at least what a first build writes on a
+        server without the Doodba base image (8.5 GiB measured in
+        containerd's image store) plus the build's reserve."""
+        from odoo.addons.incubacloud.models.host_probe_executor import (
+            MIN_DISK_GB,
+        )
+        from odoo.addons.incubacloud.restore_space import GIB, RESERVE_BYTES
+        placement = self.env['cloud.host']._MIN_DISK_FREE_GB
+        self.assertEqual(MIN_DISK_GB, 10)
+        self.assertGreater(placement, MIN_DISK_GB)
+        self.assertGreaterEqual(placement * GIB, 8.5 * GIB + RESERVE_BYTES)
+
     def test_no_eligible_hosts_returns_empty(self):
         self.host_a.status = 'unsupported'
         self.host_b.status = 'unsupported'

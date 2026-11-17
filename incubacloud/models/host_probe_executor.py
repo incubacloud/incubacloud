@@ -9,9 +9,12 @@ from .cloud_host_shared_guard import (
     shared_guard_verdict,
 )
 
-#: Free disk, in GB, under which the Check says the host is short of it.
-#: The same figure as ``cloud.host._MIN_DISK_FREE_GB``, under which no new
-#: instance is placed on the host, and Full Setup's own minimum.
+#: Free disk, in GB, under which the Check says the host is short of it,
+#: and Full Setup's own minimum. Under it the host is degraded and the
+#: automatic placement passes it over. That placement asks for more
+#: (``cloud.host._MIN_DISK_FREE_GB``, 14 GB since 17-nov-2026, the room
+#: of a first build on a new server): a host between the two stays
+#: compatible, as nothing there is short of space yet.
 MIN_DISK_GB = 10
 #: Free disk, in GB, from which the disk readings (metrics every five
 #: minutes, or the SSH fallback) close the Check's low-disk alert: one
