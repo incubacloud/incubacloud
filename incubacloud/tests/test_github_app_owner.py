@@ -123,7 +123,7 @@ class TestTheSetupPageChoice(HttpCase):
         ).group(1)
         response = self.url_open(
             "/cloud/github/setup",
-            data={"csrf_token": token, **fields},
+            data={"csrf_token": token} | fields,
             headers={"X-Forwarded-Proto": "https"},
         )
         self.assertEqual(response.status_code, 200)

@@ -218,13 +218,12 @@ class GitHubSetupController(http.Controller):
             )
 
         app_name = self._github_app_name(base_url, host)
-        values = dict(
-            self._setup_texts(),
-            app_name=app_name,
-            owner="org" if owner == "org" else "user",
-            org=(org or "").strip(),
-            error="",
-        )
+        values = self._setup_texts() | {
+            "app_name": app_name,
+            "owner": "org" if owner == "org" else "user",
+            "org": (org or "").strip(),
+            "error": "",
+        }
 
         # GET, or a name to fix: the page asks, and its form comes back
         # here. Signing in to GitHub first is up to the user: an
