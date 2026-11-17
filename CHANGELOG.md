@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.235] — unreleased
+
+A fix for the SFTP backup destination's connection test. The update changes
+no table and has no data migration.
+
+### Fixed
+
+- **The connection test of an SFTP backup destination reads the free
+  space.** On a server that answers `statvfs`, the test logged in, wrote and
+  removed its probe file, then failed with *AttributeError: 'SFTPVFSAttrs'
+  object has no attribute 'f_bavail'*: asyncssh names the fields of that
+  record `bavail` and `frsize`, without the `f_` prefix. The panel reads
+  them by those names, and the test ends with the folder's free space. The
+  test's fake server now answers with asyncssh's own `SFTPVFSAttrs`, so a
+  wrong field name fails it.
+
 ## [1.0.234] — unreleased
 
 The admin user of each instance gets a random password when the instance is
