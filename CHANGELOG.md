@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.0.235] — unreleased
+## [1.0.236] — unreleased
 
 A server keeps the SSH keys its Administrators sign in with as known keys:
 their sign-ins are listed and raise no alert, and each key added raises a
@@ -249,6 +249,22 @@ when it is missing.
 - `0.0.0`'s `end-cron-bot`, run on every version change, creates the cron
   bot when it is missing and gives it the crons of the panel's modules
   still owned by uid 1; with the bot there, it does nothing.
+
+## [1.0.235] — unreleased
+
+A fix for the SFTP backup destination's connection test. The update changes
+no table and has no data migration.
+
+### Fixed
+
+- **The connection test of an SFTP backup destination reads the free
+  space.** On a server that answers `statvfs`, the test logged in, wrote and
+  removed its probe file, then failed with *AttributeError: 'SFTPVFSAttrs'
+  object has no attribute 'f_bavail'*: asyncssh names the fields of that
+  record `bavail` and `frsize`, without the `f_` prefix. The panel reads
+  them by those names, and the test ends with the folder's free space. The
+  test's fake server now answers with asyncssh's own `SFTPVFSAttrs`, so a
+  wrong field name fails it.
 
 ## [1.0.234] — unreleased
 

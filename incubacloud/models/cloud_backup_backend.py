@@ -646,7 +646,7 @@ class CloudBackupBackend(models.Model):
                 vfs = await sftp.statvfs(path)
             except asyncssh.SFTPError:
                 return {"free_bytes": None}
-            return {"free_bytes": vfs.f_bavail * vfs.f_frsize}
+            return {"free_bytes": vfs.bavail * vfs.frsize}
 
         return self._sftp_run(_probe)
 
