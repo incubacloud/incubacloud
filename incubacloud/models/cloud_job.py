@@ -3620,6 +3620,205 @@ class CloudJob(models.Model):
         )
         return True
 
+    #: What the ``job_failed`` of a deploy or a rebuild says when its
+    #: pre-flight refused on pip conflicts (``JobRefused`` in the re-sync
+    #: of ``DeployInstanceExecutor``): read once the conflict alert itself
+    #: is gone (``_stale_conflict_holds``).
+    _PREFLIGHT_PIP_RE = re.compile(r"Pre-flight: \d+ pip dependency conflict")
+
+    @api.model
+    def _stale_conflict_holds(self, scope=None):
+        """Return the ``job_failed`` alerts holding a queue for an answered conflict.
+
+        Until 1.0.220 closing a conflict alert (``pip_conflict``,
+        ``addon_conflict``) left the ``job_failed`` of the job that failed
+        on it open, and that alert held the instance's queue for good: a
+        person had answered the conflict, and nothing behind the failure
+        started any more (an Odoo 18 instance on a tenant's panel, a week,
+        9-nov-2026). From 1.0.220 the close closes both
+        (``cloud.alert._close_conflict_failures``); these are the ones it
+        would have closed. The same pair may come from a step of a chain.
+
+        What it relies on: a ``job_failed`` is one per job type and target,
+        not per job (``_job_failed_domain``), and every new failure writes
+        its own job and ``last_raised_at`` on it (``cloud.alert.raise_alert``),
+        so one that names a job with a conflict closed names the last
+        failure of its type. A job carries a conflict alert with its
+        ``job_id`` when it found the conflict: the pip pre-flight of the
+        deploy's re-sync fails it, the addon pre-flight blocks it and
+        ``unblock_and_enqueue`` runs the same job again once the conflict
+        is resolved, and ``on_failure`` files the addon conflict of a
+        failed deploy with the job too. So the failure counts only if it
+        was raised before the conflict was closed (``resolved_at``, or
+        the conflict's last write before 8-oct-2026): a failure raised
+        after it is the job's own, of a run that came after the answer.
+        Dismissed alerts are deleted after 60 days (``cloud.alert._gc``):
+        a failure whose conflict is gone counts when its message is the
+        pip pre-flight's and no conflict is open on its instance. Only
+        instance queues: a conflict is an instance's.
+
+        :param scope: the queue to look at, as ``_scope_of_step`` returns
+            it; every instance queue when not given
+        :return: the alerts, ``cloud.alert`` records
+        """
+        Alert = self.env["cloud.alert"].sudo()
+        if scope and not scope[0]:
+            return Alert.browse()
+        domain = [
+            ("state", "=", "active"),
+            ("code", "=", "job_failed"),
+            ("instance_id", "!=", False),
+            ("job_id", "!=", False),
+            ("job_id.state", "=", "failed"),
+            ("job_id.job_type_id.failure_holds_queue", "=", True),
+        ]
+        if scope:
+            domain.append(("instance_id", "=", scope[0]))
+        actionable = list(self._get_actionable_alert_codes())
+        stale = Alert.browse()
+        for alert in Alert.search(domain, order="id"):
+            conflicts = Alert.search([
+                ("job_id", "=", alert.job_id.id), ("code", "in", actionable),
+            ])
+            if any(conflict.state == "active" for conflict in conflicts):
+                continue
+            if conflicts:
+                closed_at = max(
+                    conflict.resolved_at or conflict.write_date
+                    for conflict in conflicts
+                )
+                if (alert.last_raised_at or alert.create_date) > closed_at:
+                    continue
+            elif not (
+                self._PREFLIGHT_PIP_RE.search(alert.message or "")
+                and not Alert.search_count([
+                    ("instance_id", "=", alert.instance_id.id),
+                    ("code", "in", actionable),
+                    ("state", "=", "active"),
+                ], limit=1)
+            ):
+                continue
+            stale |= alert
+        return stale
+
+    @api.model
+    def _stale_hold_scopes(self):
+        """Return the queues a stale conflict hold keeps (``_stale_conflict_holds``).
+
+        :return: ``((instance_id, None), alert ids)`` pairs, sorted by
+            queue: the ids name the alerts to close by hand if the queue
+            cannot be released
+        :rtype: list
+        """
+        by_scope = {}
+        for alert in self._stale_conflict_holds():
+            by_scope.setdefault((alert.instance_id.id, None), []).append(alert.id)
+        return sorted(by_scope.items())
+
+    @api.model
+    def _stale_hold_waiting(self, scope, stale_jobs):
+        """Return what to cancel with the stale holds of one queue.
+
+        Every entry waiting in *scope* but those that pass the hold
+        (``_passes_hold``: a delete of the instance, a move's rollback,
+        the retry of the failure, a push's rebuild that supersedes it),
+        which may be waiting for a busy target or a slot of their
+        channel alone, and the heads of the queue (an executor's
+        follow-ups and retries). A chain waits as one entry in each of its
+        queues and holds the others while it is first in them
+        (``_entry_verdict``): in each queue where a chain cancelled here is
+        first, what waits behind it is cancelled too, with the same
+        exceptions, and so on for the chains among them. Another queue is
+        left alone when the chain is not first in it (it was not kept by
+        the chain), when a failure of its own holds it (what waits there
+        waits for that failure) and when its lock is taken
+        (``_try_lock_scope``: its own dispatcher may be looking at the
+        chain).
+
+        :param scope: the queue the stale holds keep
+        :param stale_jobs: the failed jobs of those holds
+        :return: the ``cloud.job`` records to cancel, chains whole
+        """
+        plan = self.browse()
+        todo = [(scope, stale_jobs, None)]
+        seen = set()
+        while todo:
+            queue, holding, chain_key = todo.pop(0)
+            if chain_key is not None and (
+                not self._try_lock_scope(queue)
+                or self._queue_holding_alerts(*queue)
+            ):
+                continue
+            entries = self._queue_entries(queue)
+            if chain_key is not None:
+                if not entries or entries[0][:1].queue_chain_key != chain_key:
+                    continue
+                entries = entries[1:]
+            for entry in entries:
+                first = entry[:1]
+                if (entry & plan) or first.queue_head or self._passes_hold(
+                    first, holding,
+                ):
+                    continue
+                plan |= entry
+                key = first.queue_chain_key
+                if not key:
+                    continue
+                for other in sorted(
+                    self._queue_scopes_of(entry) - {queue},
+                    key=lambda s: (s[0] or 0, s[1] or 0),
+                ):
+                    if (other, key) not in seen:
+                        seen.add((other, key))
+                        todo.append((other, self.browse(), key))
+        return plan
+
+    @api.model
+    def _close_stale_conflict_holds_on(self, scope):
+        """Close the stale conflict holds of one queue, cancelling what waited.
+
+        Under the queue's lock the holds are read again
+        (``_stale_conflict_holds``). If another hold still keeps the queue,
+        in this transaction or in what others committed (``_fresh_env``),
+        only the stale ones are closed and what waits stays. Otherwise
+        what waited behind them is cancelled first
+        (``_stale_hold_waiting``), with a note that says to ask for it
+        again: it was asked for days before, and an update of the panel
+        must not start it unannounced (a rebuild restarts a production,
+        a restore overwrites a database). The holds are then dismissed,
+        ``auto``, as the closing of their conflict would have done.
+
+        :param scope: the queue, ``(instance_id, None)``
+        :return: the alerts closed and the jobs cancelled
+        :rtype: tuple
+        """
+        Job = self.sudo()
+        Job._lock_scopes({scope})
+        stale = Job._stale_conflict_holds(scope)
+        if not stale:
+            return stale, Job.browse()
+        cancelled = Job.browse()
+        with Job._fresh_env() as env:
+            committed = set(env["cloud.job"]._queue_holding_alerts(*scope).ids)
+        others = (set(Job._queue_holding_alerts(*scope).ids) | committed) - set(
+            stale.ids,
+        )
+        if not others:
+            waiting = Job._stale_hold_waiting(scope, stale.mapped("job_id"))
+            if waiting:
+                cancelled = Job._cancel_queued(waiting, self.env._(
+                    "Cancelled: it waited behind a failure whose conflict had"
+                    " been resolved before this update. Ask for it again if"
+                    " it is still needed."
+                ))
+        stale.write({"state": "dismissed", "resolution": "auto"})
+        _logger.info(
+            "cloud.job: instance %s: %d failure alert(s) left holding its"
+            " queue after their conflict closed, %d waiting job(s) cancelled",
+            scope[0], len(stale), len(cancelled),
+        )
+        return stale, cancelled
+
     @api.model
     def _cron_dispatch_queued(self):
         """Sweep: serve every queue that waits with nothing running.
