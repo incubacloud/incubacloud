@@ -1,8 +1,11 @@
 import logging
 from datetime import timedelta
 
+import psycopg2
+
 from odoo import api, fields, models
 from odoo.exceptions import AccessError
+from odoo.tools import mute_logger
 
 from ..mail_layout import wrap_in_mail_layout
 from .encrypted_char import EncryptedChar
@@ -419,7 +422,9 @@ class ResUsers(models.Model):
         bot = self.env.ref(CRON_BOT_XML_ID, raise_if_not_found=False)
         if bot:
             return bot
-        return self.sudo().search([('login', '=', CRON_BOT_LOGIN)], limit=1)
+        return self.sudo().with_context(active_test=False).search(
+            [('login', '=', CRON_BOT_LOGIN)], limit=1,
+        )
 
     @api.model
     def _incubacloud_ensure_cron_bot(self):
@@ -434,9 +439,22 @@ class ResUsers(models.Model):
         after the modules already installed are loaded, whose fields the
         registry then knows.
 
+        During an update the post-migrations run before the modules that
+        load after this one (``account``, ``purchase_stock``...): their
+        required columns are in the tables, their fields not yet in the
+        registry, and the ``create()`` leaves those columns empty. While
+        the registry is not fully loaded the creation is therefore tried
+        in a savepoint; when the database refuses it, the bot is left for
+        ``migrations/0.0.0/end-cron-bot.py``, which runs with every module
+        loaded, and nothing else is done here. Once the registry is
+        loaded, a failure raises.
+
         Idempotent: on second install we find the existing user by
         XML-id (preferred) or by login (fallback for manually
-        created users) and only align groups.
+        created users, archived ones included) and only align groups.
+
+        :return: the bot, or an empty recordset when its creation was
+            deferred.
         """
         IMD = self.env['ir.model.data'].sudo()
         module, name = CRON_BOT_XML_ID.split('.', 1)
@@ -446,17 +464,18 @@ class ResUsers(models.Model):
              ('model', '=', 'res.users')],
             limit=1,
         )
-        if mdata:
-            user = self.browse(mdata.res_id).exists()
-        else:
-            user = self.sudo().search([('login', '=', CRON_BOT_LOGIN)], limit=1)
+        user = self.browse(mdata.res_id).exists() if mdata else self.browse()
+        if not user:
+            user = self.sudo().with_context(active_test=False).search(
+                [('login', '=', CRON_BOT_LOGIN)], limit=1,
+            )
 
         if not user:
             # Through the ORM, partner included: every installed module's
             # defaults apply, whatever NOT NULL columns those modules add
             # to the users' and partners' tables. An INSERT naming the
             # columns it knew left the others empty and failed.
-            user = self.sudo().create({
+            vals = {
                 'name': 'IncubaCloud Cron Bot',
                 'login': CRON_BOT_LOGIN,
                 'active': True,
@@ -465,13 +484,29 @@ class ResUsers(models.Model):
                 # 'email' turned every message it followed into a failed
                 # mail notification.
                 'notification_type': 'inbox',
-            })
+            }
+            if self.env.registry.loaded:
+                user = self.sudo().create(vals)
+            else:
+                try:
+                    with mute_logger('odoo.sql_db'), self.env.cr.savepoint():
+                        user = self.sudo().create(vals)
+                except psycopg2.IntegrityError as exc:
+                    _logger.warning(
+                        "incubacloud cron bot not created yet: a module "
+                        "loaded after this one requires a value the "
+                        "registry cannot give it (%s); it is created once "
+                        "the registry is fully loaded",
+                        exc.diag.message_primary,
+                    )
+                    return self.browse()
             _logger.info("created incubacloud cron bot user id=%s", user.id)
 
         # Ensure an ``ir.model.data`` row exists so cron XMLs can
         # reference the user by its fully-qualified XML-id regardless
         # of how it got created above (existing-login fallback or
-        # fresh create).
+        # fresh create). A row left pointing at a user that is gone
+        # points at this one.
         if not mdata:
             IMD.create({
                 'module': module,
@@ -480,6 +515,8 @@ class ResUsers(models.Model):
                 'res_id': user.id,
                 'noupdate': True,
             })
+        elif mdata.res_id != user.id:
+            mdata.res_id = user.id
 
         # Align groups. Re-running is safe (``(4, id)`` is a no-op
         # when the membership already exists). We intentionally do
@@ -494,6 +531,7 @@ class ResUsers(models.Model):
             self.env.ref('mail.group_mail_notification_type_inbox').id,
         ]
         user.sudo().write({'group_ids': [(4, gid) for gid in required]})
+        return user
 
     @api.model
     def _incubacloud_assign_cron_user_id(self, module_name):
@@ -509,9 +547,21 @@ class ResUsers(models.Model):
         We only overwrite ``user_id`` when it still points at uid=1
         (the OdooBot default). If an operator has re-routed a cron
         to a specific user, their choice wins.
+
+        Without a bot (its creation deferred during an update, see
+        :meth:`_incubacloud_ensure_cron_bot`) nothing changes: the crons
+        keep running as uid 1 until it exists. A cron running right now
+        holds its row locked, and writing it would fail the whole
+        update: it keeps its user and the next assignment moves it.
         """
         IMD = self.env['ir.model.data'].sudo()
-        bot = self.env.ref(CRON_BOT_XML_ID)
+        bot = self.env.ref(CRON_BOT_XML_ID, raise_if_not_found=False)
+        if not bot:
+            _logger.info(
+                "no incubacloud cron bot yet: the %s crons keep their user",
+                module_name,
+            )
+            return
         cron_mdata = IMD.search([
             ('module', '=', module_name),
             ('model', '=', 'ir.cron'),
@@ -523,11 +573,19 @@ class ResUsers(models.Model):
         ).exists()
         stale = module_crons.filtered(lambda c: c.user_id.id == 1)
         if stale:
-            stale.write({'user_id': bot.id})
-            _logger.info(
-                "reassigned %d %s crons to cron bot user",
-                len(stale), module_name,
-            )
+            free = stale.try_lock_for_update(allow_referencing=True)
+            if stale - free:
+                _logger.info(
+                    "left %d running %s crons on their user: %s",
+                    len(stale - free), module_name,
+                    ', '.join((stale - free).mapped('cron_name')),
+                )
+            if free:
+                free.write({'user_id': bot.id})
+                _logger.info(
+                    "reassigned %d %s crons to cron bot user",
+                    len(free), module_name,
+                )
 
         # Odoo 19 hardened ``ir.actions.server.run()``: when an action
         # carries no ``group_ids``, ``_can_execute_action_on_records``

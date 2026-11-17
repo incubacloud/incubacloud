@@ -1,7 +1,20 @@
 """Tests for the incubacloud cron bot user (P1.26)."""
+import importlib.util
+from pathlib import Path
+from unittest.mock import patch
+
+import psycopg2
+
+import odoo
 from odoo.exceptions import AccessError
 from odoo.tests.common import TransactionCase, tagged
-from odoo.tools import SQL
+from odoo.tools import SQL, mute_logger
+
+from ..models.res_users_ext import CRON_BOT_LOGIN, CRON_BOT_XML_ID
+
+_LOGGER = "odoo.addons.incubacloud.models.res_users_ext"
+_END_SCRIPT = Path(__file__).resolve().parents[1] / "migrations" / "0.0.0" / "end-cron-bot.py"
+_END_LOGGER = "odoo.addons.incubacloud.migrations.end_cron_bot"
 
 
 class TestCronBotUser(TransactionCase):
@@ -155,3 +168,261 @@ class TestCronBotCreation(TransactionCase):
         self.assertEqual(bot.partner_id[self.FIELD], "from-its-default")
         self.assertIn(self.env.ref("incubacloud.group_cloud_manager"), bot.all_group_ids)
         self.assertEqual(bot.notification_type, "inbox")
+
+
+@tagged("post_install", "-at_install")
+class TestCronBotDeferred(TransactionCase):
+    """A bot the registry cannot create yet is left for the end of the update.
+
+    During an update this module's post-migrations run before the modules
+    loaded after it, whose required columns are in the tables but whose
+    fields are not in the registry. The test makes such a column on
+    ``res_partner`` with SQL, a column no field knows, and marks the
+    registry as still loading.
+    """
+
+    GHOST = "x_ic_ghost_required"
+
+    def setUp(self):
+        """Clear the caches the SQL of the tests leaves stale."""
+        super().setUp()
+        self.addCleanup(self.registry.reset_changes)
+        self.addCleanup(self.registry.clear_all_caches)
+        self.Users = self.env["res.users"]
+        self.bot = self.env.ref(CRON_BOT_XML_ID)
+
+    def _ghost_column(self):
+        """Add a NOT NULL column to ``res_partner`` that no field knows."""
+        column = SQL.identifier(self.GHOST)
+        self.env.cr.execute(SQL(
+            "ALTER TABLE res_partner ADD COLUMN %s int NOT NULL DEFAULT 0", column,
+        ))
+        self.env.cr.execute(SQL("ALTER TABLE res_partner ALTER COLUMN %s DROP DEFAULT", column))
+
+    def _drop_ghost_column(self):
+        """Remove the column of :meth:`_ghost_column`."""
+        self.env.cr.execute(SQL(
+            "ALTER TABLE res_partner DROP COLUMN %s", SQL.identifier(self.GHOST),
+        ))
+
+    def _remove_bot(self):
+        """Make the bot missing, with SQL, as a database that lost it.
+
+        Its crons go back to uid 1, its XML-id goes and its login changes,
+        so neither lookup finds it. Deleting the row itself is refused by
+        the rows that point to the user on a panel's base.
+
+        :return: the ids of the crons that were on the bot
+        """
+        cr = self.env.cr
+        cr.execute("UPDATE ir_cron SET user_id = 1 WHERE user_id = %s RETURNING id", [self.bot.id])
+        crons = [row[0] for row in cr.fetchall()]
+        module, name = CRON_BOT_XML_ID.split(".", 1)
+        cr.execute(
+            "DELETE FROM ir_model_data WHERE module = %s AND name = %s", [module, name],
+        )
+        cr.execute(
+            "UPDATE res_users SET login = %s WHERE id = %s",
+            [f"__incubacloud_cron_gone_{self.bot.id}__", self.bot.id],
+        )
+        self.env.invalidate_all()
+        self.registry.clear_cache()
+        return crons
+
+    def _new_bot(self):
+        """Return the bot the XML-id names now, or ``None``."""
+        self.registry.clear_cache()
+        return self.env.ref(CRON_BOT_XML_ID, raise_if_not_found=False)
+
+    def test_while_loading_a_refused_creation_is_deferred(self):
+        """Empty, a warning naming the column, no XML-id, the transaction alive."""
+        self._ghost_column()
+        self._remove_bot()
+        with patch.object(self.registry, "loaded", False), \
+                self.assertLogs(_LOGGER, "WARNING") as logs:
+            bot = self.Users._incubacloud_ensure_cron_bot()
+        self.assertFalse(bot)
+        self.assertEqual(len(logs.records), 1)
+        self.assertEqual(logs.records[0].levelname, "WARNING")
+        self.assertIn(self.GHOST, logs.output[0])
+        self.assertIn("once the registry is fully loaded", logs.output[0])
+        self.assertIsNone(self._new_bot())
+        # The savepoint undid the failed INSERT: the transaction goes on.
+        self.assertFalse(self.Users.search([("login", "=", CRON_BOT_LOGIN)]))
+
+    def test_once_loaded_the_bot_is_created(self):
+        """Deferred while loading, created with the registry loaded."""
+        self._ghost_column()
+        self._remove_bot()
+        with patch.object(self.registry, "loaded", False), \
+                self.assertLogs(_LOGGER, "WARNING"):
+            self.assertFalse(self.Users._incubacloud_ensure_cron_bot())
+        self._drop_ghost_column()
+        bot = self.Users._incubacloud_ensure_cron_bot()
+        self.assertTrue(bot)
+        self.assertNotEqual(bot, self.bot)
+        self.assertEqual(self._new_bot(), bot)
+        self.assertEqual(bot.login, CRON_BOT_LOGIN)
+        self.assertIn(self.env.ref("incubacloud.group_cloud_manager"), bot.all_group_ids)
+
+    def test_once_loaded_a_refused_creation_raises(self):
+        """With the registry loaded the failure is a real one and is not hidden."""
+        self._ghost_column()
+        self._remove_bot()
+        with self.assertRaises(psycopg2.IntegrityError), \
+                mute_logger("odoo.sql_db"), self.env.cr.savepoint():
+            self.Users._incubacloud_ensure_cron_bot()
+
+    def test_an_xml_id_left_on_a_deleted_user_is_moved_to_the_new_bot(self):
+        """The XML-id row of a user deleted with SQL names the bot created after."""
+        module, name = CRON_BOT_XML_ID.split(".", 1)
+        self.env.cr.execute(
+            "UPDATE ir_model_data SET res_id = (SELECT max(id) + 1000 FROM res_users) "
+            "WHERE module = %s AND name = %s", [module, name],
+        )
+        self.env.cr.execute(
+            "UPDATE res_users SET login = 'gone' || id WHERE id = %s", [self.bot.id],
+        )
+        self.env.invalidate_all()
+        self.registry.clear_cache()
+        bot = self.Users._incubacloud_ensure_cron_bot()
+        self.assertTrue(bot)
+        self.assertNotEqual(bot, self.bot)
+        self.assertEqual(self._new_bot(), bot)
+
+    def test_assign_without_a_bot_leaves_the_crons_quietly(self):
+        """No bot: no error, the crons stay on uid 1."""
+        crons = self._remove_bot()
+        self.assertTrue(crons)
+        with self.assertLogs(_LOGGER, "INFO") as logs:
+            self.Users._incubacloud_assign_cron_user_id(module_name="incubacloud")
+        self.assertIn("no incubacloud cron bot yet", logs.output[0])
+        self.assertEqual(
+            set(self.env["ir.cron"].browse(crons).mapped("user_id.id")), {1},
+        )
+
+    def test_the_login_fallback_finds_an_archived_bot(self):
+        """An archived bot without XML-id is the bot: no second one, no unique error."""
+        module, name = CRON_BOT_XML_ID.split(".", 1)
+        self.env.cr.execute(
+            "DELETE FROM ir_model_data WHERE module = %s AND name = %s", [module, name],
+        )
+        self.env.cr.execute("UPDATE res_users SET active = false WHERE id = %s", [self.bot.id])
+        self.env.invalidate_all()
+        self.registry.clear_cache()
+        self.assertEqual(self.Users._get_cron_bot(), self.bot)
+        self.assertEqual(self.Users._incubacloud_ensure_cron_bot(), self.bot)
+        self.assertEqual(self._new_bot(), self.bot)
+
+    def _run_end_script(self):
+        """Run ``migrations/0.0.0/end-cron-bot.py`` on this cursor, from 1.0.233."""
+        spec = importlib.util.spec_from_file_location(_END_LOGGER, _END_SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.migrate(self.env.cr, "19.0.1.0.233")
+
+    def test_the_end_script_repairs_a_missing_bot(self):
+        """It creates the bot and gives it every incubacloud% cron left on uid 1."""
+        crons = self._remove_bot()
+        self._run_end_script()
+        bot = self._new_bot()
+        self.assertTrue(bot)
+        self.assertNotEqual(bot, self.bot)
+        self.assertTrue(self.env["ir.cron"].browse(crons).filtered(lambda c: c.user_id == bot))
+        IMD = self.env["ir.model.data"]
+        left = self.env["ir.cron"].browse(IMD.search([
+            ("model", "=", "ir.cron"), ("module", "=like", "incubacloud%"),
+        ]).mapped("res_id")).exists().filtered(lambda c: c.user_id.id == 1)
+        self.assertFalse(left, left.mapped("cron_name"))
+
+    def test_the_end_script_leaves_a_bot_that_is_there(self):
+        """With the bot there it neither creates nor reassigns anything."""
+        Users = type(self.Users)
+        with patch.object(Users, "_incubacloud_ensure_cron_bot", autospec=True) as ensure:
+            self._run_end_script()
+        ensure.assert_not_called()
+
+    def test_the_end_script_never_breaks_the_update(self):
+        """A failure is an ERROR in the log, and the update goes on."""
+        self._remove_bot()
+        Users = type(self.Users)
+        with patch.object(Users, "_incubacloud_ensure_cron_bot", autospec=True,
+                          side_effect=RuntimeError("refused")), \
+                self.assertLogs(_END_LOGGER, "ERROR") as logs:
+            self._run_end_script()
+        self.assertIn("creating it at the end of the update failed", logs.output[0])
+        self.env.cr.execute("SELECT 1")
+
+
+@tagged("post_install", "-at_install")
+class TestCronBotAssignSkipsRunningCrons(TransactionCase):
+    """A cron that runs holds its row: the assignment leaves it, it does not fail.
+
+    ``ir.cron.write`` raises on a row another transaction holds, which
+    would fail the whole update. The row is held from a connection of its
+    own, as the cron runner does. That connection only sees committed rows,
+    where every cron of this module is already on the bot, so the test
+    assigns the crons of a module that ships several on uid 1 (``base``'s,
+    on a fresh base).
+    """
+
+    def _module_with_crons_on_uid_1(self):
+        """Return a module and two or more of its crons committed on uid 1."""
+        self.env.cr.execute("""
+            SELECT d.module, array_agg(c.id ORDER BY c.id)
+              FROM ir_model_data d JOIN ir_cron c ON c.id = d.res_id
+             WHERE d.model = 'ir.cron' AND c.user_id = 1
+          GROUP BY d.module HAVING count(*) >= 2
+          ORDER BY d.module = 'base' DESC, d.module
+             LIMIT 1
+        """)
+        row = self.env.cr.fetchone()
+        if not row:
+            self.skipTest("no module has two crons on uid 1 in this base")
+        return row[0], self.env["ir.cron"].browse(row[1])
+
+    def test_a_locked_cron_keeps_its_user_and_the_others_move(self):
+        module, crons = self._module_with_crons_on_uid_1()
+        running, others = crons[0], crons[1:]
+        cr = odoo.sql_db.db_connect(self.env.cr.dbname).cursor()
+        self.addCleanup(cr.close)
+        self.addCleanup(cr.rollback)
+        cr.execute("SET LOCAL lock_timeout = '10s'")
+        cr.execute("SELECT id FROM ir_cron WHERE id = %s FOR NO KEY UPDATE", [running.id])
+        self.assertEqual(cr.fetchone()[0], running.id, "the second connection holds the row")
+        bot = self.env.ref(CRON_BOT_XML_ID)
+        with self.assertLogs(_LOGGER, "INFO") as logs:
+            self.env["res.users"]._incubacloud_assign_cron_user_id(module_name=module)
+        self.assertEqual(running.user_id.id, 1)
+        self.assertEqual(set(others.mapped("user_id")), {bot})
+        output = "\n".join(logs.output)
+        self.assertIn(f"left 1 running {module} crons on their user: {running.cron_name}", output)
+        self.assertIn(f"reassigned {len(others)} {module} crons", output)
+
+
+@tagged("post_install", "-at_install")
+class TestCronBotAfterTheUpdate(TransactionCase):
+    """The bot as an update leaves it, whichever modules the database has.
+
+    On a database with ``account`` and ``purchase_stock`` that lost its bot,
+    an update creates it at its end: with its XML-id, the defaults of those
+    modules on its partner and this module's crons.
+    """
+
+    def test_the_bot_has_its_xml_id_its_defaults_and_the_crons(self):
+        bot = self.env.ref(CRON_BOT_XML_ID)
+        self.assertEqual(bot.login, CRON_BOT_LOGIN)
+        self.assertIn(self.env.ref("incubacloud.group_cloud_manager"), bot.all_group_ids)
+        Partner = self.env["res.partner"]
+        for field in ("autopost_bills", "group_rfq", "group_on"):
+            if field in Partner._fields:
+                with self.subTest(field=field):
+                    self.assertEqual(
+                        bot.partner_id[field], Partner.default_get([field])[field],
+                    )
+        IMD = self.env["ir.model.data"]
+        crons = self.env["ir.cron"].browse(IMD.search([
+            ("model", "=", "ir.cron"), ("module", "=", "incubacloud"),
+        ]).mapped("res_id")).exists()
+        self.assertTrue(crons)
+        self.assertEqual(set(crons.mapped("user_id")), {bot})

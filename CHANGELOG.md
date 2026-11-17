@@ -13,13 +13,15 @@ their sign-ins are listed and raise no alert, and each key added raises a
 critical alert of its own. Monitoring's Fleet view reads the panel's own
 servers alone, and the central serves no cross-account read. A conflict
 answered before 1.0.220 no longer holds its instance's queue. The GitHub
-App can be created under an organization, chosen on the setup page.
+App can be created under an organization, chosen on the setup page. A
+database that lost the panel's cron bot updates again.
 
 The update adds the table `cloud_host_known_key`, empty, and the column
 `owner_type` to the GitHub App, empty on an App there is. Its data
 migration, 1.0.235's `end-stale-holds`, closes the failures a conflict
 answered before 1.0.220 left holding an instance's queue, and cancels what
-waited behind them.
+waited behind them; the cron bot's end-migration recreates the bot only
+when it is missing.
 
 ### Added
 
@@ -172,6 +174,22 @@ waited behind them.
   the panel. The other pages under `/cloud` already asked for a higher
   role before reading anything.
 
+- **Updating the module on a database without the cron bot.** During an
+  update the module's post-migrations run before the modules loaded after
+  it, such as `account` and `purchase_stock`: their required columns on
+  partners and users are in the database, their fields not yet in the
+  registry. A post-migration that had to create the missing bot left those
+  columns empty, failed on their NOT NULL constraint and stopped the whole
+  update. While the registry is still loading, the bot is now created in a
+  savepoint; when the database refuses it, a warning says so and the update
+  goes on. Once every module is loaded, an end-migration that runs on every
+  version change creates it and gives it the crons of the panel's modules
+  still owned by uid 1; it logs an error instead of failing. Meanwhile
+  those crons keep running as uid 1. The assignment of crons to the bot
+  does nothing without a bot and leaves a cron that is running at that
+  moment on its user, instead of failing on its locked row. An archived
+  bot is found by its login.
+
 ### Security
 
 - **Monitoring's Fleet view is the panel's own servers, on every panel.**
@@ -228,6 +246,9 @@ waited behind them.
   holding an instance's queue after their conflict was closed, and cancels
   what waited behind them; one savepoint per instance, and what fails is
   logged without breaking the update.
+- `0.0.0`'s `end-cron-bot`, run on every version change, creates the cron
+  bot when it is missing and gives it the crons of the panel's modules
+  still owned by uid 1; with the bot there, it does nothing.
 
 ## [1.0.234] — unreleased
 
