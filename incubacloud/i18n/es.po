@@ -28490,6 +28490,12 @@ msgstr "Otra clave conocida de este servidor tiene ese nombre."
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_host_known_key.py:0
+msgid "A removed key says when it was removed."
+msgstr "Una clave retirada indica cuándo se retiró."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 #: code:addons/incubacloud/models/cloud_host_known_key.py:0
 msgid "That key is not a known key of this server."
