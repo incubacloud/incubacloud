@@ -104,6 +104,23 @@ waited behind them.
   whose conflict alert was deleted after its 60 days counts when its
   message is the pre-flight's and no conflict is open on its instance.
 
+- **A host card with a long name wraps it instead of pushing its status
+  badge out of the card.** On the hosts list, a name with no spaces (a
+  host called after its full domain) could not break, so the card's head
+  grew wider than the card and the badge stuck out past its right edge,
+  at any screen width. The whole name now wraps onto more lines, the badge
+  keeps its size at the top right of the card, and an address or a region
+  with no spaces on the line below breaks the same way.
+
+- **A long name with no spaces no longer pushes a badge or a button out of
+  its place on three more screens.** On the backup destinations list the
+  name wraps and the type badge keeps its size at the top right of the
+  card, as on the hosts list. In the whitelist tab of a host and of an
+  instance a long hostname wraps and the remove button stays at the end
+  of its row. In the archived instances tab of a project a long instance
+  name, or the host it came from, wraps inside its row instead of running
+  past it on a narrow screen.
+
 ### Security
 
 - **Monitoring's Fleet view is the panel's own servers, on every panel.**

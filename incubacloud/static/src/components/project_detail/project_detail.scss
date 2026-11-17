@@ -210,6 +210,14 @@
     .ic-archived-row { grid-template-columns: 1fr; }
 }
 
+// The row's columns shrink below their content (the grid's 1fr tracks
+// would otherwise grow with an unbreakable name), and the name, the host
+// it came from and the check time break anywhere instead of overflowing.
+.ic-archived-main,
+.ic-archived-copy {
+    min-width: 0;
+}
+
 .ic-archived-main {
     display: flex;
     align-items: center;
@@ -218,12 +226,16 @@
 }
 
 .ic-archived-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
     font-weight: 600;
     font-size: 0.875rem;
 }
 
 .ic-archived-when,
 .ic-archived-checked {
+    min-width: 0;
+    overflow-wrap: anywhere;
     font-size: 0.6875rem;
     color: var(--rl-muted);
 }

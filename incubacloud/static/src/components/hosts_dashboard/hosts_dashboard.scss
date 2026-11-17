@@ -15,15 +15,29 @@
         &.status-unknown     { border-left-color: $state-neutral; }
     }
 
+    // The name wraps where it must (a host name often has no spaces) and
+    // the badge keeps its size on the first line, so a long name never
+    // pushes the badge out of the card.
     .ic-host-card-head {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: 10px;
         margin-bottom: 4px;
+
+        .rl-rname {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .rl-sb {
+            flex: none;
+        }
     }
 
+    // An address or a region with no spaces breaks instead of overflowing.
     .ic-host-card-meta {
         margin-bottom: 10px;
+        overflow-wrap: anywhere;
 
         code {
             font-family: var(--rl-fm);

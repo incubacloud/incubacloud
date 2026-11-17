@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
+import { queryOne } from "@odoo/hoot-dom";
 import { useEnv, useState } from "@odoo/owl";
 import {
     allowTranslations,
@@ -431,6 +432,40 @@ describe("HostsDashboard — what a card paints", () => {
         expect(".ic-usage-none").toHaveCount(1);
         expect(`${cardOf("live-host")} .ic-usage-none`).toHaveCount(0);
         expect(`${cardOf("stale-host")} .ic-mbar-cpu`).toHaveCount(0);
+    });
+
+    // The panel's styles are not in the test bundle: the head of a card
+    // is laid out here as ``hosts_dashboard.scss`` and ``relay.scss`` do.
+    const HEAD_STYLE = `
+        <style>
+            .ic-host-card { width: 300px; box-sizing: border-box; padding: 16px 18px; }
+            .ic-host-card-head { display: flex; align-items: flex-start; gap: 10px; }
+            .ic-host-card-head .rl-rname { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+            .ic-host-card-head .rl-rspacer { flex: 1; }
+            .ic-host-card-head .rl-sb { flex: none; display: inline-flex; font-size: 10.5px; padding: 3px 9px 3px 7px; }
+            .ic-host-card-meta { overflow-wrap: anywhere; font-size: 11px; }
+        </style>`;
+
+    test("a long name with no spaces wraps and leaves the badge inside the card", async () => {
+        const long = {
+            ...live, id: 3, status: "unknown", ip_address: "",
+            name: "averyveryverylonghostnamewithnohyphens.staging.example.com",
+            region: "a-region-with-a-very-long-name-and-no-spaces",
+        };
+        await mountWith([long]);
+        queryOne(".ic-hosts-dashboard").insertAdjacentHTML("afterbegin", HEAD_STYLE);
+        const card = queryOne(".ic-host-card").getBoundingClientRect();
+        const head = queryOne(".ic-host-card-head");
+        const name = queryOne(".ic-host-card-head .rl-rname").getBoundingClientRect();
+        const badge = queryOne(".ic-host-card-head .rl-sb").getBoundingClientRect();
+        expect(head.scrollWidth).not.toBeGreaterThan(head.clientWidth);
+        expect(badge.right).not.toBeGreaterThan(card.right);
+        expect(name.right).not.toBeGreaterThan(badge.left);
+        // The whole name stays: it wraps onto more lines, it is not cut.
+        expect(name.height).toBeGreaterThan(badge.height * 1.5);
+        expect(queryOne(".ic-host-card-head .rl-rname")).toHaveText(long.name);
+        const meta = queryOne(".ic-host-card-meta");
+        expect(meta.scrollWidth).not.toBeGreaterThan(meta.clientWidth);
     });
 
     test("a managed panel gives no instruction for off", async () => {

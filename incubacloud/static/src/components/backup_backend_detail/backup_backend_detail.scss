@@ -5,11 +5,23 @@
 // ── Backends list (grid of cards) ──────────────────────────────────────────
 .ic-backups-dashboard {
 
+    // The name wraps where it must (a destination name often has no
+    // spaces) and the badge keeps its size on the first line, so a long
+    // name never pushes the badge out of the card.
     .ic-backend-card-head {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: 10px;
         margin-bottom: 4px;
+
+        .rl-rname {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .rl-sb {
+            flex: none;
+        }
     }
 
     .ic-backend-card-dst {
