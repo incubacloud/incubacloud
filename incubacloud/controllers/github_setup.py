@@ -29,9 +29,15 @@ from ..github.http_utils import safe_urlopen
 _logger = logging.getLogger(__name__)
 
 _GITHUB_APP_NEW = "https://github.com/settings/apps/new"
+_GITHUB_ORG_APP_NEW = "https://github.com/organizations/{org}/settings/apps/new"
+# A GitHub login: letters, digits and single hyphens, neither first nor
+# last, 39 characters at most. ASCII only, as GitHub's own rule.
+_GITHUB_LOGIN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}")
 _GITHUB_MANIFEST_CONVERT = (
     "https://api.github.com/app-manifests/{code}/conversions"
 )
+# GitHub's account types, as cloud.github.app keeps them.
+_OWNER_TYPES = {"User": "user", "Organization": "organization"}
 _STATE_SCOPE = "incubacloud.github_app_setup"
 _STATE_TTL_SECONDS = 600  # 10 minutes
 
@@ -91,6 +97,28 @@ def _state_problem(env, uid, state, now=None):
     return None
 
 
+def _github_app_new_url(state, org=None):
+    """Return GitHub's page for a new App from a manifest, carrying *state*.
+
+    Without *org*, the App is created under the account signed in to
+    GitHub in the browser; with it, under that organization, where GitHub
+    lets only its owners and App managers create one.
+
+    :param str state: the setup's state (see :func:`_make_state`).
+    :param str org: the organization's login, as in its GitHub URL.
+    :returns: the URL the setup page posts the manifest to.
+    :raises ValueError: when *org* is given and is not a GitHub login, so
+        that nothing but the organization's segment can come from it.
+    """
+    if org is None:
+        base = _GITHUB_APP_NEW
+    elif isinstance(org, str) and _GITHUB_LOGIN.fullmatch(org):
+        base = _GITHUB_ORG_APP_NEW.format(org=urllib.parse.quote(org, safe=""))
+    else:
+        raise ValueError(f"not a GitHub organization name: {org!r}")
+    return f"{base}?{urllib.parse.urlencode({'state': state})}"
+
+
 class GitHubSetupController(http.Controller):
 
     @staticmethod
@@ -113,16 +141,57 @@ class GitHubSetupController(http.Controller):
         ).strip("-") or "app"
         return f"IncubaCloud-{slug}"[:34]
 
-    @http.route(
-        "/cloud/github/setup", type="http", auth="user", methods=["GET"]
-    )
-    def github_setup(self):
-        """Redirect user to GitHub App creation via manifest flow.
+    @staticmethod
+    def _setup_texts():
+        """The setup page's words, translated here for the template.
 
-        Builds a GitHub App manifest pre-filled with this Odoo instance's
-        webhook URL and redirects the user to GitHub for confirmation.
-        A CSRF-style ``state`` token, signed for this user (see
+        Odoo's makepot does not extract terms from a standalone full-HTML
+        template, so the page receives them already translated.
+
+        :returns: a dict of the template's text values.
+        """
+        return {
+            'title': _("Create GitHub App"),
+            'heading': _("Create your GitHub App"),
+            'warn': _(
+                "Make sure you are signed in to GitHub first in this "
+                "browser, otherwise GitHub shows a generic error instead "
+                "of the app creation page."
+            ),
+            'signin': _("Open GitHub sign-in"),
+            'where': _("Where to create it"),
+            'mine': _("My account"),
+            'an_org': _("An organization"),
+            'org_label': _("Organization name"),
+            'org_hint': _(
+                "As it appears in GitHub's URL: github.com/name. You must "
+                "be an owner or app manager of the organization; otherwise "
+                "GitHub refuses."
+            ),
+            'cont': _("Continue to GitHub"),
+            'going': _("Opening GitHub…"),
+        }
+
+    @http.route(
+        "/cloud/github/setup",
+        type="http",
+        auth="user",
+        methods=["GET", "POST"],
+    )
+    def github_setup(self, owner="user", org="", **_kwargs):
+        """Ask where to create the GitHub App, then send its manifest there.
+
+        GET shows the setup page: where GitHub creates the App, the
+        signed-in account or an organization named as in GitHub's URL.
+        Its form comes back here by POST, which checks the organization's
+        name and answers a page that posts the manifest, pre-filled with
+        this panel's webhook URL, to GitHub's page for new Apps of that
+        account. A CSRF-style ``state`` token, signed for this user (see
         :func:`_make_state`), lets the callback validate the return.
+
+        :param str owner: ``"org"`` for an organization; anything else is
+            the user's account.
+        :param str org: the organization's name, when *owner* is ``"org"``.
         """
         request.env['cloud.security.mixin']._check_can_manage_settings()
         # Build base URL — respect X-Forwarded-Proto from reverse proxies
@@ -141,8 +210,6 @@ class GitHubSetupController(http.Controller):
                 .rstrip("/")
             )
 
-        state = _make_state(request.env, request.env.uid)
-
         # GitHub requires HTTPS for redirect_url — the manifest flow will 500
         # on their side if the base URL is HTTP (e.g. local development).
         if not base_url.startswith("https://"):
@@ -151,7 +218,38 @@ class GitHubSetupController(http.Controller):
             )
 
         app_name = self._github_app_name(base_url, host)
+        values = dict(
+            self._setup_texts(),
+            app_name=app_name,
+            owner="org" if owner == "org" else "user",
+            org=(org or "").strip(),
+            error="",
+        )
 
+        # GET, or a name to fix: the page asks, and its form comes back
+        # here. Signing in to GitHub first is up to the user: an
+        # unauthenticated POST makes GitHub return an opaque 500.
+        org_name = None
+        ready = request.httprequest.method == "POST"
+        if ready and values["owner"] == "org":
+            org_name = values["org"]
+            if not org_name:
+                values["error"] = _("Type the organization's name.")
+            elif not _GITHUB_LOGIN.fullmatch(org_name):
+                values["error"] = _(
+                    "This is not a GitHub organization name: use the name "
+                    "in the organization's URL, letters, digits and single "
+                    "hyphens, at most 39 characters."
+                )
+            ready = not values["error"]
+        if not ready:
+            values.update(
+                action="/cloud/github/setup",
+                csrf_token=request.csrf_token(),
+            )
+            return request.render('incubacloud.github_setup_redirect', values)
+
+        state = _make_state(request.env, request.env.uid)
         manifest = {
             "name": app_name,
             "url": base_url,
@@ -180,32 +278,15 @@ class GitHubSetupController(http.Controller):
                 "url": f"{base_url}/cloud/github/webhook",
                 "active": True,
             }
-
-        # GitHub requires a POST form.  We render a branded intermediate page
-        # (instead of auto-submitting) so the operator can sign in to GitHub
-        # first if needed \u2014 an unauthenticated POST makes GitHub return an
-        # opaque 500.  The manifest JSON is base64-encoded and carried in a
-        # data attribute; a tiny script decodes it into the hidden field.
-        manifest_b64 = base64.b64encode(
-            json.dumps(manifest).encode()
-        ).decode()
-        # Translatable strings live here (not in the QWeb template): Odoo's
-        # makepot does not extract terms from a standalone full-HTML template,
-        # so we pass already-translated text into the template as values.
-        return request.render('incubacloud.github_setup_redirect', {
-            'app_name': app_name,
-            'action': f"{_GITHUB_APP_NEW}?state={state}",
-            'manifest_b64': manifest_b64,
-            'title': _("Create GitHub App"),
-            'heading': _("Create your GitHub App"),
-            'warn': _(
-                "Make sure you are signed in to GitHub first in this "
-                "browser, otherwise GitHub shows a generic error instead "
-                "of the app creation page."
-            ),
-            'signin': _("Open GitHub sign-in"),
-            'cont': _("Continue to GitHub"),
-        })
+        # GitHub requires a POST form. The manifest JSON is base64-encoded
+        # and carried in a data attribute; a tiny script decodes it into the
+        # hidden field and submits the form, whose button stays for a
+        # browser without scripts.
+        values.update(
+            action=_github_app_new_url(state, org_name),
+            manifest_b64=base64.b64encode(json.dumps(manifest).encode()).decode(),
+        )
+        return request.render('incubacloud.github_setup_redirect', values)
 
     @http.route(
         "/cloud/github/callback",
@@ -293,6 +374,7 @@ class GitHubSetupController(http.Controller):
             )
 
         slug = data.get("slug", "")
+        owner = data.get("owner") or {}
         # installation_id is not known yet: the installation webhook sets it
         # when the account that owns the App installs it; an installation on
         # any other account waits for a manager to choose it.
@@ -301,7 +383,8 @@ class GitHubSetupController(http.Controller):
             "private_key": private_key,
             "webhook_secret": webhook_secret,
             "slug": slug,
-            "owner_login": (data.get("owner") or {}).get("login") or False,
+            "owner_login": owner.get("login") or False,
+            "owner_type": _OWNER_TYPES.get(owner.get("type")) or False,
             "installation_id": "",
         })
 

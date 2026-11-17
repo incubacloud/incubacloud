@@ -88,6 +88,45 @@
             transition: opacity 150ms;
         }
         .btn:hover { opacity: 0.92; }
+
+        .where { border: 0; text-align: left; margin-bottom: 20px; }
+        .where legend { font-size: 13px; font-weight: 600; color: #c4d2c9; margin-bottom: 8px; }
+        .choice { display: flex; gap: 8px; flex-wrap: wrap; }
+        .choice > input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+        .choice > label {
+            flex: 1 1 140px;
+            border: 1px solid #2b382f;
+            border-radius: 10px;
+            padding: 10px 12px;
+            font-size: 14px;
+            text-align: center;
+            color: #c4d2c9;
+            background: #19201b;
+            cursor: pointer;
+            transition: border-color 150ms, color 150ms;
+        }
+        .choice > label:hover { color: #e8efea; }
+        .choice > input:checked + label { border-color: #2fc78c; color: #e8efea; background: rgba(47,199,140,.10); }
+        .choice > input:focus-visible + label { outline: 2px solid #9fd6e2; outline-offset: 2px; }
+        .org-field { display: none; flex: 1 1 100%; margin-top: 6px; }
+        #owner-org:checked ~ .org-field { display: block; }
+        .org-field label { display: block; font-size: 13px; color: #c4d2c9; margin-bottom: 6px; }
+        .org-field input {
+            display: block;
+            width: 100%;
+            font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+            font-size: 14px;
+            color: #e8efea;
+            background: #0c100e;
+            border: 1px solid #2b382f;
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+        .org-field input:focus { outline: 2px solid #9fd6e2; outline-offset: 1px; border-color: #9fd6e2; }
+        .org-field input[aria-invalid="true"] { border-color: #ef6b5e; }
+        .hint { font-size: 12px; line-height: 1.5; color: #8ba095; margin-top: 6px; }
+        .error { font-size: 13px; line-height: 1.5; color: #f3a097; margin-top: 8px; }
+        .going { font-size: 14px; color: #8ba095; margin-bottom: 20px; }
     </style>
 </head>
 <body>
@@ -95,16 +134,41 @@
         <img class="logo" src="/incubacloud/static/src/img/icon-solid.svg" alt="IncubaCloud"/>
         <h1><t t-esc="heading"/></h1>
         <div class="app-name"><t t-esc="app_name"/></div>
-        <div class="warn"><t t-esc="warn"/></div>
-        <a class="signin-link" href="https://github.com/login" target="_blank" rel="noopener"><t t-esc="signin"/> ↗</a>
-        <form id="f" method="post" t-att-action="action">
-            <input type="hidden" name="manifest" id="mi" t-att-data-m="manifest_b64"/>
-            <button type="submit" class="btn"><t t-esc="cont"/> →</button>
-        </form>
+        <t t-if="manifest_b64">
+            <p class="going"><t t-esc="going"/></p>
+            <form id="f" method="post" t-att-action="action">
+                <input type="hidden" name="manifest" id="mi" t-att-data-m="manifest_b64"/>
+                <button type="submit" class="btn"><t t-esc="cont"/> →</button>
+            </form>
+        </t>
+        <t t-else="">
+            <div class="warn"><t t-esc="warn"/></div>
+            <a class="signin-link" href="https://github.com/login" target="_blank" rel="noopener"><t t-esc="signin"/> ↗</a>
+            <form id="f" method="post" t-att-action="action">
+                <input type="hidden" name="csrf_token" t-att-value="csrf_token"/>
+                <fieldset class="where">
+                    <legend><t t-esc="where"/></legend>
+                    <div class="choice">
+                        <input type="radio" id="owner-user" name="owner" value="user" t-att-checked="'checked' if owner != 'org' else None"/>
+                        <label for="owner-user"><t t-esc="mine"/></label>
+                        <input type="radio" id="owner-org" name="owner" value="org" t-att-checked="'checked' if owner == 'org' else None"/>
+                        <label for="owner-org"><t t-esc="an_org"/></label>
+                        <div class="org-field">
+                            <label for="org"><t t-esc="org_label"/></label>
+                            <input type="text" id="org" name="org" t-att-value="org" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="org-hint" t-att-aria-invalid="'true' if error else None"/>
+                            <p class="hint" id="org-hint"><t t-esc="org_hint"/></p>
+                            <p t-if="error" class="error" role="alert"><t t-esc="error"/></p>
+                        </div>
+                    </div>
+                </fieldset>
+                <button type="submit" class="btn"><t t-esc="cont"/> →</button>
+            </form>
+        </t>
     </div>
-    <script>
+    <script t-if="manifest_b64">
         var el = document.getElementById('mi');
         el.value = atob(el.dataset.m);
+        document.getElementById('f').submit();
     </script>
 </body>
 </html>

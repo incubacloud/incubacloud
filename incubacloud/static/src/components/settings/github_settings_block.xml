@@ -33,8 +33,9 @@
                     <div t-if="currentStep === 1" class="ic-set-step">
                         <p class="rl-set-hint">
                             Step 1 of 2. The panel sends you to GitHub to create an App with the right
-                            permissions and webhook already set. It is created in your GitHub account,
-                            and you can then install it on any organization you manage.
+                            permissions and webhook already set. You choose whether it is created in your
+                            GitHub account or in an organization, and you can then install it on any
+                            organization you manage.
                         </p>
                         <p t-if="!state.isHttps" class="rl-set-warning">
                             <t t-out="env.icon('lock', 15)"/> Automatic setup requires HTTPS. Fill it in by hand under Advanced.
@@ -61,6 +62,8 @@
                             <button type="button" class="rl-btn rl-btn-ghost" t-on-click="refresh">Check installation</button>
                         </div>
                     </div>
+
+                    <p t-if="currentStep !== 1 and ownerText" class="rl-set-hint" t-esc="ownerText"/>
 
                     <p t-if="state.actionMsg"
                        t-att-class="'rl-set-inline-msg rl-set-inline-msg--' + state.actionMsg.type"

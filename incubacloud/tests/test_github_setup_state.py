@@ -98,7 +98,13 @@ class TestSetupCallbackWithoutTheSession(HttpCase):
     def test_the_callback_needs_nothing_the_session_kept(self):
         self.authenticate('gh-setup', 'gh-setup')
         page = self._get('/cloud/github/setup')
-        state = re.search(r'state=([A-Za-z0-9_.\-]+)', page.text).group(1)
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
+        sent = self.url_open(
+            '/cloud/github/setup',
+            data={'csrf_token': token, 'owner': 'user'},
+            headers={'X-Forwarded-Proto': 'https'},
+        )
+        state = re.search(r'state=([A-Za-z0-9_.\-]+)', sent.text).group(1)
         # A new session for the same user: what was in the old one is
         # gone, as when another worker rewrote it.
         self.authenticate('gh-setup', 'gh-setup')

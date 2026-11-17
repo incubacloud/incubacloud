@@ -12,9 +12,11 @@ A server keeps the SSH keys its Administrators sign in with as known keys:
 their sign-ins are listed and raise no alert, and each key added raises a
 critical alert of its own. Monitoring's Fleet view reads the panel's own
 servers alone, and the central serves no cross-account read. A conflict
-answered before 1.0.220 no longer holds its instance's queue.
+answered before 1.0.220 no longer holds its instance's queue. The GitHub
+App can be created under an organization, chosen on the setup page.
 
-The update adds the table `cloud_host_known_key`, empty. Its data
+The update adds the table `cloud_host_known_key`, empty, and the column
+`owner_type` to the GitHub App, empty on an App there is. Its data
 migration, 1.0.235's `end-stale-holds`, closes the failures a conflict
 answered before 1.0.220 left holding an instance's queue, and cancels what
 waited behind them.
@@ -52,6 +54,19 @@ waited behind them.
   A read of the sign-ins that fails reaches the browser as an error alone,
   which the tab words itself; what went wrong goes to the server's log.
   Documented in `docs/user/docs/hosts/access.md`.
+
+- **The GitHub App under an organization.** The setup page asks where
+  GitHub creates the App: *My account*, as before, or *An organization*,
+  named as in its GitHub URL. The name must be a GitHub login (letters,
+  digits and single hyphens, neither first nor last, at most 39
+  characters); anything else is refused on the page, and nothing but the
+  organization's segment of
+  `https://github.com/organizations/<name>/settings/apps/new` comes from
+  it. GitHub creates the App there only for an owner or App manager of the
+  organization. The page's form comes back to the panel, which then sends
+  the manifest on to GitHub; the state is signed as before. Settings →
+  GitHub says whom the App belongs to, a GitHub account or an organization,
+  kept from the callback in `owner_type`.
 
 ### Fixed
 
@@ -174,6 +189,10 @@ waited behind them.
 - RB-11 and RB-36 check the central through `/r/` with the panel's own
   account, which the operator's `/admin-r/` no longer serves, and RB-11
   names the read user's cap of 8 requests in flight.
+
+- *Projects* says that the GitHub App can be created under an organization,
+  by its owners and App managers, and that one created under your account
+  can still be installed on an organization.
 
 ### Migration
 

@@ -373,6 +373,18 @@ describe("Settings — GitHub", () => {
         await block.refresh();
         expect(calls).toEqual(["load", "detect", "info"]);
     });
+
+    test("whom the App belongs to is said", () => {
+        const { block } = blockCalling("", "");
+        Object.assign(block.state, { ownerLogin: "", ownerType: "" });
+        expect(block.ownerText).toBe("");
+        Object.assign(block.state, { ownerLogin: "acme-co", ownerType: "organization" });
+        expect(block.ownerText).toBe("The App belongs to the GitHub organization acme-co.");
+        Object.assign(block.state, { ownerLogin: "operator", ownerType: "user" });
+        expect(block.ownerText).toBe("The App belongs to the GitHub account operator.");
+        Object.assign(block.state, { ownerLogin: "operator", ownerType: "" });
+        expect(block.ownerText).toBe("The App belongs to operator on GitHub.");
+    });
 });
 
 describe("Settings — rate limits", () => {

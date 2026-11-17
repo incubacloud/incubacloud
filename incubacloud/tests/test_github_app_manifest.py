@@ -35,10 +35,16 @@ class TestGitHubAppManifest(HttpCase):
         })
 
     def _manifest(self):
-        """The manifest the setup page hands to GitHub."""
+        """The manifest the setup page hands to GitHub, for the user's account."""
         self.authenticate("manifest-manager", "manifest-manager")
-        response = self.url_open(
+        page = self.url_open(
             "/cloud/github/setup", headers={"X-Forwarded-Proto": "https"}
+        )
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
+        response = self.url_open(
+            "/cloud/github/setup",
+            data={"csrf_token": token, "owner": "user"},
+            headers={"X-Forwarded-Proto": "https"},
         )
         self.assertEqual(response.status_code, 200)
         found = re.search(r'data-m="([^"]+)"', response.text)
