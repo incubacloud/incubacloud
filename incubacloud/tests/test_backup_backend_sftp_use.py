@@ -173,27 +173,40 @@ class TestSftpSession(_SftpUseCase):
             ("code", "=", "backup_sftp_host_key_changed"),
         ]))
 
+    def _stand_probe(self, sftp, vfs):
+        """Give *sftp* a folder, a file to write and remove, and *vfs* as statvfs."""
+        sftp.makedirs = AsyncMock()
+        handle = MagicMock(spec=asyncssh.SFTPClientFile)
+        handle.write = AsyncMock()
+
+        @contextlib.asynccontextmanager
+        async def _open(path, mode):
+            self.assertIn("backups/.incubacloud-probe-", path)
+            self.assertEqual(mode, "w")
+            yield handle
+
+        sftp.open = _open
+        sftp.remove = AsyncMock()
+        sftp.statvfs = AsyncMock(**vfs)
+
     def test_connection_test_writes_and_removes_a_probe(self):
+        # The real record, as asyncssh 2.24.0 names its fields: a mock told
+        # ``f_bavail`` would answer to a wrong name.
         with self._server() as sftp:
-            sftp.makedirs = AsyncMock()
-            handle = MagicMock(spec=asyncssh.SFTPClientFile)
-            handle.write = AsyncMock()
-
-            @contextlib.asynccontextmanager
-            async def _open(path, mode):
-                self.assertIn("backups/.incubacloud-probe-", path)
-                self.assertEqual(mode, "w")
-                yield handle
-
-            sftp.open = _open
-            sftp.remove = AsyncMock()
-            sftp.statvfs = AsyncMock(return_value=MagicMock(
-                spec=asyncssh.SFTPVFSAttrs, f_bavail=10, f_frsize=4096,
-            ))
+            self._stand_probe(sftp, {"return_value": asyncssh.SFTPVFSAttrs(
+                bavail=10, frsize=4096,
+            )})
             result = self.backend._sftp_test()
         sftp.makedirs.assert_awaited_once_with("backups", exist_ok=True)
         sftp.remove.assert_awaited_once()
         self.assertEqual(result, {"free_bytes": 40960})
+
+    def test_connection_test_reads_no_space_when_the_server_does_not_say(self):
+        with self._server() as sftp:
+            self._stand_probe(sftp, {"side_effect": asyncssh.SFTPOpUnsupported("no")})
+            result = self.backend._sftp_test()
+        sftp.remove.assert_awaited_once()
+        self.assertEqual(result, {"free_bytes": None})
 
 
 @tagged("post_install", "-at_install")
