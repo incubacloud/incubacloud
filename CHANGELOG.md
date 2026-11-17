@@ -394,7 +394,9 @@ gestionado de copias* on a running panel too.
   each instance. A restart pending for 7 days raises `host_reboot_pending`
   (warning), on a host the panel restarts or not. The health probes
   of the host's instances skip their pass while it runs. New table
-  `cloud_host_reboot` and seven columns on hosts; no data migration.
+  `cloud_host_reboot` and seven columns on hosts. On an existing
+  database the check runs as the cron bot, as every cron of the module
+  (`migrations/1.0.232/post-cron-bot.py`).
   `docs/architecture.md` («Host maintenance window») and RB-44.
   One restart per host and per opening of its window: a server whose
   update still asks for a restart once it is back waits for the next
