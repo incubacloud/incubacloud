@@ -46,6 +46,19 @@ _RESTORE_UPLOAD_PART_MAX_BYTES = 40 * 1024 * 1024  # 40 MiB
 _RESTORE_UPLOAD_BLOCK_BYTES = 64 * 1024
 
 
+def _is_cloud_user():
+    """Return whether the signed-in user may open the panel's pages.
+
+    An internal user with an IncubaCloud role: every role implies
+    Stakeholder (``group_cloud_user``). Anyone else is answered as for a
+    page that does not exist, which tells them nothing of what is there.
+
+    :rtype: bool
+    """
+    user = request.env.user
+    return user._is_internal() and user.has_group("incubacloud.group_cloud_user")
+
+
 class CloudController(Controller):
     @http.route(
         ["/cloud", "/cloud/<path:subpath>"], auth="user", type="http", methods=["GET"]
@@ -54,8 +67,7 @@ class CloudController(Controller):
         """
         Render the main cloud management UI
         """
-        is_internal_user = request.env.user._is_internal()
-        if not is_internal_user:
+        if not _is_cloud_user():
             return request.not_found()
 
         company = request.env.user.company_id
@@ -82,9 +94,9 @@ class CloudController(Controller):
         """Render the terminal log page for a job.
 
         Any user who can see the job (via record rules) can view its logs.
-        No extra role check needed — job visibility is the gate.
+        No role check beyond Stakeholder — job visibility is the gate.
         """
-        if not request.env.user._is_internal():
+        if not _is_cloud_user():
             return request.not_found()
         job = request.env["cloud.job"].browse(job_id)
         if not job.exists():
@@ -130,7 +142,7 @@ class CloudController(Controller):
         developers+ get the full stdout/stderr where credentials may
         appear.
         """
-        if not request.env.user._is_internal():
+        if not _is_cloud_user():
             return request.not_found()
         job = request.env["cloud.job"].browse(job_id)
         if not job.exists():

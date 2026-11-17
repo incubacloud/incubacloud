@@ -211,6 +211,18 @@ gestionado de copias* on a running panel too.
 
 ### Fixed
 
+- **A user with no IncubaCloud role does not see the Cloud app.** Any
+  internal user had the Cloud app in the menu and could open `/cloud`,
+  where the page then said «Could not load the projects» with Odoo's
+  access error. The menu is now for Stakeholders up (every role implies
+  Stakeholder), and `/cloud`, every address of the panel under it, a
+  job's log page (`/cloud/log/<id>`) and its download answer 404 to an
+  internal user with no role, as they did to a portal user; the log page
+  and its download no longer tell such a user, by a 403, that a job
+  exists. Signing in, such a user lands on Odoo's first app instead of
+  the panel. The other pages under `/cloud` already asked for a higher
+  role before reading anything.
+
 - **Deleting a server whose proxy was never deployed takes the panel's
   access off it.** `/cloud/delete_host` archived such a host at once, with
   no teardown, so a server hardened before a Full Setup that failed kept
