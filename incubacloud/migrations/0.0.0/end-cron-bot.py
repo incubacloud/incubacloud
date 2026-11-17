@@ -24,11 +24,13 @@ def migrate(cr, version):
     :param cr: database cursor
     :param version: module version being upgraded from
     """
-    env = api.Environment(cr, SUPERUSER_ID, {})
-    if not version or env.ref(CRON_BOT_XML_ID, raise_if_not_found=False):
+    if not version:
         return
     try:
         with cr.savepoint():
+            env = api.Environment(cr, SUPERUSER_ID, {})
+            if env.ref(CRON_BOT_XML_ID, raise_if_not_found=False):
+                return
             Users = env["res.users"]
             Users._incubacloud_ensure_cron_bot()
             modules = env["ir.model.data"].search([

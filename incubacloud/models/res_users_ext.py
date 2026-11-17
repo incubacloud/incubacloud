@@ -573,9 +573,18 @@ class ResUsers(models.Model):
         ).exists()
         stale = module_crons.filtered(lambda c: c.user_id.id == 1)
         if stale:
-            free = stale.try_lock_for_update(allow_referencing=True)
+            # The rows a running cron does not hold, locked as the cron
+            # runner locks them. Plain SQL: ``try_lock_for_update`` is not
+            # in Odoo 18.0.
+            self.env.cr.execute(
+                "SELECT id FROM ir_cron WHERE id IN %s"
+                " FOR NO KEY UPDATE SKIP LOCKED",
+                [tuple(stale.ids)],
+            )
+            locked = {row[0] for row in self.env.cr.fetchall()}
+            free = stale.filtered(lambda c: c.id in locked)
             if stale - free:
-                _logger.info(
+                _logger.warning(
                     "left %d running %s crons on their user: %s",
                     len(stale - free), module_name,
                     ', '.join((stale - free).mapped('cron_name')),

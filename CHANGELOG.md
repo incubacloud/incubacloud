@@ -187,8 +187,8 @@ when it is missing.
   still owned by uid 1; it logs an error instead of failing. Meanwhile
   those crons keep running as uid 1. The assignment of crons to the bot
   does nothing without a bot and leaves a cron that is running at that
-  moment on its user, instead of failing on its locked row. An archived
-  bot is found by its login.
+  moment on its user, with a warning, instead of failing on its locked
+  row. An archived bot is found by its login.
 
 ### Security
 

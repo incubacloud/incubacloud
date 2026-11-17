@@ -397,6 +397,8 @@ class TestCronBotAssignSkipsRunningCrons(TransactionCase):
         self.assertEqual(set(others.mapped("user_id")), {bot})
         output = "\n".join(logs.output)
         self.assertIn(f"left 1 running {module} crons on their user: {running.cron_name}", output)
+        left = [r for r in logs.records if r.getMessage().startswith("left 1 running")]
+        self.assertEqual([r.levelname for r in left], ["WARNING"])
         self.assertIn(f"reassigned {len(others)} {module} crons", output)
 
 
