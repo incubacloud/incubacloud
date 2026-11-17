@@ -8,9 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.236] — unreleased
 
-Ansible jobs run on a panel on Odoo.sh, and a playbook ends before the
-request's time limit. The update changes no table and has no data
-migration.
+Ansible jobs run on a panel on Odoo.sh, a playbook ends before the
+request's time limit, and Ansible logs in to a password host with sshpass.
+The update changes no table and has no data migration.
 
 ### Fixed
 
@@ -36,6 +36,12 @@ migration.
   has left of `limit_time_real`; the job fails, saying *The playbook was
   stopped*, through its usual failure path, and the run's files are
   removed.
+- **Ansible logs in to a password host with sshpass.** The panel lets a
+  host log in with a password only where sshpass is installed, but since
+  ansible-core 2.19 Ansible's default is `ssh_askpass`, which hands the
+  password over in a shared memory block in `/dev/shm` instead. The
+  inventory now names sshpass (`ansible_ssh_password_mechanism`), the
+  mechanism the panel checks for.
 
 ## [1.0.235] — unreleased
 

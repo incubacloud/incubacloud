@@ -12,6 +12,7 @@ import asyncio
 import errno
 import os
 import shutil
+import socket
 import sys
 import tempfile
 import time
@@ -103,6 +104,15 @@ class TestInventory(AnsibleExecutorCase):
         hostvars = self._hostvars(key_path=None)
         self.assertEqual(hostvars["ansible_password"], "s3cret")
         self.assertNotIn("ansible_ssh_private_key_file", hostvars)
+
+    def test_password_auth_goes_through_sshpass(self):
+        """Not ssh_askpass, ansible-core's default since 2.19: the panel checks for sshpass."""
+        self.host.login_type = "password"
+        hostvars = self._hostvars(key_path=None)
+        self.assertEqual(hostvars["ansible_ssh_password_mechanism"], "sshpass")
+
+    def test_key_auth_names_no_password_mechanism(self):
+        self.assertNotIn("ansible_ssh_password_mechanism", self._hostvars())
 
 
 class TestPrivateDataDir(AnsibleExecutorCase):
@@ -596,3 +606,31 @@ class TestPlaybookStopped(_RunnerCase):
         self.assertIn("The playbook was stopped", self._log(self.executor))
         results = outcome.call_args.args[1]
         self.assertEqual(results[PING_PLAYBOOK]["exit_status"], 254)
+
+
+class TestPasswordHostRun(_RunnerCase):
+    """A password host's run, on a read-only /dev/shm as Odoo.sh's.
+
+    ``ssh_askpass`` hands the password over in a shared memory block,
+    which a read-only /dev/shm refuses; sshpass needs none. Nothing
+    listens on the host's port, so the run ends unreachable, refused by
+    the server and not by the panel's own /dev/shm.
+    """
+
+    def test_a_password_host_is_reached_through_sshpass(self):
+        if not shutil.which("sshpass"):
+            self.fail("sshpass is not installed here, as the panel's image has it")
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        self.host.login_type = "password"
+        self.host.ip_address = "127.0.0.1"
+        self.host.port = port
+        executor = self._make_executor()
+        self._read_only_shm()
+        executor._build_private_data_dir(self.root)
+        rc, status = executor._run_playbook(self.root, READ_ONLY)
+        log = self._log(executor)
+        self.assertEqual(status, "failed", log)
+        self.assertIn("Connection refused", log)
+        self.assertNotIn("Read-only file system", log)

@@ -135,6 +135,13 @@ class AnsibleExecutor(AbstractExecutor):
         else:
             # Requires sshpass on the panel image (see dependencies/apt.txt).
             hostvars["ansible_password"] = host.password
+            # The mechanism the panel checks for (``_password_login_available``).
+            # Since 2.19 ansible-core's default is ssh_askpass, which hands
+            # the password over in a shared memory block in /dev/shm: on a
+            # server where /dev/shm is read-only, as Odoo.sh's, none can be
+            # made. Before 2.19 sshpass was the only one, and the variable
+            # is ignored.
+            hostvars["ansible_ssh_password_mechanism"] = "sshpass"
         return {"all": {"hosts": {self.inventory_hostname(): hostvars}}}
 
     # ===============================
