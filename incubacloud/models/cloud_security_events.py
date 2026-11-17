@@ -514,10 +514,12 @@ class CloudSecurityEvents(models.AbstractModel):
         :param hosts: ``cloud.host`` records.
         :param datetime moment: naive UTC, in seconds.
         """
+        # Odoo 18 holds a transaction's environments weakly: the records
+        # stay bound to a name until the cursor commits, or the write
+        # still in their cache goes with them, never flushed.
         with read_committed_cursor(self.env.registry) as cr:
-            hosts.with_env(hosts.env(cr=cr)).sudo().write(
-                {"security_last_line_at": moment},
-            )
+            apart = hosts.with_env(hosts.env(cr=cr)).sudo()
+            apart.write({"security_last_line_at": moment})
         hosts.invalidate_recordset(["security_last_line_at"])
 
     def _security_learn_source(self, host, address):
@@ -528,8 +530,10 @@ class CloudSecurityEvents(models.AbstractModel):
         :param host: the ``cloud.host``.
         :param str address: what a connection of the panel's own read.
         """
+        # Bound to a name until the commit, as in _security_heard.
         with read_committed_cursor(self.env.registry) as cr:
-            host.with_env(host.env(cr=cr)).sudo()._record_panel_source(address)
+            apart = host.with_env(host.env(cr=cr)).sudo()
+            apart._record_panel_source(address)
         host.invalidate_recordset(["security_panel_sources"])
 
     def _security_replay(self, reader, run, host, start, end):
