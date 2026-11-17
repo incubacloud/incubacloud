@@ -68,6 +68,11 @@ _SFTP_KEYS = (
     "decision 3)."
 )
 
+_KNOWN_KEYS = (
+    "Adding or removing a known key silences security alerts: only a "
+    "person in a session may do it, never an agent or an API key."
+)
+
 _FIRST_STEPS = (
     "The first steps card of the home page and whether a person closed it; "
     "the assistant's get_first_steps reads the same steps."
@@ -92,6 +97,8 @@ CORE_EXCLUDED = {
     "/cloud/sftp_backend_regenerate_key": _SFTP_KEYS,
     "/cloud/sftp_backend_read_host_key": _SFTP_KEYS,
     "/cloud/sftp_backend_trust_host_key": _SFTP_KEYS,
+    "/cloud/host/known_key_add": _KNOWN_KEYS,
+    "/cloud/host/known_key_remove": _KNOWN_KEYS,
     "/cloud/generate_host_key": (
         "The new server form's SSH key; credentials are only written in the "
         "panel (decision 6)."
