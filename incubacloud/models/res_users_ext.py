@@ -1,8 +1,6 @@
 import logging
 from datetime import timedelta
 
-from psycopg2 import sql as psql
-
 from odoo import api, fields, models
 from odoo.exceptions import AccessError
 
@@ -428,16 +426,13 @@ class ResUsers(models.Model):
         """Create (or re-home) the cron bot user referenced by every
         ``ir.cron`` in this module.
 
-        Called from ``security/cloud_users.xml`` so the bot exists
-        before the cron records that reference it via ``user_id``.
+        Called from the post-init hook, once this module's data is loaded,
+        and from the post-migrations that give crons to the bot.
 
-        Going through ``create()`` in Python rather than an XML
-        ``<record>`` avoids a flaky interaction with the ``account``
-        module: that module adds a ``required=True`` column
-        (``autopost_bills``) to ``res.partner`` via ``_inherit``, and
-        the XML record-creation path sometimes fails to cascade the
-        default into the auto-created partner. ``create()`` in
-        Python honours the field's ``default='ask'`` cleanly.
+        The user and its partner are made with ``create()``, so the
+        defaults of every installed module apply. On install the hook runs
+        after the modules already installed are loaded, whose fields the
+        registry then knows.
 
         Idempotent: on second install we find the existing user by
         XML-id (preferred) or by login (fallback for manually
@@ -457,65 +452,13 @@ class ResUsers(models.Model):
             user = self.sudo().search([('login', '=', CRON_BOT_LOGIN)], limit=1)
 
         if not user:
-            # Create the partner via raw SQL so we can fill columns
-            # added by modules outside our dependency graph
-            # (``account.autopost_bills`` is a required column whose
-            # default cannot be applied by the ORM when ``account``
-            # is not in our ``depends`` — Odoo loads its python
-            # fields lazily and this migration runs before they are
-            # on ``_fields``).
-            # The table layout is introspected so only columns that
-            # exist in THIS deployment are written. We ship known
-            # defaults for the few required columns common modules
-            # are known to contribute; everything else falls back
-            # to ORM write after the row exists.
-            known_defaults = {
-                'autopost_bills': 'ask',   # account module
-            }
-            self.env.cr.execute(
-                """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_name = 'res_partner'
-                """,
-            )
-            partner_cols = {row[0] for row in self.env.cr.fetchall()}
-
-            # Build the column / value lists as Python objects, then
-            # use psycopg2.sql.Identifier to safely interpolate the
-            # column names and %s placeholders for the values. This
-            # is the canonical way to build dynamic-column INSERTs
-            # in psycopg2 — it cleanly separates SQL identifiers
-            # (quoted with double-quotes) from values (parameterised),
-            # so future additions to ``known_defaults`` can never
-            # introduce SQL injection even if the value comes from
-            # a less-trusted source.
-            now = fields.Datetime.now()
-            cols = ['name', 'active', 'is_company', 'type',
-                    'create_date', 'write_date',
-                    'create_uid', 'write_uid']
-            vals = ['IncubaCloud Cron Bot', True, False, 'contact',
-                    now, now, 1, 1]
-            for col, default in known_defaults.items():
-                if col in partner_cols:
-                    cols.append(col)
-                    vals.append(default)
-
-            query = psql.SQL(
-                "INSERT INTO res_partner ({cols}) "
-                "VALUES ({placeholders}) RETURNING id"
-            ).format(
-                cols=psql.SQL(', ').join(map(psql.Identifier, cols)),
-                placeholders=psql.SQL(', ').join(
-                    [psql.Placeholder()] * len(vals)
-                ),
-            )
-            self.env.cr.execute(query, vals)
-            partner_id = self.env.cr.fetchone()[0]
-            self.env['res.partner'].invalidate_model()
+            # Through the ORM, partner included: every installed module's
+            # defaults apply, whatever NOT NULL columns those modules add
+            # to the users' and partners' tables. An INSERT naming the
+            # columns it knew left the others empty and failed.
             user = self.sudo().create({
+                'name': 'IncubaCloud Cron Bot',
                 'login': CRON_BOT_LOGIN,
-                'partner_id': partner_id,
                 'active': True,
                 'share': False,
                 # No address: Odoo notifications reach it in the inbox.

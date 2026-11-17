@@ -1,6 +1,7 @@
 """Tests for the incubacloud cron bot user (P1.26)."""
 from odoo.exceptions import AccessError
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import TransactionCase, tagged
+from odoo.tools import SQL
 
 
 class TestCronBotUser(TransactionCase):
@@ -107,3 +108,50 @@ class TestCronBotUser(TransactionCase):
             "cron(s) fail the Odoo 19 server-action access gate:\n%s"
             % "\n".join(offenders),
         )
+
+
+@tagged("post_install", "-at_install")
+class TestCronBotCreation(TransactionCase):
+    """The bot is created through the ORM, so every module's defaults apply.
+
+    Other modules add NOT NULL columns with an ORM default to the users'
+    and partners' tables (on Odoo.sh, ``group_rfq`` and ``group_on``); the
+    panel cannot know which. The test adds one of its own as an unknown
+    module would: a field the registry knows, its default applied by the
+    ORM, its column NOT NULL. Post-install, as on a database where those
+    modules are loaded.
+    """
+
+    FIELD = "x_ic_unknown_module_flag"
+
+    def setUp(self):
+        """Add the unknown module's NOT NULL column and move the bot there aside."""
+        super().setUp()
+        self.addCleanup(self.registry.reset_changes)
+        self.addCleanup(self.registry.clear_all_caches)
+        self.env["ir.model.fields"].create({
+            "model_id": self.env["ir.model"]._get_id("res.partner"),
+            "name": self.FIELD,
+            "field_description": "Flag of a module the panel does not know",
+            "ttype": "char",
+        })
+        self.env["ir.default"].set("res.partner", self.FIELD, "from-its-default")
+        column = SQL.identifier(self.FIELD)
+        self.env.cr.execute(SQL("UPDATE res_partner SET %s = 'existing'", column))
+        self.env.cr.execute(SQL("ALTER TABLE res_partner ALTER COLUMN %s SET NOT NULL", column))
+        # The bot already there steps aside, so the next call creates one.
+        old = self.env.ref("incubacloud.user_incubacloud_cron")
+        self.env["ir.model.data"].search([
+            ("module", "=", "incubacloud"), ("name", "=", "user_incubacloud_cron"),
+        ]).unlink()
+        old.login = "__incubacloud_cron_old__"
+
+    def test_the_bot_is_created_with_the_other_modules_defaults(self):
+        """The new bot's partner holds the column's default; login, groups as before."""
+        self.env["res.users"]._incubacloud_ensure_cron_bot()
+        bot = self.env.ref("incubacloud.user_incubacloud_cron")
+        self.assertEqual(bot.login, "__incubacloud_cron__")
+        self.assertEqual(bot.name, "IncubaCloud Cron Bot")
+        self.assertEqual(bot.partner_id[self.FIELD], "from-its-default")
+        self.assertIn(self.env.ref("incubacloud.group_cloud_manager"), bot.all_group_ids)
+        self.assertEqual(bot.notification_type, "inbox")
