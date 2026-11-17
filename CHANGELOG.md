@@ -364,6 +364,15 @@ gestionado de copias* on a running panel too.
 
 ### Security
 
+- **The OAuth2 relay image carries docker-mailserver 16.0.1's Debian
+  security updates (#10).** `RELAY_OAUTH_IMAGE` moves to
+  `ghcr.io/incubacloud/relay-oauth:16.0.1-0.28-2`, by digest
+  (`sha256:df7905b1…`), rebuilt from tag `relay-oauth-v16.0.1-0.28-2` by
+  the `relay-oauth-image` workflow, with its build provenance. The
+  docker-mailserver release and `SMTP_RELAY_IMAGE` stay at 16.0.1, and
+  the relay's settings are unchanged. An instance with an OAuth2 relay
+  takes the new image on its next deploy or rebuild (RB-31).
+
 - **Deleting a server takes the panel's access off it.** The teardown
   stopped the agents and the proxy but left the panel's key in the
   server's `authorized_keys`, the operator account hardening creates and

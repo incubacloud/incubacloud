@@ -159,14 +159,15 @@ SMTP_RELAY_IMAGE = "ghcr.io/docker-mailserver/docker-mailserver:16.0.1"
 #: The relay of a production instance that signs in to Microsoft 365 with
 #: OAuth2: :data:`SMTP_RELAY_IMAGE` plus sasl-xoauth2 and the token
 #: renewer (``images/relay-oauth``), built by this repository's
-#: ``relay-oauth-image`` workflow, signed with cosign and published on
-#: 2026-11-09. By digest: a published tag never moves, and the digest
-#: proves it. Its tag starts with the docker-mailserver release it was
+#: ``relay-oauth-image`` workflow and signed with cosign. Revision
+#: 16.0.1-0.28-2 was published on 2026-11-17, rebuilt on docker-mailserver
+#: 16.0.1 with its Debian security updates. By digest: a published tag
+#: never moves, and the digest proves it. Its tag starts with the docker-mailserver release it was
 #: built on, which must be :data:`SMTP_RELAY_IMAGE`'s: the two move
 #: together, in the same release, never one without the other (RB-31).
 RELAY_OAUTH_IMAGE = (
-    "ghcr.io/incubacloud/relay-oauth:16.0.1-0.28-1@sha256:"
-    "6578664e3ea576f8a9cb194ed4c420215a202a79e173672014a782433b859117"
+    "ghcr.io/incubacloud/relay-oauth:16.0.1-0.28-2@sha256:"
+    "df7905b19a1d8c44f2919c350eba88b54c7486ff63a4550c43eb108acf65d175"
 )
 
 # Path to the incubacloud_connect module.  Navigate from __file__ via
