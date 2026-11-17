@@ -1,6 +1,6 @@
 """Replace the default password of a running instance's admin user.
 
-For the instances that already ran before 1.0.232, whose admin may still
+For the instances that already ran before 1.0.234, whose admin may still
 have Odoo's default password: queued once by the update and then by the
 hourly sweep (``cloud.instance.cron_check_admin_passwords``) until the
 instance has answered. The step runs in the instance's Odoo container and

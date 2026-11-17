@@ -27,7 +27,7 @@ We will credit researchers who responsibly disclose vulnerabilities unless they 
 
 ## The admin user's password
 
-From 1.0.232 the panel gives the Odoo admin user of each instance a random
+From 1.0.234 the panel gives the Odoo admin user of each instance a random
 password, which it does not keep, when it creates or loads the instance's
 database, and gives one to the existing instances still using a default
 password. Sign in with Connect and set your own password in Odoo

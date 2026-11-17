@@ -1,4 +1,4 @@
-"""End-migrate for 1.0.232: check every running instance's admin password.
+"""End-migrate for 1.0.234: check every running instance's admin password.
 
 From this version every flow that puts a database under an instance's
 Odoo replaces Odoo's default admin password, if the database still has it,
@@ -34,4 +34,4 @@ def migrate(cr, version):
         return
     env = api.Environment(cr, SUPERUSER_ID, {})
     queued = env["cloud.instance"]._queue_admin_password_checks(limit=None)
-    _logger.info("1.0.232: queued the admin password check of %d instances", queued)
+    _logger.info("1.0.234: queued the admin password check of %d instances", queued)
