@@ -82,8 +82,8 @@ def reduce_cut_parts(parts, ended):
     incomplete = False
     resumed = set()
 
-    def add(key, begin, end):
-        """Add the share of ``[begin, end]`` that falls inside the cut."""
+    def credit(key, begin, end):
+        """Credit the share of ``[begin, end]`` that falls inside the cut."""
         if not (_number(begin) and _number(end)):
             return
         span = min(end, ended) - max(begin, started)
@@ -127,20 +127,20 @@ def reduce_cut_parts(parts, ended):
         connected = entry.get("connected", start)
         prepared = entry.get("prepared", connected)
         uploaded = entry.get("uploaded", prepared)
-        add("queue", previous, start)
-        add("overhead", start, connected)
-        add("overhead", prepared, uploaded)
+        credit("queue", previous, start)
+        credit("overhead", start, connected)
+        credit("overhead", prepared, uploaded)
         if kind == "restore_instance":
-            add("relay", connected, prepared)
-            add("restore", uploaded, end)
+            credit("relay", connected, prepared)
+            credit("restore", uploaded, end)
             boot = steps.get(CUT_RESTORE_START_STEP)
             if _number(boot) and boot > 0:
                 boot = min(boot, out.get("restore", 0.0))
                 out["restore"] = out.get("restore", 0.0) - boot
                 out["start"] = out.get("start", 0.0) + boot
         else:
-            add(part, connected, prepared)
-            add(part, uploaded, end)
+            credit(part, connected, prepared)
+            credit(part, uploaded, end)
         previous = max(previous, end)
     if any(part not in out for part in CUT_PARTS_EXPECTED):
         incomplete = True
