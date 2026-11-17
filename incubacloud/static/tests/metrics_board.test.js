@@ -73,10 +73,10 @@ describe("TimeSeriesChart helpers", () => {
     test("a legend entry wider than its chart keeps both of its ends", () => {
         // Seven pixels a character, as a fixed-width font would measure.
         const measure = (text) => text.length * 7;
-        const name = "Talleres Hermanos Gutiérrez/ic-tenant-9c41d07a";
+        const name = "Talleres Hermanos Gutiérrez/ic-client-9c41d07a";
         expect(fitLabel(name, 400, measure)).toBe(name);
         const short = fitLabel(name, 210, measure);
-        expect(short).toBe("Talleres Herman…enant-9c41d07a");
+        expect(short).toBe("Talleres Herman…lient-9c41d07a");
         expect(measure(short)).toBeLessThan(211);
         // No room at all still names it by its first letter.
         expect(fitLabel(name, 5, measure)).toBe("T…");
