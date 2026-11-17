@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.234] — unreleased
+
+A fix for the update of a database that lost the panel's cron bot. The
+update changes no table; its data migration recreates the bot only when it
+is missing.
+
+### Fixed
+
+- **Updating the module on a database without the cron bot.** During an
+  update the module's post-migrations run before the modules loaded after
+  it, such as `account` and `purchase_stock`: their required columns on
+  partners and users are in the database, their fields not yet in the
+  registry. A post-migration that had to create the missing bot left those
+  columns empty, failed on their NOT NULL constraint and stopped the whole
+  update. While the registry is still loading, the bot is now created in a
+  savepoint; when the database refuses it, a warning says so and the update
+  goes on. Once every module is loaded, an end-migration that runs on every
+  version change creates it and gives it the crons of the panel's modules
+  still owned by uid 1; it logs an error instead of failing. Meanwhile
+  those crons keep running as uid 1. The assignment of crons to the bot
+  does nothing without a bot and leaves a cron that is running at that
+  moment on its user, instead of failing on its locked row. An archived
+  bot is found by its login.
+
 ## [1.0.233] — unreleased
 
 Two fixes for a panel on Odoo.sh. The update changes no table and has no
