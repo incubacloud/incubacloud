@@ -1,7 +1,7 @@
 """Which instances still have their admin on Odoo's default password.
 
 An instance's database is born with ``admin``/``admin`` (Odoo's ``base``).
-From 1.0.232 every flow that puts a database under an instance's Odoo
+From 1.0.234 every flow that puts a database under an instance's Odoo
 replaces that password with a random one before Odoo serves it
 (``_admin_password``); the instances that were already running get it
 from a job of their own (``check_admin_password``), queued once by the
