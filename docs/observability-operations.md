@@ -507,6 +507,26 @@ itself and its counters never expire).
     `security_ssh_login_panel_key_elsewhere` (critical); no connection,
     `security_ssh_login_unconfirmed` (a warning without the address). A
     sign-in left without a connection stops its cursor for the next pass.
+  - *Known keys* (`cloud.host.known.key`, the design note of 17-nov-2026).
+    A key that is not the panel's but one of the server's known keys,
+    within its window (`added_at` to `removed_at`, against the line's
+    instant, the server's clock), raises nothing, is not kept in
+    `cloud.security.event` and writes the key's `last_used_at` (once a
+    pass, on a cursor of its own); from outside its `allowed_networks`
+    (IPv6 by /64) it is `security_ssh_login_foreign` with reason
+    `known_key_address`. The panel's key is looked at first. A key is added
+    and removed only by `cloud.host._security_known_key_add` and
+    `_security_known_key_remove` (Administrators, write access to the
+    server; the model is read-only to every role), never edited but for its
+    name, and archived rather than deleted. Each addition writes an audit
+    row, raises `security_known_key_added` (critical, one per key, not one
+    of the events' alerts, so the hourly cap does not hold it) and emails
+    every Administrator and the account's holder with no daily quota; the
+    alert says whether the key is limited to some addresses, never which
+    (`allowed_networks` is a manager's field). A server keeps 20 active
+    keys at most. Reading the keys has a savepoint of its own and fails
+    closed; the last use is written apart and never undoes a pass. The
+    sudo and auditd reads do not look at known keys.
   - *sudo.* Another user's command or refusal is `security_sudo_foreign`
     (a warning), with the program and never its arguments.
   - *Changes.* By login uid, against the uid the agents' install read for
@@ -700,7 +720,16 @@ answered by `/cloud/host/security_board` within the same budget.
   files' changes; the addresses with the most failed web logins with the
   instances each went to; the web-login jail's bans of 7 days with the
   instances tried before), and `/cloud/host/security_lines` gives the last
-  200 raw lines of one closed kind. Anyone else gets no `tables` key and
+  200 raw lines of one closed kind. The sign-ins name a known key in its
+  window (`known_key`, `known_key_elsewhere` from outside its addresses),
+  removed keys included.
+- **The known keys' card** (`known_keys`, read on every call and never
+  cached; the cache key carries the keys' stamp, so a table is read again
+  after an addition or a removal): the keys and the removed ones, who
+  added and removed them and when, their last use; their addresses and
+  `can_edit` for `group_cloud_manager` alone. `/cloud/host/known_key_add`
+  and `/cloud/host/known_key_remove` take a session only (`auth="user"`):
+  no API key reaches them and no MCP tool calls them. Anyone else gets no `tables` key and
   is refused the lines: hiding them on the screen is not the control.
 - **How the tables count:** on the panel, over the last 5 000 lines of a
   window (10 pages of 500, newest first), by address with IPv6 by its /64,

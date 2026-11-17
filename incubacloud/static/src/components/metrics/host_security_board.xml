@@ -118,6 +118,9 @@
                         <t t-foreach="cardsOf('activity')" t-as="c" t-key="c.key">
                             <t t-call="incubacloud.ChartBoardCard"/>
                         </t>
+                        <t t-if="knownKeys">
+                            <t t-call="incubacloud.HostSecurityKnownKeys"/>
+                        </t>
                         <t t-if="hasTables">
                             <div class="rl-card ic-mb-card ic-mb-wide" data-table="accepted">
                                 <div class="ic-mb-cardhead">
@@ -136,7 +139,7 @@
                                                     <td class="ic-mb-mono"><span class="ic-mb-k">From</span><t t-esc="row.address"/></td>
                                                     <td><span class="ic-mb-k">Country</span><t t-esc="countryText(row.country)"/></td>
                                                     <td><span class="ic-mb-k">Key</span><t t-esc="keyText(row.key)"/></td>
-                                                    <td t-att-data-attribution="row.attribution"><span class="ic-mb-k">Whose</span><t t-esc="attributionText(row.attribution)"/></td>
+                                                    <td t-att-data-attribution="row.attribution"><span class="ic-mb-k">Whose</span><t t-esc="attributionText(row.attribution, row.known_label)"/></td>
                                                 </tr>
                                             </t>
                                         </tbody>
@@ -312,6 +315,95 @@
                     <t t-if="attributionLine"> · <span>Country:</span> <t t-esc="attributionLine"/></t>
                 </p>
             </t>
+        </div>
+    </t>
+
+    <!-- The server's known SSH keys: whoever manages servers adds and
+         removes them; a Developer reads them, without their addresses. -->
+    <t t-name="incubacloud.HostSecurityKnownKeys">
+        <div class="rl-card ic-mb-card ic-mb-wide" data-card="known_keys">
+            <div class="ic-mb-cardhead">
+                <span class="rl-ovtitle">Known keys</span>
+                <span class="ic-mb-hint">sign-ins with them are recorded, without an alert</span>
+                <button t-if="knownKeys.can_edit and !state.keyForm" type="button"
+                        class="rl-btn rl-btn-ghost rl-btn-sm ic-sb-addkey" data-action="add_key"
+                        t-on-click="openKeyForm">Add a key</button>
+            </div>
+            <form t-if="state.keyForm" class="ic-sb-keyform" data-form="known_key"
+                  t-on-submit.prevent="addKey">
+                <div class="rl-frow">
+                    <label for="ic-sb-key-name">Name</label>
+                    <input id="ic-sb-key-name" type="text" maxlength="64" aria-required="true"
+                           placeholder="e.g. Ana's laptop"
+                           t-att-value="state.keyForm.name"
+                           t-on-input="(ev) => this.onKeyInput('name', ev)"/>
+                </div>
+                <div class="rl-frow">
+                    <label for="ic-sb-key-key">Public key or fingerprint</label>
+                    <textarea id="ic-sb-key-key" rows="2" aria-required="true" spellcheck="false"
+                              aria-describedby="ic-sb-key-key-help"
+                              class="ic-mb-mono"
+                              t-att-value="state.keyForm.key"
+                              t-on-input="(ev) => this.onKeyInput('key', ev)"/>
+                    <span id="ic-sb-key-key-help" class="ic-form-note">Paste the line of the .pub file (ssh-ed25519 AAAA…) or its SHA256 fingerprint, as ssh-keygen -lf prints it. Never the private key.</span>
+                </div>
+                <div class="rl-frow">
+                    <label for="ic-sb-key-networks">Only from (optional)</label>
+                    <input id="ic-sb-key-networks" type="text" spellcheck="false"
+                           aria-describedby="ic-sb-key-networks-help"
+                           t-att-value="state.keyForm.networks"
+                           t-on-input="(ev) => this.onKeyInput('networks', ev)"/>
+                    <span id="ic-sb-key-networks-help" class="ic-form-note">Addresses or networks, separated by commas. A sign-in with this key from anywhere else raises a critical alert. Empty: any address.</span>
+                </div>
+                <p class="ic-form-note">Its sign-ins will no longer raise an alert. Every administrator is told of this key.</p>
+                <p t-if="state.keyError" class="ic-field-error" role="alert" t-esc="state.keyError"/>
+                <div class="ic-sb-keyactions">
+                    <button type="submit" class="rl-btn rl-btn-sm" data-action="save_key"
+                            t-att-disabled="state.keySaving">Add the key</button>
+                    <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                            t-on-click="closeKeyForm">Cancel</button>
+                </div>
+            </form>
+            <p t-if="!state.keyForm and state.keyError" class="ic-field-error" role="alert" t-esc="state.keyError"/>
+            <div t-if="activeKeys.length" class="ic-mb-tablebox">
+                <table class="rl-table ic-mb-table" data-list="known_keys">
+                    <thead><tr><th>Name</th><th>Fingerprint</th><th>Only from</th><th>Added</th><th t-if="knownKeys.can_edit"><span class="visually-hidden">Actions</span></th></tr></thead>
+                    <tbody>
+                        <t t-foreach="activeKeys" t-as="k" t-key="k.id">
+                            <tr t-att-data-key="k.fingerprint">
+                                <td class="ic-mb-cardtitle"><t t-esc="k.name"/></td>
+                                <td class="ic-mb-mono"><span class="ic-mb-k">Fingerprint</span><t t-esc="k.fingerprint"/><t t-if="k.key_type"> (<t t-esc="k.key_type"/>)</t></td>
+                                <td class="ic-mb-mono"><span class="ic-mb-k">Only from</span><t t-esc="keyOnlyFromText(k)"/></td>
+                                <td><span class="ic-mb-k">Added</span><t t-esc="keyAddedText(k)"/></td>
+                                <td t-if="knownKeys.can_edit">
+                                    <t t-if="state.keyRemoving === k.id">
+                                        <span class="ic-form-note" t-esc="removeKeyText(k)"/>
+                                        <button type="button" class="rl-btn rl-btn-sm" data-action="confirm_remove"
+                                                t-att-disabled="state.keySaving"
+                                                t-on-click="() => this.removeKey(k.id)">Remove</button>
+                                        <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                                t-on-click="() => this.askRemoveKey(0)">Cancel</button>
+                                    </t>
+                                    <button t-else="" type="button" class="rl-btn rl-btn-ghost rl-btn-sm" data-action="remove_key"
+                                            t-on-click="() => this.askRemoveKey(k.id)">Remove</button>
+                                </td>
+                            </tr>
+                        </t>
+                    </tbody>
+                </table>
+            </div>
+            <p t-else="" class="ic-mb-empty" data-empty="known_keys">No known key. Every SSH sign-in with a key that is not the panel's raises a critical alert. If you sign in to this server with your own key, add its fingerprint here.</p>
+            <details t-if="removedKeys.length" class="ic-sb-removed" data-list="removed_keys">
+                <summary t-esc="removedKeysTitle"/>
+                <ul class="ic-sb-removedlist">
+                    <t t-foreach="removedKeys" t-as="k" t-key="k.id">
+                        <li t-att-data-key="k.fingerprint">
+                            <strong t-esc="k.name"/> · <span class="ic-mb-mono" t-esc="k.fingerprint"/>
+                            · <t t-esc="keyAddedText(k)"/> · <t t-esc="keyRemovedText(k)"/>
+                        </li>
+                    </t>
+                </ul>
+            </details>
         </div>
     </t>
 

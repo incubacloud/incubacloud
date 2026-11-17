@@ -45,6 +45,7 @@ from odoo import models
 
 from . import geoip, logs
 from .cloud_metric_rule import central_busy
+from .cloud_host_known_key import match_known_key
 from .cloud_security_events import WATCHED_KEYS
 from .metrics_charts import (
     CHART_RANGES,
@@ -294,7 +295,8 @@ class CloudHost(models.Model):
             and returned.
         :returns: ``{"ok": True, "state": "ready", "start", "end",
             "step", "panels", "diagnosis", "defense", "weblogin",
-            "behind_cdn", "detail", "tables"?, "attribution", "timing"}``,
+            "behind_cdn", "detail", "tables"?, "attribution",
+            "known_keys", "timing"}``,
             ``{"ok": True, "state": "unavailable" | "off", ...}``, or
             ``{"ok": False, "reason", "error"}``.
         :rtype: dict
@@ -310,18 +312,23 @@ class CloudHost(models.Model):
                 "ok": True, "state": "off", "defense": self._security_defense(),
                 "timing": {},
             }
+        # A key added or removed changes how the sign-ins are attributed:
+        # its stamp is part of the cache key, and the card of known keys
+        # is read on every call, never kept.
         key = (
             self.env.cr.dbname, self.env.uid, self.id, range_key, start, end,
             instance_id, bool(detail), self.env.lang,
+            self._security_known_keys_stamp(),
         )
-        kept = _cache_get(key)
-        if kept:
-            return kept
-        answer = self._security_board_read(
-            source, range_key, start, end, instance_id, bool(detail),
-        )
+        answer = _cache_get(key)
+        if not answer:
+            answer = self._security_board_read(
+                source, range_key, start, end, instance_id, bool(detail),
+            )
+            if answer.get("ok"):
+                _cache_put(key, answer)
         if answer.get("ok"):
-            _cache_put(key, answer)
+            answer = {**answer, "known_keys": self._security_known_keys_answer(bool(detail))}
         return answer
 
     def _security_board_read(self, source, range_key, start, end, instance_id, detail):
@@ -733,7 +740,10 @@ class CloudHost(models.Model):
           user) from an address it connects from;
         - ``panel_elsewhere``: the same from another address; the cron
           checks it with a connection of its own;
-        - ``foreign_key``, ``password``, ``other_user``: someone else's.
+        - ``foreign_key``, ``password``, ``other_user``: someone else's;
+        - ``known_key``: one of the server's known keys in its window,
+          named by ``known_label``; ``known_key_elsewhere``: the same from
+          an address it may not sign in from.
 
         :rtype: dict
         """
@@ -741,19 +751,24 @@ class CloudHost(models.Model):
             return {"error": read["error"]}
         events = self.env["cloud.security.events"]
         fingerprints = self.sudo()._panel_key_fingerprints()
+        known = self.sudo()._security_known_keys()
         rows = []
         for line in reversed(read.get("lines") or []):
             record = logs.parse_sshd(line.line)
             if not record or record["kind"] != "accepted":
                 continue
+            attribution, label = self._security_attribute_login(
+                events, record, fingerprints, line.ns, known,
+            )
             rows.append({
                 "at": _iso(line.ns), "user": record["user"],
                 "address": record["ip"], "country": country(record["ip"]),
                 "method": logs.sanitize(record["method"], 32),
-                "key": self._security_key_label(record, fingerprints, line.ns),
-                "attribution": self._security_attribute_login(
-                    events, record, fingerprints, line.ns,
+                "key": "known" if label is not None else self._security_key_label(
+                    record, fingerprints, line.ns,
                 ),
+                "attribution": attribution,
+                "known_label": label,
             })
             if len(rows) >= EVENT_ROWS:
                 break
@@ -774,27 +789,37 @@ class CloudHost(models.Model):
             return "panel"
         return "other"
 
-    def _security_attribute_login(self, events, record, fingerprints, ns):
+    def _security_attribute_login(self, events, record, fingerprints, ns, known=()):
         """Return whose a sign-in looks: the cron's table, without its connection.
 
         :param events: the ``cloud.security.events`` model.
         :param dict record: ``logs.parse_sshd``'s record.
         :param list fingerprints: the panel's key fingerprints here.
         :param int ns: the line's instant.
-        :rtype: str
+        :param known: the server's known keys, removed ones included: a
+            removed key names the sign-ins of its window.
+        :returns: ``(attribution, known key's name or None)``.
+        :rtype: tuple
         """
+        key = None
         if fingerprints:
             if not record["fingerprint"]:
-                return "password"
+                return "password", None
             if record["fingerprint"] not in fingerprints and not (
                 events._security_previous_key(self, record["fingerprint"], ns)
             ):
-                return "foreign_key"
-        elif record["user"] != logs.sanitize(self.user, logs.USER_MAX):
-            return "other_user"
+                key = match_known_key(known, record["fingerprint"], _naive(ns))
+                if key is None:
+                    return "foreign_key", None
+        else:
+            key = match_known_key(known, record["fingerprint"], _naive(ns))
+            if key is None and record["user"] != logs.sanitize(self.user, logs.USER_MAX):
+                return "other_user", None
+        if key is not None:
+            return ("known_key" if key.allows(record["ip"]) else "known_key_elsewhere"), key.name
         if events._security_panel_address(self, record["ip"]):
-            return "panel"
-        return "panel_elsewhere"
+            return "panel", None
+        return "panel_elsewhere", None
 
     def _security_windows_of(self, read):
         """Return the panel's windows at work on this server over a read.

@@ -10,7 +10,9 @@ Three things, around the session guard (``cloud_session_guard``):
   question, when an account is used from a country or a browser family
   its history does not have, and when somebody opens a new way in that
   outlives a session (an API key, a Git token; the layers add their
-  own). At most one a day per user and reason. An account with no
+  own), and when an administrator adds a known SSH key to a server. At
+  most one a day per user and reason, but for a known SSH key, told every
+  time. An account with no
   history yet only gets it written: neither its first sign-in nor the
   first one after this is deployed sends anything.
 - **The page** ("Sessions and access", ``/cloud/sessions``): the user's
@@ -60,6 +62,11 @@ NOTICE_TEMPLATE = "incubacloud.mail_session_notice"
 #: bucket keeps it, and the buckets are swept a day after they start, so
 #: a longer value would not hold: it is capped here. RB-33 (13-nov-2026).
 NOTICE_WINDOW_HOURS = 24
+#: Reasons told every time, with no daily quota: a known SSH key added to
+#: a server is an administrator's act that silences the alerts of its
+#: sign-ins, and one added after another the same day must reach the
+#: holders too (Fable's review of the known keys, 17-nov-2026).
+UNLIMITED_REASONS = frozenset({"ssh_key"})
 #: A second wake of the mail queue after the notices are queued. One
 #: pass of the queue can die on a concurrent write and leave them for
 #: the hourly one; two minutes clears that write and still tells the
@@ -283,7 +290,9 @@ class CloudSessionNotice(models.AbstractModel):
 
         :param users: the ``res.users`` to tell
         :param str reason: ``country``, ``browser``, ``agent`` (an agent
-            or an API key), ``git_token`` or ``invited_user``
+            or an API key), ``git_token``, ``invited_user`` or ``ssh_key``
+            (a known SSH key added to a server, told with no quota:
+            :data:`UNLIMITED_REASONS`)
         :param dict facts: what the email names, see the template
             ``incubacloud.mail_session_notice``; besides, ``by``, the id
             of the user who opened the way in (each other recipient is
@@ -302,7 +311,9 @@ class CloudSessionNotice(models.AbstractModel):
         for user in users.sudo().exists():
             if not user.active or not user.partner_id.email:
                 continue
-            if not self._session_notice_within_quota(user, reason):
+            if reason not in UNLIMITED_REASONS and not self._session_notice_within_quota(
+                user, reason,
+            ):
                 continue
             self._session_notice_queue(user, reason, facts, origin)
             told |= user
@@ -360,7 +371,7 @@ class CloudSessionNotice(models.AbstractModel):
         values = {
             # What each reason names, empty unless the facts say.
             "seen": "", "door_kind": "", "door": "", "owner": "", "actor": "",
-            "panel": "", "invitee": "",
+            "panel": "", "invitee": "", "server": "",
             "reason": reason,
             "name": user.name or user.login,
             "place": self._session_notice_place(),
@@ -385,7 +396,14 @@ class CloudSessionNotice(models.AbstractModel):
         # Somebody else opened it: the recipient's page does not list it,
         # and only its user can revoke it.
         third_hint = ""
-        if by and by != user:
+        if reason == "ssh_key":
+            # Signing out does not remove a key: the hint says what does.
+            third_hint = _(
+                "If you did not expect it, remove the key in Metrics → Security "
+                "of the server, and take away the access to the panel of whoever "
+                "added it: Users, then Remove.",
+            )
+        elif by and by != user:
             third_hint = _(
                 "If you did not expect it, talk to %(by)s, or take away "
                 "their access to the panel: Users, then Remove.",
@@ -441,6 +459,10 @@ class CloudSessionNotice(models.AbstractModel):
                      "can use that panel on their behalf.")
         elif reason == "git_token":
             text = _("%(actor)s saved a Git token on %(place)s, for %(door)s.")
+        elif reason == "ssh_key":
+            text = _("%(actor)s added the SSH key %(door)s to the known keys of "
+                     "the server %(server)s on %(place)s: its sign-ins there no "
+                     "longer raise an alert.")
         elif reason == "invited_user" and values.get("actor"):
             text = _("%(actor)s invited %(invitee)s to %(panel)s.")
         elif reason == "invited_user":
@@ -450,7 +472,7 @@ class CloudSessionNotice(models.AbstractModel):
         bold = {
             key: Markup("<strong>%s</strong>") % (value or "")
             for key, value in values.items()
-            if key in ("place", "seen", "door", "panel", "invitee")
+            if key in ("place", "seen", "door", "panel", "invitee", "server")
         }
         plain = {key: value or "" for key, value in values.items() if key not in bold}
         return escape(text) % _OneLine(plain | bold, fold=False)
@@ -476,6 +498,8 @@ class CloudSessionNotice(models.AbstractModel):
             subject = _("New Git token on %(place)s")
         elif reason == "invited_user":
             subject = _("%(invitee)s was invited to %(panel)s")
+        elif reason == "ssh_key":
+            subject = _("Known SSH key added to %(server)s: %(door)s")
         else:
             subject = _("New access to %(place)s")
         # One line each: a name written by somebody would end the header

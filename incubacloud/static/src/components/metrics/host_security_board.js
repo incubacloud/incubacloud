@@ -30,7 +30,10 @@ export class HostSecurityBoard extends ChartBoard {
    * @returns {Object}
    */
   extraState() {
-    return {instanceId: 0, lines: null, linesTitle: "", linesError: "", linesLoading: false};
+    return {
+      instanceId: 0, lines: null, linesTitle: "", linesError: "", linesLoading: false,
+      keyForm: null, keyError: "", keySaving: false, keyRemoving: 0,
+    };
   }
 
   /** The route that answers the whole view. */
@@ -332,9 +335,16 @@ export class HostSecurityBoard extends ChartBoard {
    * Whose a sign-in, a sudo or a change looks, in words.
    *
    * @param {string} code the server's attribution
+   * @param {string} [label] the known key's name, for a sign-in with one
    * @returns {string}
    */
-  attributionText(code) {
+  attributionText(code, label) {
+    if (code === "known_key") {
+      return _t("known key: %s", label || "—");
+    }
+    if (code === "known_key_elsewhere") {
+      return _t("known key «%s» from an address it may not sign in from", label || "—");
+    }
     const words = {
       panel: _t("the panel"),
       panel_ansible: _t("the panel (Ansible)"),
@@ -355,7 +365,7 @@ export class HostSecurityBoard extends ChartBoard {
    * @returns {boolean}
    */
   attributionBad(code) {
-    return ["panel_elsewhere", "foreign_key", "password", "other_user", "outside"].includes(code);
+    return ["panel_elsewhere", "foreign_key", "password", "other_user", "outside", "known_key_elsewhere"].includes(code);
   }
 
   /**
@@ -365,7 +375,174 @@ export class HostSecurityBoard extends ChartBoard {
    * @returns {string}
    */
   keyText(key) {
-    return {panel: _t("the panel's key"), other: _t("another key"), none: _t("no key")}[key] || "—";
+    return {panel: _t("the panel's key"), known: _t("a known key"), other: _t("another key"), none: _t("no key")}[key] || "—";
+  }
+
+  /** The card of known keys, or null where the answer has none. */
+  get knownKeys() {
+    return this.state.board?.known_keys || null;
+  }
+
+  /** The known keys whose sign-ins raise no alert now. */
+  get activeKeys() {
+    return (this.knownKeys?.rows || []).filter((k) => k.active);
+  }
+
+  /** The keys removed, kept with who removed them and when. */
+  get removedKeys() {
+    return (this.knownKeys?.rows || []).filter((k) => !k.active);
+  }
+
+  /**
+   * Who added a key and when, and its last use, in a line.
+   *
+   * @param {Object} k a row of the card
+   * @returns {string}
+   */
+  keyAddedText(k) {
+    const added = _t("Added by %(user)s on %(date)s", {user: k.added_by || "—", date: this.fmtAt(k.added_at)});
+    if (!k.active) {
+      return added;
+    }
+    const used = k.last_used_at ? _t("last used %s", this.fmtAt(k.last_used_at)) : _t("never used");
+    return `${added} · ${used}`;
+  }
+
+  /**
+   * Who removed a key and when, in a line.
+   *
+   * @param {Object} k a removed row of the card
+   * @returns {string}
+   */
+  keyRemovedText(k) {
+    return _t("Removed by %(user)s on %(date)s", {user: k.removed_by || "—", date: this.fmtAt(k.removed_at)});
+  }
+
+  /**
+   * What removing a key does, asked on its row.
+   *
+   * @param {Object} k a row of the card
+   * @returns {string}
+   */
+  removeKeyText(k) {
+    return _t("Sign-ins with «%s» will raise an alert again.", k.name);
+  }
+
+  /** The heading of the removed keys, with how many (the card lists the last ones). */
+  get removedKeysTitle() {
+    return _t("Removed keys (%s)", this.knownKeys?.removed_count ?? this.removedKeys.length);
+  }
+
+  /**
+   * The addresses a key may sign in from, in words.
+   *
+   * @param {Object} k a row of the card
+   * @returns {string}
+   */
+  keyOnlyFromText(k) {
+    if (!k.only_from) {
+      return _t("any address");
+    }
+    return k.allowed_networks || _t("some addresses only");
+  }
+
+  /** Open the form that adds a key. */
+  openKeyForm() {
+    this.state.keyForm = {name: "", key: "", networks: ""};
+    this.state.keyError = "";
+  }
+
+  /** Close the form without adding anything. */
+  closeKeyForm() {
+    this.state.keyForm = null;
+    this.state.keyError = "";
+  }
+
+  /**
+   * Keep what is typed in one field of the form.
+   *
+   * @param {string} field ``name``, ``key`` or ``networks``
+   * @param {Event} ev the input's event
+   */
+  onKeyInput(field, ev) {
+    this.state.keyForm[field] = ev.target.value;
+  }
+
+  /**
+   * Answer a route of the known keys: the card again, or its error.
+   *
+   * @param {Object} res the route's answer
+   * @returns {boolean} whether it was done
+   */
+  applyKeys(res) {
+    if (!res?.ok) {
+      this.state.keyError = res?.error || _t("Could not save the key.");
+      return false;
+    }
+    if (this.state.board) {
+      this.state.board.known_keys = res.known_keys;
+    }
+    this.state.keyError = "";
+    return true;
+  }
+
+  /** Add the key of the form; the tables are read again with it. */
+  async addKey() {
+    const form = this.state.keyForm;
+    if (!form || this.state.keySaving) {
+      return;
+    }
+    this.state.keySaving = true;
+    let res;
+    try {
+      res = await rpc("/cloud/host/known_key_add", {
+        host_id: this.props.hostId, key: form.key, name: form.name, networks: form.networks,
+      });
+    } catch (e) {
+      res = {ok: false, error: e?.data?.message || e?.message};
+    }
+    this.state.keySaving = false;
+    if (this.applyKeys(res)) {
+      this.state.keyForm = null;
+      this.load();
+    } else if (this.state.keyForm) {
+      // What was pasted may have been a private key: refused, it does
+      // not stay on the screen.
+      this.state.keyForm.key = "";
+    }
+  }
+
+  /**
+   * Ask before removing a key, on its row.
+   *
+   * @param {number} id the key's id; 0 to stop asking
+   */
+  askRemoveKey(id) {
+    this.state.keyRemoving = id;
+    this.state.keyError = "";
+  }
+
+  /**
+   * Remove a key: its sign-ins alert again, and it stays listed as removed.
+   *
+   * @param {number} id the key's id
+   */
+  async removeKey(id) {
+    if (this.state.keySaving) {
+      return;
+    }
+    this.state.keySaving = true;
+    let res;
+    try {
+      res = await rpc("/cloud/host/known_key_remove", {host_id: this.props.hostId, key_id: id});
+    } catch (e) {
+      res = {ok: false, error: e?.data?.message || e?.message};
+    }
+    this.state.keySaving = false;
+    if (this.applyKeys(res)) {
+      this.state.keyRemoving = 0;
+      this.load();
+    }
   }
 
   /**

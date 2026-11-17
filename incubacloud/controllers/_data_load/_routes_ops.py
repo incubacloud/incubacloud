@@ -585,6 +585,58 @@ class OpsMixin:
             return limited
         return host._security_lines(source, range_key, instance_id=instance_id)
 
+    @http.route(["/cloud/host/known_key_add"], type="jsonrpc", auth="user")
+    def cloud_host_known_key_add(self, host_id, key="", name="", networks=""):
+        """Add a known SSH key to a server, from its Security view.
+
+        Whoever manages servers, with write access to the server; a
+        session's alone (``auth="user"``: no API key reaches it), and no
+        tool of the MCP calls it. What was pasted is read into its
+        fingerprint before anything is written and never repeated in an
+        answer (``cloud.host._security_known_key_add``).
+
+        :param int host_id: the server.
+        :param str key: the public key line, ``ssh-keygen -lf``'s line or
+            the fingerprint.
+        :param str name: who or what holds it.
+        :param str networks: the addresses it may sign in from, or empty.
+        :returns: ``{"ok": True, "known_keys"}`` or ``{"ok": False, "error"}``.
+        """
+        self._sec()._check_can_manage_hosts()
+        host = self._security_host(host_id)
+        if not host:
+            return {"ok": False, "error": _("Host not found")}
+        if not all(isinstance(value, str) for value in (key, name, networks or "")):
+            return {"ok": False, "error": _("That is not a public key or a SHA256 fingerprint.")}
+        try:
+            host._security_known_key_add(key, name, networks or "")
+        except (UserError, ValidationError) as exc:
+            return {"ok": False, "error": exc.args[0] if exc.args else str(exc)}
+        return {"ok": True, "known_keys": host._security_known_keys_answer(True)}
+
+    @http.route(["/cloud/host/known_key_remove"], type="jsonrpc", auth="user")
+    def cloud_host_known_key_remove(self, host_id, key_id):
+        """Remove a known SSH key of a server: its sign-ins alert again.
+
+        As :meth:`cloud_host_known_key_add`. The key stays listed as
+        removed, with who removed it and when.
+
+        :param int host_id: the server.
+        :param int key_id: the known key.
+        :returns: ``{"ok": True, "known_keys"}`` or ``{"ok": False, "error"}``.
+        """
+        self._sec()._check_can_manage_hosts()
+        host = self._security_host(host_id)
+        if not host:
+            return {"ok": False, "error": _("Host not found")}
+        if isinstance(key_id, bool) or not isinstance(key_id, int):
+            return {"ok": False, "error": _("That key is not a known key of this server.")}
+        try:
+            host._security_known_key_remove(key_id)
+        except UserError as exc:
+            return {"ok": False, "error": exc.args[0] if exc.args else str(exc)}
+        return {"ok": True, "known_keys": host._security_known_keys_answer(True)}
+
     @http.route(["/cloud/fleet/resource_series"], type="jsonrpc", auth="user")
     def cloud_fleet_resource_series(self, range_key="1h", start=None, end=None):
         """Return the fleet's board of Monitoring.

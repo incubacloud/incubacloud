@@ -107,8 +107,9 @@ Open the server, then **Metrics → Security**.
     - *Addresses with the most failed connections* (24 hours), with the users
       tried, the country and whether fail2ban holds the address now;
     - *Sign-ins over SSH*, *sudo* and *Changes to watched files* (7 days),
-      each with whose it looks: the panel, the system, another key or user,
-      or the panel's own user outside every job and console of the panel;
+      each with whose it looks: the panel, the system, a
+      [known key](#known-keys), another key or user, or the panel's own user
+      outside every job and console of the panel;
       `sudo` shows the program, never its arguments;
     - for the web login, the addresses with the most attempts with the
       instances each went to, and the bans of the last 7 days with the
@@ -118,6 +119,41 @@ Open the server, then **Metrics → Security**.
 The tables count the last 5 000 lines of their window and say so when there
 were more. The view says *This server does not send its security logs* when
 its switch is off.
+
+## Known keys
+
+If you sign in to a server over SSH with a key of your own, each sign-in
+raises the critical alert `security_ssh_login_foreign`. Add that key to the
+server's **known keys**: its sign-ins are still listed in *Sign-ins over
+SSH*, as *known key: <its name>*, and raise no alert.
+
+In **Metrics → Security**, under *Sign-ins, sudo and changes*, an
+Administrator clicks **Add a key**, names it and pastes the line of the key's
+`.pub` file, or its fingerprint as `ssh-keygen -lf` prints it. Only the
+fingerprint is kept, and a private key is refused. Each server has its own
+list.
+
+- **Only from** limits the key to some addresses or networks: a sign-in with
+  it from anywhere else raises a critical alert that names the key. Leave it
+  empty for a key that signs in from changing places, such as a laptop. An
+  IPv6 address counts with its whole /64; a network wider than a /8 (IPv4)
+  or a /32 (IPv6) is refused.
+- A key counts from the moment it is added: earlier sign-ins keep their
+  alerts. **Remove** ends it at once, and the key stays listed under
+  *Removed keys* with who added it, who removed it and when. A key is never
+  edited: to change its addresses, remove it and add it again. A server
+  keeps 20 known keys at most.
+- Adding a key raises the critical alert `security_known_key_added`, is
+  written in the audit log and, on a panel that sends access notices, is
+  emailed to every Administrator. Nobody can quiet the alerts of a key of
+  their own without the others knowing.
+- A known key covers the sign-in only. The `sudo` commands and the changes to
+  watched files of that session raise their alerts as anyone's, because the
+  logs do not say which sign-in they came from.
+- The *Sign-ins over SSH* chart still counts a known key as *another key*;
+  the table names it.
+- A Developer sees the list without its addresses, and cannot change it.
+  Agents and API keys cannot add or remove keys.
 
 ## What the logs cannot prove
 
@@ -136,8 +172,8 @@ its switch is off.
   sign-in, `sudo` or change alert is open on a server, each new one adds to
   its count, updates its text and reaches your notification channels again,
   but not within an hour of that server's last notice: those stay on the
-  panel. Your own sign-ins over SSH count too; dismiss each alert once you
-  know what it was.
+  panel. Your own sign-ins over SSH count too, unless their key is a
+  [known key](#known-keys); dismiss each alert once you know what it was.
 - **A failed web login with a request longer than 32 KB** is banned by
   fail2ban as any other, but is not counted or sent.
 - **The addresses fail2ban never bans** (the panel's own and the proxies the

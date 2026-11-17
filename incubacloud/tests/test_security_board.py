@@ -143,8 +143,8 @@ class _Central:
 
 
 @tagged("post_install", "-at_install")
-class TestSecurityBoard(HttpCase):
-    """Who gets what from a server's Security view."""
+class _SecurityBoardCase(HttpCase):
+    """A server whose Security view is asked for, and who asks."""
 
     def setUp(self):
         """A server with security logs, one instance on it, one elsewhere."""
@@ -218,6 +218,10 @@ class TestSecurityBoard(HttpCase):
         with patch(f"{_MODULE}.requests.get", side_effect=central):
             res = self._call("/cloud/host/security_board", host_id=self.host.id, **params)
         return res["result"], central
+
+
+class TestSecurityBoard(_SecurityBoardCase):
+    """Who gets what from a server's Security view."""
 
     def test_a_developer_gets_the_figures_and_no_address_nor_user(self):
         """The JSON itself, not the screen: no table, no address, no user."""
@@ -439,6 +443,56 @@ class TestSecurityBoard(HttpCase):
                                  source=bad)["result"]
                 self.assertFalse(res["ok"], bad)
             self.assertEqual(len(central.loki), asked)
+
+
+class TestKnownKeysRoutes(_SecurityBoardCase):
+    """The known keys' routes and card, over HTTP (design note of 17-nov-2026)."""
+
+    #: A fingerprint of no key anyone holds.
+    FINGERPRINT = "SHA256:" + "K" * 43
+
+    def test_a_manager_adds_and_removes_a_developer_reads(self):
+        """The routes for whoever manages servers; the card for both."""
+        self.authenticate("secb-dev", "secb-dev")
+        refused = self._call(
+            "/cloud/host/known_key_add", host_id=self.host.id,
+            key=self.FINGERPRINT, name="Laptop", networks="192.0.2.15",
+        )
+        self.assertIn("error", refused)
+        self.authenticate("secb-mgr", "secb-mgr")
+        added = self._call(
+            "/cloud/host/known_key_add", host_id=self.host.id,
+            key=self.FINGERPRINT, name="Laptop", networks="192.0.2.15",
+        )["result"]
+        self.assertTrue(added["ok"], added)
+        (row,) = added["known_keys"]["rows"]
+        self.assertEqual((row["name"], row["fingerprint"]), ("Laptop", self.FINGERPRINT))
+        self.assertEqual(row["allowed_networks"], "192.0.2.15/32")
+        bad = self._call(
+            "/cloud/host/known_key_add", host_id=self.host.id,
+            key="-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjE=\n-----END OPENSSH PRIVATE KEY-----",
+            name="Oops",
+        )["result"]
+        self.assertFalse(bad["ok"])
+        self.assertNotIn("b3BlbnNzaC1rZXktdjE", bad["error"])
+        mine, _central = self._board("secb-mgr", range_key="24h")
+        self.assertTrue(mine["known_keys"]["can_edit"])
+        theirs, _central = self._board("secb-dev", range_key="24h")
+        self.assertFalse(theirs["known_keys"]["can_edit"])
+        self.assertNotIn("192.0.2.15", json.dumps(theirs["known_keys"]))
+        self.authenticate("secb-dev", "secb-dev")
+        refused = self._call(
+            "/cloud/host/known_key_remove", host_id=self.host.id, key_id=row["id"],
+        )
+        self.assertIn("error", refused)
+        self.authenticate("secb-mgr", "secb-mgr")
+        removed = self._call(
+            "/cloud/host/known_key_remove", host_id=self.host.id, key_id=row["id"],
+        )["result"]
+        self.assertTrue(removed["ok"], removed)
+        (row,) = removed["known_keys"]["rows"]
+        self.assertFalse(row["active"])
+        self.assertEqual(row["removed_by"], "secb-mgr")
 
 
 class TestSecurityBoardPieces(TransactionCase):
