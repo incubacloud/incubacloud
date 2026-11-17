@@ -62,6 +62,10 @@ paths = [
     # CI workflow pins a CI-only Fernet key so the password_utils
     # module can boot in the test container. Not a production secret.
     '''\.github/workflows/ci\.yml''',
+    # Test of the security board's known keys: a made-up ``PRIVATE KEY``
+    # literal proves a private key pasted as a known key is refused and
+    # never echoed back. No real key.
+    '''incubacloud/tests/test_security_board\.py''',
 ]
 # Tests of the GitLab providers: made-up deploy and access tokens prove a
 # credential is chosen, sent only to its server and kept out of the
