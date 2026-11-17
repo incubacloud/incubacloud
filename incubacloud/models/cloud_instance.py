@@ -38,6 +38,7 @@ from ._repo_requirements import (
 from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
+from .host_probe_executor import MIN_DISK_GB
 from ._concurrency import is_concurrency_error
 from .cloud_gitlab_mr_note import PR_PREVIEW_NOTE_FAILED_CODE
 from .cloud_gitlab_mr_note import MAX_NOTE_PAGES as NOTE_MAX_PAGES
@@ -2960,17 +2961,21 @@ class CloudInstance(models.Model):
         # which says nothing of its disk: the check of the build
         # (``_check_build_room``) is the one left to refuse it.
         if pr_number and host.last_probed \
-                and host.disk_free_gb < host._MIN_DISK_FREE_GB:
-            # A preview goes to its production's server, past the rule the
-            # automatic placement applies: refused here, its request hears
-            # why (and the request may be public: the server is not
-            # named), instead of a deploy that would fail on a full disk
-            # (16-nov-2026).
+                and host.disk_free_gb < MIN_DISK_GB:
+            # A preview goes to its production's server, past the automatic
+            # placement: refused here, its request hears why (and the
+            # request may be public: the server is not named), instead of
+            # a deploy that would fail on a full disk (16-nov-2026). The
+            # Check's figure, under which the server is degraded, not the
+            # placement's higher one (``cloud.host._MIN_DISK_FREE_GB``),
+            # which is the room of a first build on a server that has none
+            # yet: the production's built there already, and the build's
+            # own room check refuses one that does not fit (17-nov-2026).
             raise UserError(_(
                 "The server has %(free).1f GB of disk free, under the"
                 " %(min)s GB a new instance needs: no preview is created"
                 " on it. Free space on the server or enlarge its disk.",
-                free=host.disk_free_gb, min=host._MIN_DISK_FREE_GB,
+                free=host.disk_free_gb, min=MIN_DISK_GB,
             ))
 
         vals = {

@@ -32,6 +32,7 @@ from odoo.addons.incubacloud.models.cloud_github_event import (
 from odoo.addons.incubacloud.models.cloud_gitlab_mr_note import (
     PR_PREVIEW_NOTE_FAILED_CODE,
 )
+from odoo.addons.incubacloud.models.host_probe_executor import MIN_DISK_GB
 from odoo.addons.queue_job.exception import RetryableJobError
 
 REPO_URL = 'https://github.com/owner/repo.git'
@@ -419,9 +420,10 @@ class TestPreviewFailureIsVisible(_PreviewBase):
 class TestPreviewOnAFullServer(_PreviewBase):
     """A preview is not created on a server short of disk (16-nov-2026).
 
-    It goes to its production's server, past the rule of the automatic
-    placement: under ``_MIN_DISK_FREE_GB`` free the clone is refused with
-    a ``UserError``, which the pull request hears as any refusal.
+    It goes to its production's server, past the automatic placement:
+    under the Check's ``MIN_DISK_GB`` free, not the placement's higher
+    ``_MIN_DISK_FREE_GB``, the clone is refused with a ``UserError``,
+    which the pull request hears as any refusal.
     """
 
     def _clone(self, free_gb, pr_number=7, probed=True):
@@ -440,13 +442,19 @@ class TestPreviewOnAFullServer(_PreviewBase):
 
     def test_a_server_short_of_disk_gets_no_preview(self):
         with self.assertRaisesRegex(UserError, 'no preview is created'):
-            self._clone(self.host._MIN_DISK_FREE_GB - 7)
+            self._clone(MIN_DISK_GB - 7)
         self.assertFalse(self.env['cloud.instance'].search([('pr_number', '=', 7)]))
 
     def test_a_server_with_room_gets_it(self):
         self.assertTrue(
-            self._clone(self.host._MIN_DISK_FREE_GB, 8)['staging_id'],
+            self._clone(MIN_DISK_GB, 8)['staging_id'],
         )
+
+    def test_under_the_placements_figure_it_still_gets_it(self):
+        """12 GB: under what the automatic placement asks of a server, over
+        the Check's figure. The production is built there already."""
+        self.assertLess(12, self.host._MIN_DISK_FREE_GB)
+        self.assertTrue(self._clone(12.0, 10)['staging_id'])
 
     def test_a_server_without_a_free_byte_is_refused_and_not_named(self):
         with self.assertRaisesRegex(UserError, 'no preview is created') as caught:

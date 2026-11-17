@@ -174,6 +174,18 @@ gestionado de copias* on a running panel too.
   was running when its step died is answered *Outcome unknown* instead of
   *Not run*. The panel keeps the state the bus delivered while Stop was on
   its way, instead of replacing it with the older answer.
+- **The automatic placement asks for 14 GB free, not 10.** The first build
+  of an instance on a server that does not have the Doodba base image yet
+  writes up to 8.5 GiB in containerd's image store, the default of a new
+  Docker 29, and the build's room check keeps 5 GiB for the server's other
+  instances: a server chosen with 10 to 13 GB free could see that first
+  build refused. `cloud.host._MIN_DISK_FREE_GB` is now 14 and is the
+  placement's alone. The Check keeps its 10 GB (`MIN_DISK_GB`): under it
+  the server is `Degraded`, Full Setup fails and a build first empties the
+  build cache, as before. A server between the two stays `Compatible` and
+  keeps taking instances placed on it by hand; a pull or merge request
+  preview, which goes to its production's server, is refused only under
+  the Check's 10 GB.
 
 ### Fixed
 
@@ -232,8 +244,8 @@ gestionado de copias* on a running panel too.
   cache at 5 GB (`--reserved-space`, or `--keep-storage` where Docker does
   not know it); it never fails. A flow that builds no image has neither. A
   pull or merge request preview is no longer created on a server whose
-  measured free disk is under the 10 GB the automatic placement asks of a
-  server: its request hears why.
+  measured free disk is under the 10 GB under which the Check marks it
+  `Degraded`: its request hears why.
   The figures are measured on a rebuild with the base image unchanged (it
   writes 0.66-0.72 of the previous image in containerd's image store, 0.42-0.46
   in overlay2; the factor is 1). A full rebuild (`--pull --no-cache`) after
@@ -538,6 +550,8 @@ gestionado de copias* on a running panel too.
 
 - *Get started* explains the first steps list: who sees it, folding, closing
   and bringing it back.
+- *Connect a server* says that the automatic placement chooses a
+  `Compatible` server only with 14 GB free.
 
 ### Migration
 

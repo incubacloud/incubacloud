@@ -126,8 +126,8 @@ The Check ends with a verdict on the host's status:
 
 | Status | When | What it means |
 |---|---|---|
-| `Compatible` | Linux, 10 GB free or more, every tool in place. | Ready for instances. |
-| `Degraded` | Under 10 GB free, or a tool missing. An alert says which. | The instances already there keep running. With little disk, no new one is placed on it and a build may run out of space: free space. For a missing tool, run **Full Setup**. |
+| `Compatible` | Linux, 10 GB free or more, every tool in place. | Ready for instances. The automatic placement chooses it only with 14 GB free or more: the first instance built on a server takes up to 8.5 GB, and 5 GB stay for the others. |
+| `Degraded` | Under 10 GB free, or a tool missing. An alert says which. | The instances already there keep running. With little disk, the automatic placement puts no new one on it and a build may run out of space: free space. For a missing tool, run **Full Setup**. |
 | `Unsupported` | Not Linux, or the Check could not reach or read the host. | Nothing is deployed there. |
 
 The job fails only when the Check could not measure the host. Once 11 GB are
