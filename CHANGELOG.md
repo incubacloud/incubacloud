@@ -22,6 +22,14 @@ data migration.
   `PATH` with each entry starting with `~` expanded, in the same order
   (`local_path.expanded_path`). The lookup of `sshpass` and the panel's
   git reader use the same `PATH`.
+- **Installing the module on a database whose other modules add required
+  columns to partners or users.** The panel's cron bot got its partner
+  from an `INSERT` that named the columns it knew, so a required column
+  another module adds (on Odoo.sh, purchase_stock's `group_rfq` and
+  `group_on`) was left empty and the install failed on its NOT NULL
+  constraint. The bot and its partner are now created with the ORM,
+  where every installed module's defaults apply, whichever module adds
+  the column.
 
 ## [1.0.232] — unreleased
 
