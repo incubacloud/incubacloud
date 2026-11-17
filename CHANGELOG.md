@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.233] — unreleased
+
+Two fixes for a panel on Odoo.sh. The update changes no table and has no
+data migration.
+
+### Fixed
+
+- **Ansible jobs find `ansible-playbook` on Odoo.sh.** Odoo.sh gives
+  Odoo's processes a `PATH` that names `~/.local/bin`, where pip installs
+  Ansible, with the tilde unexpanded. A shell expands it, so `ansible` ran
+  in a terminal, but ansible-runner does not: Harden Host and every other
+  playbook ended with exit status 127, *The command was not found or was
+  not executable: ansible-playbook*. The panel now hands Ansible its
+  `PATH` with each entry starting with `~` expanded, in the same order
+  (`local_path.expanded_path`). The lookup of `sshpass` and the panel's
+  git reader use the same `PATH`.
+
 ## [1.0.232] — unreleased
 
 A backup destination can be an SFTP server (#93): the panel generates its
