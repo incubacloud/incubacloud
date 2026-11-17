@@ -424,6 +424,14 @@ gestionado de copias* on a running panel too.
   destination) shows the same translated message, «Use a port between 1
   and 65535.», where the default one came out in English in Spanish.
 
+- **A host card with a long name wraps it instead of pushing its status
+  badge out of the card.** On the hosts list, a name with no spaces (a
+  host called after its full domain) could not break, so the card's head
+  grew wider than the card and the badge stuck out past its right edge,
+  at any screen width. The whole name now wraps onto more lines, the badge
+  keeps its size at the top right of the card, and an address or a region
+  with no spaces on the line below breaks the same way.
+
 ### Security
 
 - **The OAuth2 relay image carries docker-mailserver 16.0.1's Debian
