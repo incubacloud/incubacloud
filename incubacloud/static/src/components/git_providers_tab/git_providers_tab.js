@@ -78,6 +78,9 @@ export class GitProvidersTab extends Component {
             saveError: null,
             // Warnings of the last save, per provider id.
             warnings: {},
+            // Notices of the last save, per provider id: what is no
+            // fault of the credential.
+            notices: {},
             // «Test connection»: the URL typed and the last answer, per id.
             testUrl: {},
             testing: null,
@@ -545,6 +548,7 @@ export class GitProvidersTab extends Component {
                 return;
             }
             this.state.warnings[res.provider.id] = res.warnings || [];
+            this.state.notices[res.provider.id] = res.notices || [];
             this.state.draft = null;
             await this.load();
         } catch {
@@ -607,7 +611,7 @@ export class GitProvidersTab extends Component {
                 provider_id: provider.id, url,
             });
             this.state.testResult[provider.id] = res.ok
-                ? { git: res.git, api: res.api }
+                ? { git: res.git, api: res.api, notice: res.notice }
                 : { error: res.error };
             if (res.ok) {
                 const index = this.state.providers.findIndex((p) => p.id === provider.id);

@@ -151,6 +151,85 @@ describe("GitProvidersTab — a stored token", () => {
     });
 });
 
+describe("GitProvidersTab — Test connection", () => {
+    const NOTICE = "GitLab does not let the panel read this token's permissions "
+        + "(fine-grained tokens do not allow it). To deploy, it is enough that git works.";
+
+    /**
+     * Mount the tab with one provider whose test answers *answer*, and run
+     * «Test connection».
+     *
+     * @param {Object} answer what ``/cloud/test_git_provider`` answers
+     * @returns {Promise<void>}
+     */
+    async function testWith(answer) {
+        patchWithCleanup(rpc, {
+            _rpc(url) {
+                if (url === "/cloud/get_git_providers") {
+                    return Promise.resolve({
+                        can_manage: true, network: "any",
+                        providers: [{
+                            id: 7, name: "GitLab.com", base_url: "https://gitlab.com",
+                            ca_bundle: "", last_check_at: false, credentials: [],
+                        }],
+                    });
+                }
+                if (url === "/cloud/get_git_hooks") {
+                    return Promise.resolve({ hooks: [] });
+                }
+                if (url === "/cloud/test_git_provider") {
+                    return Promise.resolve({
+                        ok: true, provider: { id: 7, name: "GitLab.com", credentials: [] },
+                        ...answer,
+                    });
+                }
+                return Promise.resolve({});
+            },
+        });
+        await mountWithCleanup(GitProvidersTab, { env: { icon: relayIcon }, noMainContainer: true });
+        await waitFor(".ic-gitp-test input");
+        await click(".ic-gitp-test input");
+        await edit("https://gitlab.com/acme/addons");
+        await click(".ic-gitp-test button");
+        await animationFrame();
+    }
+
+    test("git working and the token unreadable: the notice is informational, the git line is not an error", async () => {
+        await testWith({
+            git: { code: "ok", message: "It works." },
+            api: { code: "forbidden", message: "The token lacks the scope or role this needs." },
+            notice: { code: "token_unreadable", message: NOTICE },
+        });
+        expect(".rl-set-inline-msg--error").toHaveCount(0);
+        expect(".ic-gitp-notice").toHaveCount(1);
+        expect(".ic-gitp-notice").toHaveClass("rl-set-inline-msg--info");
+        expect(".ic-gitp-notice").toHaveText(NOTICE);
+        expect(".rl-set-inline-msg--success").toHaveCount(1);
+    });
+
+    test("git failing keeps the error and shows no notice", async () => {
+        await testWith({
+            git: { code: "auth", message: "The server refused the credential." },
+            api: { code: "forbidden", message: "The token lacks the scope or role this needs." },
+            notice: null,
+        });
+        expect(".ic-gitp-notice").toHaveCount(0);
+        expect(".rl-set-inline-msg--error").toHaveCount(1);
+        expect(".rl-set-inline-msg--error").toHaveText("git: The server refused the credential.");
+    });
+
+    test("git and the token both fine shows neither error nor notice", async () => {
+        await testWith({
+            git: { code: "ok", message: "It works." },
+            api: { code: "ok", message: "It works." },
+            notice: null,
+        });
+        expect(".ic-gitp-notice").toHaveCount(0);
+        expect(".rl-set-inline-msg--error").toHaveCount(0);
+        expect(".rl-set-inline-msg--success").toHaveCount(2);
+    });
+});
+
 /**
  * A tab stand-in listing one provider, as the panel would.
  *

@@ -202,6 +202,7 @@ class TestProviderRoutes(_RoutesCase):
         self.assertTrue(answer["ok"], answer)
         self.assertEqual(len(self.provider.credential_ids), 1)
         self.assertIn("did not answer", answer["warnings"][0])
+        self.assertEqual(answer["notices"], [])
 
     def test_a_refused_value_saves_nothing(self):
         answer = self._serve("cloud_save_git_provider", user=self.manager, vals={
@@ -308,6 +309,81 @@ class TestProviderRoutes(_RoutesCase):
         self.assertEqual(answer["api"]["code"], "auth")
         self.assertNotIn("glpat-routes12", repr(answer))
         self.assertEqual(self.provider.last_check_git, "tls")
+
+    @staticmethod
+    def _refused(code, status):
+        """Return the ``UserError`` of an introspection GitLab refused.
+
+        :param str code: the ``GitLabError`` code hidden under it
+        :param int status: the HTTP status of it
+        :rtype: UserError
+        """
+        refused = UserError(f"GitLab.com did not answer about the token ({code}).")
+        refused.__cause__ = GitLabError(code, status=status)
+        return refused
+
+    def test_a_token_gitlab_will_not_describe_is_a_notice_when_git_works(self):
+        # A fine-grained token cannot read itself: GitLab answers 403.
+        # git works, so that is nothing to fix; the scopes stay unread,
+        # so the token is still taken as one that can write.
+        cred = self._cred("acme", kind="personal")
+        answer, _ls = self._test(introspect=self._refused("forbidden", 403))
+        self.assertEqual(answer["git"]["code"], "ok")
+        self.assertEqual(answer["api"]["code"], "forbidden")
+        self.assertEqual(answer["notice"], {
+            "code": "token_unreadable",
+            "message": (
+                "GitLab does not let the panel read this token's permissions "
+                "(fine-grained tokens do not allow it). To deploy, it is "
+                "enough that git works."
+            ),
+        })
+        self.assertEqual(self.provider.last_check_api, "forbidden")
+        self.assertTrue(cred._scopes_unread())
+        self.assertTrue(cred._writes())
+
+    def test_no_notice_when_git_works_and_the_token_is_answered_otherwise(self):
+        self._cred("acme", kind="personal")
+        for code, status in (
+            ("auth", 401), ("unreachable", None), ("http", 500),
+            ("timeout", None),
+        ):
+            with self.subTest(code=code):
+                answer, _ls = self._test(introspect=self._refused(code, status))
+                self.assertEqual(answer["git"]["code"], "ok")
+                self.assertEqual(answer["api"]["code"], code)
+                self.assertIsNone(answer["notice"])
+
+    def test_no_notice_when_git_fails_and_the_token_answers_403(self):
+        self._cred("acme", kind="personal")
+        answer, _ls = self._test(
+            ls_remote=GitReaderError("auth"),
+            introspect=self._refused("forbidden", 403),
+        )
+        self.assertEqual(answer["git"]["code"], "auth")
+        self.assertIsNone(answer["notice"])
+
+    def test_no_notice_when_the_token_is_described(self):
+        self._cred("acme", kind="personal")
+        answer, _ls = self._test()
+        self.assertIsNone(answer["notice"])
+
+    def test_saving_a_token_gitlab_will_not_describe_says_it_as_a_notice(self):
+        vals = {
+            "id": self.provider.id, "name": "GitLab.com",
+            "base_url": "https://gitlab.com",
+            "credentials": [{"namespace": "acme", "kind": "personal",
+                             "token": "glpat-notice01"}],
+        }
+        with patch.object(
+            provider_mod.CloudGitCredential, "_introspect", autospec=True,
+            side_effect=self._refused("forbidden", 403),
+        ):
+            answer = self._serve("cloud_save_git_provider", user=self.manager, vals=vals)
+        self.assertTrue(answer["ok"], answer)
+        self.assertEqual(answer["warnings"], [])
+        self.assertEqual(len(answer["notices"]), 1)
+        self.assertIn("fine-grained", answer["notices"][0])
 
     def test_a_deploy_token_has_no_api_and_no_credential_reads_as_public(self):
         answer, ls = self._test()

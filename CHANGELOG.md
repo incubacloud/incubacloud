@@ -208,6 +208,17 @@ gestionado de copias* on a running panel too.
   keeps taking instances placed on it by hand; a pull or merge request
   preview, which goes to its production's server, is refused only under
   the Check's 10 GB.
+- **A GitLab token that git can use but whose permissions GitLab will not
+  describe says so as a notice, not as an error.** A fine-grained token
+  cannot read its own data, so GitLab answers 403 when the panel asks what
+  the token is. Test connection, when git works, and saving the token now
+  show an informational notice (*GitLab does not let the panel read this
+  token's permissions (fine-grained tokens do not allow it). To deploy, it
+  is enough that git works.*) instead of the red *did not answer about the
+  token (forbidden)*. The scopes stay unread and the token is still taken
+  as one that can write; the API line is unchanged. A git read that fails,
+  or an answer of another kind (401, unreachable, a server error), shows
+  the error as before.
 
 ### Fixed
 
