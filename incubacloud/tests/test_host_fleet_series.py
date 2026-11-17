@@ -161,12 +161,19 @@ class TestHostSeries(HttpCase):
             self.assertTrue(call.args[0].startswith("https://central.test/r/api/v1/"))
         self.assertEqual(set(res["panels"]), {p["key"] for p in PANELS["host"]})
         self.assertEqual(res["panels"]["host"]["value"]["cores"], 4)
-        # The table names the instance it can open, busiest first; an
-        # instance this panel does not know keeps the agents' name.
+        # The table names the instance it can open with its project,
+        # busiest first; an instance this panel does not know keeps the
+        # agents' name.
         rows = res["panels"]["consumers"]["rows"]
-        self.assertEqual([r["name"] for r in rows], ["prod", "elsewhere"])
+        self.assertEqual([r["name"] for r in rows], ["HostCharts/prod", "elsewhere"])
         self.assertEqual(rows[0]["project_id"], self.project.id)
         self.assertFalse(rows[1]["project_id"])
+        # The legends of the charts by instance name it the same way.
+        for key in ("cpu_instances", "memory_instances"):
+            self.assertEqual(
+                {s["name"] for s in res["panels"][key]["series"]},
+                {"HostCharts/prod"}, key,
+            )
         # Memory at 95 % names the instance that uses most of it.
         codes = {f["code"]: f for f in res["diagnosis"]["findings"]}
         self.assertIn("memory_high", codes)
@@ -207,21 +214,29 @@ class TestHostSeries(HttpCase):
         get.assert_not_called()
 
 
-def _fleet_central(refuse_operator=False):
-    """Answer the fleet board's queries; the operator's route may refuse.
+#: The id the fleet's central labels its host with: no server has it.
+_NO_HOST = "987654"
 
-    Two hosts: one of this panel's account, one of another account.
 
-    :param bool refuse_operator: answer 403 on ``/admin-r``.
+def _fleet_central(foreign=False, names=True):
+    """Answer the fleet board's queries as a central with the account's host.
+
+    A central filters the account's route by account, so the answer is
+    the host of this panel's account, with an id no server of the test
+    base has.
+
+    :param bool foreign: answer a host of another account too, with the
+        same id, as a gateway that does not filter would.
+    :param bool names: label the series with the host's name; without
+        it they carry the account and the id alone.
     """
-    hosts = [
-        {"ic_account": "acct_test", "host_id": "3", "host": "mine"},
-        {"ic_account": "acct_other", "host_id": "3", "host": "theirs"},
-    ]
+    hosts = [{"ic_account": "acct_test", "host_id": _NO_HOST, "host": "mine"}]
+    if foreign:
+        hosts.append({"ic_account": "acct_other", "host_id": _NO_HOST, "host": "theirs"})
+    if not names:
+        hosts = [{k: v for k, v in h.items() if k != "host"} for h in hosts]
 
     def answer(url, params, **kw):
-        if refuse_operator and "/admin-r/" in url:
-            return _refusal(403)
         roles = _ROLES.findall(params["query"])
         if "step" not in params:
             return _vector([({"ic_role": role}, 2) for role in roles])
@@ -272,72 +287,107 @@ class TestFleetSeries(HttpCase):
             if p["needs"] == "fleet" or (security and p["needs"] == "fleet_security")
         ])
 
-    def test_the_central_s_owner_reads_every_account(self):
+    def _host(self, name="HFleetOwn"):
+        """Create one of this panel's servers and return it."""
+        return self.env["cloud.host"].sudo().create({
+            "name": name, "ip_address": "203.0.113.74", "user": "root",
+            "wildcard_domain": f"{name.lower()}.example.com",
+        })
+
+    def test_the_central_s_owner_reads_its_own_account(self):
+        """The operator credential is never what the board reads with.
+
+        The panel that deployed the central holds it, and until
+        17-nov-2026 drew every account's servers with it.
+        """
         with patch(f"{_MODULE}.requests.get", side_effect=_fleet_central()) as get:
             res = self._call(range_key="6h")
         self.assertTrue(res["ok"], res)
-        self.assertEqual(res["scope"], "operator")
+        self.assertNotIn("scope", res)
         self.assertEqual(get.call_count, self._asked())
         for call in get.call_args_list:
-            self.assertTrue(call.args[0].startswith("https://central.test/admin-r/api/v1/"))
-            self.assertEqual(call.kwargs["auth"], ("operator", "op3r"))
-        load = {s["name"]: s for s in res["panels"]["load"]["series"]}
-        self.assertTrue(load["mine"]["own"])
-        self.assertFalse(load["theirs"]["own"])
-        self.assertEqual(load["theirs"]["account"], "acct_other")
-        self.assertEqual(res["panels"]["summary"]["value"]["hosts"], 2)
-        self.assertEqual(len(res["panels"]["ingest"]["rows"]), 2)
+            self.assertTrue(call.args[0].startswith("https://central.test/r/api/v1/"))
+            self.assertEqual(call.kwargs["auth"], ("acct_test", "s3cr3t"))
+        self.assertEqual(
+            [s["name"] for s in res["panels"]["load"]["series"]], ["mine"],
+        )
+        self.assertEqual(len(res["panels"]["ingest"]["rows"]), 1)
         self.assertEqual(set(res["alerts"]), {"performance", "security"})
 
-    def test_a_central_that_keeps_its_operator_route_closed_shows_the_account(self):
+    def test_another_account_s_server_never_reaches_the_answer(self):
+        """A gateway that does not filter: its other accounts are dropped.
+
+        The other account's server has the id of one of this panel's,
+        as ids repeat across panels: neither its name nor its account
+        is in the answer, and its lines are not drawn as this panel's.
+        """
         with patch(f"{_MODULE}.requests.get",
-                   side_effect=_fleet_central(refuse_operator=True)) as get:
+                   side_effect=_fleet_central(foreign=True)) as get:
             res = self._call()
         self.assertTrue(res["ok"], res)
-        self.assertEqual(res["scope"], "account")
-        account_calls = [c for c in get.call_args_list if "/r/api/v1/" in c.args[0]]
-        self.assertEqual(len(account_calls), self._asked())
-        for call in account_calls:
-            self.assertEqual(call.kwargs["auth"], ("acct_test", "s3cr3t"))
-        # Read with the account, every host is this panel's: no account
-        # names in the legend.
-        for series in res["panels"]["load"]["series"]:
-            self.assertTrue(series["own"])
-            self.assertEqual(series["account"], "")
+        self.assertTrue(all("/admin-r/" not in c.args[0] for c in get.call_args_list))
+        for key in ("load", "memory", "root", "io"):
+            series = res["panels"][key]["series"]
+            self.assertEqual([s["name"] for s in series], ["mine"], key)
+            self.assertNotIn("account", series[0])
+            self.assertFalse(series[0]["own"], key)
+        self.assertEqual([r["name"] for r in res["panels"]["ingest"]["rows"]], ["mine"])
+        body = json.dumps(res)
+        self.assertNotIn("theirs", body)
+        self.assertNotIn("acct_", body)
 
-    def test_an_operator_over_its_cap_is_busy_not_refused(self):
-        """vmauth answers 429 past the operator's 16 requests in flight.
+    def test_a_server_is_named_as_the_panel_names_it(self):
+        """The panel's name wins over the agents' label, and links to its board."""
+        host = self._host()
+        central = _fleet_central()
 
-        Busy is not a closed route: the board says so rather than
-        falling back to the account's servers.
-        """
         def answer(url, params, **kw):
-            if "/admin-r/" in url:
-                return _refusal(429)
-            return _fleet_central()(url, params, **kw)
+            """Label the account's host with this panel's server's id."""
+            params = dict(params)
+            resp = central(url, params, **kw)
+            payload = resp.json.return_value
+            for item in payload["data"]["result"]:
+                if "host_id" in item["metric"]:
+                    item["metric"]["host_id"] = str(host.id)
+            return resp
 
-        with patch(f"{_MODULE}.requests.get", side_effect=answer) as get:
+        with patch(f"{_MODULE}.requests.get", side_effect=answer):
+            res = self._call()
+        for key in ("load", "memory", "root", "io"):
+            series = res["panels"][key]["series"][0]
+            self.assertEqual(series["name"], "HFleetOwn", key)
+            self.assertTrue(series["own"], key)
+        row = res["panels"]["ingest"]["rows"][0]
+        self.assertEqual((row["name"], row["own"]), ("HFleetOwn", True))
+
+    def test_a_series_without_a_name_is_never_left_unnamed(self):
+        """Neither a label nor a server of this panel: "Server <id>"."""
+        with patch(f"{_MODULE}.requests.get",
+                   side_effect=_fleet_central(names=False)):
+            res = self._call()
+        for key in ("load", "memory", "root", "io"):
+            series = res["panels"][key]["series"][0]
+            self.assertEqual(series["name"], f"Server {_NO_HOST}", key)
+            self.assertFalse(series["own"], key)
+        self.assertEqual(
+            res["panels"]["ingest"]["rows"][0]["name"], f"Server {_NO_HOST}",
+        )
+
+    def test_a_central_that_refuses_the_account_says_so(self):
+        """No falling back to another credential: the board says why."""
+        with patch(f"{_MODULE}.requests.get", return_value=_refusal(403)) as get:
+            res = self._call()
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["reason"], "credential")
+        self.assertTrue(all("/admin-r/" not in c.args[0] for c in get.call_args_list))
+
+    def test_a_central_over_its_cap_is_busy(self):
+        """vmauth answers 429 past the account's requests in flight."""
+        with patch(f"{_MODULE}.requests.get", return_value=_refusal(429)):
             res = self._call()
         self.assertEqual(res["ok"], False)
         self.assertEqual(res["reason"], "busy")
         self.assertIsNone(res["since"])
-        self.assertTrue(all("/admin-r/" in c.args[0] for c in get.call_args_list))
-
-    def test_a_panel_without_the_operator_credential_reads_its_account(self):
-        self.settings.metrics_operator_token = False
-        with patch(f"{_MODULE}.requests.get", side_effect=_fleet_central()) as get:
-            res = self._call()
-        self.assertEqual(res["scope"], "account")
-        self.assertEqual(get.call_count, self._asked())
-        self.assertTrue(all("/admin-r/" not in c.args[0] for c in get.call_args_list))
-
-    def test_a_central_that_is_not_ours_has_no_operator_route(self):
-        """Only a central this panel deployed ends in ``/r``."""
-        self.settings.metrics_central_url = "http://vm.test:8428"
-        with patch(f"{_MODULE}.requests.get", side_effect=_fleet_central()) as get:
-            res = self._call()
-        self.assertEqual(res["scope"], "account")
-        self.assertTrue(all("/admin-r/" not in c.args[0] for c in get.call_args_list))
 
     def test_active_alerts_are_counted_by_kind(self):
         with patch(f"{_MODULE}.requests.get", side_effect=_fleet_central()):
@@ -400,7 +450,7 @@ class TestHostAndFleetPanels(BaseCase):
             self.assertNotIn("instance_id=\"", expression.replace('instance_id!=""', ""))
 
     def test_the_fleet_keeps_the_account_beside_the_host(self):
-        """Read by the operator, ``host_id`` repeats across accounts."""
+        """The account of each series is how another account's is dropped."""
         values = {"one_off": "x", "window": 120, "ssh_threshold": 100.0,
                   "weblogin_threshold": 50.0}
         for panel in PANELS["fleet"]:
@@ -473,6 +523,16 @@ class TestHostAndFleetPanels(BaseCase):
         ])
         many = [({"host": f"h{i}", "host_id": str(i)}, [(0.0, 1.0)]) for i in range(25)]
         self.assertEqual(shape_state(panel, many, 0, 0, 30)["hidden"], 25 - _MAX_STATE_ROWS)
+
+    def test_the_load_per_core_keeps_the_server_s_name(self):
+        """A division matched ``on`` labels drops the rest without ``group_left``.
+
+        Without it the fleet's load lines reached the legend unnamed
+        (17-nov-2026).
+        """
+        expr = self._panel("fleet", "load")["queries"][0]["expr"]
+        self.assertIn("max by (ic_account, host_id, host) (node_load15)", expr)
+        self.assertIn("/ on (ic_account, host_id) group_left count by", expr)
 
 
 @tagged("post_install", "-at_install")

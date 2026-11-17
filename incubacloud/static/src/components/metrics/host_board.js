@@ -55,7 +55,7 @@ export class HostBoard extends ChartBoard {
           empty: _t("No pressure readings from this server. Its kernel may not report them.")},
         {key: "memory", title: _t("Memory in use"), hint: _t("% of the server's memory · and of its swap"),
           unit: "percent", palette: "role", label: _t("Share of this server's memory and swap in use over time"),
-          empty: _t("No memory readings from this server in this window."), wide: true},
+          empty: _t("No memory readings from this server in this window.")},
       ],
       use: [
         {key: "cpu_instances", title: _t("CPU per instance"), hint: _t("stacked · 100 % = one core"),

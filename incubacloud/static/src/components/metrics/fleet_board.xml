@@ -41,7 +41,6 @@
                     </t>
                     <t t-else="">
                         <p class="ic-mb-sub">Figures only: who tried and from where is in each server's Metrics tab, under Security.</p>
-                        <p t-if="isOperator" class="ic-mb-sub" data-note="operator">The central's figures count every account's servers; only this panel's servers are listed.</p>
                         <p t-if="panelError('security')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('security')"/>
                         <div class="ic-fb-tiles" data-panel="security">
                             <t t-foreach="securityTiles" t-as="tile" t-key="tile.key">
@@ -82,49 +81,49 @@
                     </t>
                 </section>
 
-                <!-- Busiest servers -->
+                <!-- Busiest servers, and whether each one reports: the
+                     ingestion line takes the room the charts leave on
+                     their last row (``ic-mb-fill``). -->
                 <section class="ic-mb-section" aria-labelledby="ic-fb-busiest">
                     <h3 class="ic-mb-h" id="ic-fb-busiest">Busiest servers</h3>
                     <p class="ic-mb-sub">
                         <t t-if="isZoomed">Zoomed window.</t>
                         <t t-else="">Drag across a chart to zoom.</t>
                     </p>
-                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')" t-att-aria-busy="state.loading ? 'true' : 'false'">
+                    <div t-att-class="'ic-mb-grid ic-mb-fill' + (state.loading ? ' is-loading' : '')" t-att-aria-busy="state.loading ? 'true' : 'false'">
                         <t t-foreach="cards" t-as="c" t-key="c.key">
                             <t t-call="incubacloud.ChartBoardCard"/>
                         </t>
-                    </div>
-                </section>
-
-                <!-- Ingestion -->
-                <section class="ic-mb-section" aria-labelledby="ic-fb-ingest">
-                    <h3 class="ic-mb-h" id="ic-fb-ingest">Are the servers reporting?</h3>
-                    <p class="ic-mb-sub">
-                        A sample at each step of the window
-                        <span class="ic-fb-legend-ok" aria-hidden="true"/>reporting
-                        <span class="ic-fb-legend-silent" aria-hidden="true"/>silent
-                    </p>
-                    <div class="rl-card rl-card-pad" data-panel="ingest">
-                        <p t-if="panelError('ingest')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('ingest')"/>
-                        <div t-elif="timeline.length" class="ic-fb-timeline">
-                            <t t-foreach="timeline" t-as="row" t-key="row.account + ':' + row.host_id">
-                                <div class="ic-fb-tl-row">
-                                    <span class="ic-fb-tl-name">
-                                        <a t-if="canOpenHost(row)" href="#" class="ic-hb-link"
-                                           t-on-click.prevent="() => this.openHost(row)" t-esc="rowName(row)"/>
-                                        <t t-else="" t-esc="rowName(row)"/>
-                                    </span>
-                                    <div class="ic-fb-tl-bar" role="img" t-att-aria-label="rowName(row)">
-                                        <t t-foreach="row.segments" t-as="seg" t-key="seg_index">
-                                            <span t-att-class="'ic-fb-tl-seg is-' + seg.state"
-                                                  t-att-style="segStyle(seg)" t-att-title="segTitle(seg)"/>
-                                        </t>
+                        <div class="rl-card ic-mb-card ic-mb-span2" data-panel="ingest">
+                            <div class="ic-mb-cardhead">
+                                <span class="rl-ovtitle" id="ic-fb-ingest">Are the servers reporting?</span>
+                                <span class="ic-mb-hint">
+                                    a sample at each step of the window
+                                    <span class="ic-fb-legend"><span class="ic-fb-legend-ok" aria-hidden="true"/>reporting</span>
+                                    <span class="ic-fb-legend"><span class="ic-fb-legend-silent" aria-hidden="true"/>silent</span>
+                                </span>
+                            </div>
+                            <p t-if="panelError('ingest')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('ingest')"/>
+                            <div t-elif="timeline.length" class="ic-fb-timeline" role="group" aria-labelledby="ic-fb-ingest">
+                                <t t-foreach="timeline" t-as="row" t-key="row.host_id">
+                                    <div class="ic-fb-tl-row">
+                                        <span class="ic-fb-tl-name" t-att-title="row.name">
+                                            <a t-if="canOpenHost(row)" href="#" class="ic-hb-link"
+                                               t-on-click.prevent="() => this.openHost(row)" t-esc="row.name"/>
+                                            <t t-else="" t-esc="row.name"/>
+                                        </span>
+                                        <div class="ic-fb-tl-bar" role="img" t-att-aria-label="row.name">
+                                            <t t-foreach="row.segments" t-as="seg" t-key="seg_index">
+                                                <span t-att-class="'ic-fb-tl-seg is-' + seg.state"
+                                                      t-att-style="segStyle(seg)" t-att-title="segTitle(seg)"/>
+                                            </t>
+                                        </div>
                                     </div>
-                                </div>
-                            </t>
-                            <p t-if="timelineHidden" class="ic-mb-empty" t-esc="timelineHiddenText"/>
+                                </t>
+                                <p t-if="timelineHidden" class="ic-mb-empty" t-esc="timelineHiddenText"/>
+                            </div>
+                            <p t-else="" class="ic-mb-empty">No server reported in this window.</p>
                         </div>
-                        <p t-else="" class="ic-mb-empty">No server reported in this window.</p>
                     </div>
                 </section>
                 <p class="ic-mb-meta" t-if="state.updatedAt" t-esc="metaText"/>

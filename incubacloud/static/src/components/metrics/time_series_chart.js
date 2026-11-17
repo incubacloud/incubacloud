@@ -79,6 +79,37 @@ export function toChartPoints(points, step) {
   return out;
 }
 
+/** Pixels a legend's entry takes besides its text: its line and its gaps. */
+const LEGEND_EXTRA_PX = 60;
+
+/**
+ * Shorten a legend's text to *room* pixels, keeping both of its ends.
+ *
+ * Chart.js draws a legend's entry on one line and cuts what does not
+ * fit the canvas. A name with its project (``project/instance``) can
+ * be wider than a chart on a phone: its middle gives way to an
+ * ellipsis, so the project it starts with and the instance it ends
+ * with both stay. The tooltip keeps the whole name.
+ *
+ * @param {string} text the entry's text
+ * @param {number} room pixels it may take
+ * @param {Function} measure the width of a text in pixels
+ * @returns {string} the text, whole when it fits
+ */
+export function fitLabel(text, room, measure) {
+  if (!text || measure(text) <= room) {
+    return text;
+  }
+  for (let keep = text.length - 1; keep >= 2; keep--) {
+    const head = Math.ceil(keep / 2);
+    const short = `${text.slice(0, head)}…${text.slice(text.length - (keep - head))}`;
+    if (measure(short) <= room) {
+      return short;
+    }
+  }
+  return `${text.slice(0, 1)}…`;
+}
+
 /**
  * The luxon locale of the reader: Odoo's language tag with a hyphen.
  *
@@ -256,6 +287,28 @@ export class TimeSeriesChart extends Component {
     return _t("limit");
   }
 
+  /**
+   * The legend's entries, as Chart.js builds them, each shortened to
+   * the chart's width (``fitLabel``).
+   *
+   * @param {Object} chart the Chart.js instance
+   * @returns {Array<Object>}
+   */
+  legendItems(chart) {
+    const items = window.Chart.defaults.plugins.legend.labels.generateLabels(chart);
+    const {ctx} = chart;
+    const font = chart.options.plugins.legend.labels.font || {};
+    ctx.save();
+    ctx.font = `${font.size || 12}px ${font.family || "sans-serif"}`;
+    const room = chart.width - LEGEND_EXTRA_PX;
+    const fitted = items.map((item) => ({
+      ...item,
+      text: fitLabel(item.text, room, (text) => ctx.measureText(text).width),
+    }));
+    ctx.restore();
+    return fitted;
+  }
+
   /** Build the chart, or replace its data and window when it exists. */
   draw() {
     const canvas = this.canvasRef.el;
@@ -319,7 +372,10 @@ export class TimeSeriesChart extends Component {
           legend: {
             position: "bottom",
             align: "start",
-            labels: {usePointStyle: true, pointStyle: "line", boxWidth: 18, padding: 14},
+            labels: {
+              usePointStyle: true, pointStyle: "line", boxWidth: 18, padding: 14,
+              generateLabels: (chart) => this.legendItems(chart),
+            },
           },
           tooltip: {
             padding: 10,

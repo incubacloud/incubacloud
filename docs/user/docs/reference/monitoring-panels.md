@@ -18,10 +18,9 @@ them into that window (**Reset zoom** brings the range back).
 ## Fleet
 
 Open **Monitoring** in the sidebar; **Fleet** is the first view. It answers "is
-anything wrong anywhere?" and needs no selection. On the panel that runs the
-metrics central it shows every account's servers (*Every account on the
-central*, the account in brackets after a server of another one); on any other
-panel, yours (*Your servers*).
+anything wrong anywhere?" and needs no selection. It shows the servers of your
+panel (*Your servers*) and no one else's, also on the panel that runs the
+metrics central.
 
 The figures at the top:
 
@@ -41,10 +40,11 @@ sustained above `2` is a server that cannot keep up — *this is alerted*),
 **Memory in use** and **Root disk in use** (alerted at 92 % and 90 %), and
 **Disk busy** (the share of the time the server's busiest disk had work).
 
-**Are the servers reporting?** One lane per server, green for each step of
-the window with a sample and red where there was none. A lane turning red
-means the machine is down, or just its agent — *this is alerted* after five
-minutes. Servers with a silence come first; your own open their board.
+**Are the servers reporting?** A card beside the charts, with one lane per
+server, green for each step of the window with a sample and red where there
+was none. A lane turning red means the machine is down, or just its agent —
+*this is alerted* after five minutes. Servers with a silence come first; a
+server opens its board.
 
 **Security.** Figures only, with no address or user: failed SSH logins and
 bans in the last hour and per hour over the window, the servers under SSH
@@ -53,8 +53,6 @@ the same thresholds as their [alerts](security-alerts.md)), the servers whose
 security logs do not arrive or are off, those not hardened, and your servers
 with open security alerts. Below, your servers to look at, the worst first,
 each with what it has; an Administrator opens its Security view from there.
-On the panel that runs the central the figures count every account's
-servers, and only your own are listed.
 
 ## Hosts
 
@@ -93,7 +91,8 @@ swap in use on a server that has one.
 **CPU per instance** and **Memory per instance**, stacked so the top line is
 the server's total; past nine instances the rest add up as *others*. **Right
 now** lists every instance of the server over the last five minutes, busiest
-first: CPU (100 % is one core), memory, the size of its directory, of its
+first, each named with its project (`project/instance`), as the charts name
+it: CPU (100 % is one core), memory, the size of its directory, of its
 database and of its filestore, its database connections against their maximum
 (and how many wait for a lock, when any does), requests per second and whether
 it runs. An instance you can open links to its page. The sizes are measured
