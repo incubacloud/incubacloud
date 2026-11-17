@@ -1,5 +1,6 @@
 """Tests for the incubacloud cron bot user (P1.26)."""
 import importlib.util
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,6 +13,8 @@ from odoo.tools import SQL, mute_logger
 
 from ..models.res_users_ext import CRON_BOT_LOGIN, CRON_BOT_XML_ID
 
+# Captured from ``logging.INFO``, not ``"INFO"``: some builds of Odoo 19
+# name its level 25 "INFO", and the name then stands for 25.
 _LOGGER = "odoo.addons.incubacloud.models.res_users_ext"
 _END_SCRIPT = Path(__file__).resolve().parents[1] / "migrations" / "0.0.0" / "end-cron-bot.py"
 _END_LOGGER = "odoo.addons.incubacloud.migrations.end_cron_bot"
@@ -294,7 +297,7 @@ class TestCronBotDeferred(TransactionCase):
         """No bot: no error, the crons stay on uid 1."""
         crons = self._remove_bot()
         self.assertTrue(crons)
-        with self.assertLogs(_LOGGER, "INFO") as logs:
+        with self.assertLogs(_LOGGER, logging.INFO) as logs:
             self.Users._incubacloud_assign_cron_user_id(module_name="incubacloud")
         self.assertIn("no incubacloud cron bot yet", logs.output[0])
         self.assertEqual(
@@ -391,7 +394,7 @@ class TestCronBotAssignSkipsRunningCrons(TransactionCase):
         cr.execute("SELECT id FROM ir_cron WHERE id = %s FOR NO KEY UPDATE", [running.id])
         self.assertEqual(cr.fetchone()[0], running.id, "the second connection holds the row")
         bot = self.env.ref(CRON_BOT_XML_ID)
-        with self.assertLogs(_LOGGER, "INFO") as logs:
+        with self.assertLogs(_LOGGER, logging.INFO) as logs:
             self.env["res.users"]._incubacloud_assign_cron_user_id(module_name=module)
         self.assertEqual(running.user_id.id, 1)
         self.assertEqual(set(others.mapped("user_id")), {bot})
