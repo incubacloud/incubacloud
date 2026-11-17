@@ -76,6 +76,7 @@ from .docker_prune_executor import (
     build_room_refusal,
     parse_build_room,
 )
+from ._admin_password import LABEL_ADMIN_PASSWORD, AdminPasswordMixin
 from .secret_key_escrow import SecretKeyEscrowMixin
 
 _logger = logging.getLogger(__name__)
@@ -557,7 +558,9 @@ def _merge_override_fragment(entry, fragment):
             entry.setdefault(key, value)
 
 
-class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
+class DeployInstanceExecutor(
+    AdminPasswordMixin, SecretKeyEscrowMixin, AbstractSSHExecutor,
+):
     """Deploy a doodba instance via copier copy."""
 
     _job_type = "deploy_instance"
@@ -3410,6 +3413,13 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 f" {shlex.quote(inst.postgres_dbname or 'prod')}",
                 {"detached": True},
             ),
+            # 12b. Odoo's ``base`` gives its admin the password ``admin``:
+            #      replaced with a random one, never kept, before anything
+            #      serves the database. The last write to it before the
+            #      stack starts, after the checksums' run, which on 8.0 to
+            #      10.0 updates every module. The deploy stops if the admin
+            #      still accepts ``admin`` afterwards.
+            self._admin_password_step(d, inst, "stopped", fatal=True, loads=True),
             # 13. Set web.base.url and report.url before the stack starts so
             #     any post-init steps and Odoo itself see the correct public
             #     URL on first boot. ``base_url`` is sql-escaped as a
@@ -3463,6 +3473,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             "Start database",
             "Initialize database",
             "Initialize module checksums",
+            LABEL_ADMIN_PASSWORD,
             "Set system parameters",
         }
 
@@ -3586,6 +3597,10 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         # without this the new instance's containers report unattributed.
         inst.host_id.refresh_observability_labels(reason="deploy")
         self._call_addon_hook(inst, "_after_stack_rendered")
+        # Not on a move's destination, which loads no database of its own:
+        # the move's restore checks the one it loads.
+        if LABEL_ADMIN_PASSWORD in results:
+            self._record_admin_password(results, announce=False)
 
     def _detect_pip_conflicts(self):
         """If pip_dependencies has conflict markers, create/update a pip_conflict alert."""

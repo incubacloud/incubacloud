@@ -420,5 +420,14 @@
             <field name="priority_tier">low</field>
         </record>
 
+        <record id="check_admin_password" model="cloud.job.type">
+            <field name="name">Check Admin Password</field>
+            <field name="code">check_admin_password</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Checks whether a running instance's Odoo admin user still has Odoo's default password and, only then, gives it a random one that is not kept anywhere and restarts Odoo. A password somebody set is left as it is.</field>
+            <field name="priority_tier">low</field>
+            <field name="queue_collapse">True</field>
+        </record>
+
     </data>
 </odoo>

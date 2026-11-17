@@ -40,6 +40,7 @@ from .abstract_executor import (
 from .cloud_restore_upload_grant import SAFE_UPLOAD_NAME
 from .move_steps_executor import parse_fingerprint
 from .password_utils import merge_secret_key_lines
+from ._admin_password import LABEL_ADMIN_PASSWORD, AdminPasswordMixin
 from .secret_key_escrow import SecretKeyEscrowMixin
 
 _logger = logging.getLogger(__name__)
@@ -173,7 +174,9 @@ def _take_upload(granted, received, local):
     )
 
 
-class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
+class RestoreInstanceExecutor(
+    AdminPasswordMixin, SecretKeyEscrowMixin, AbstractSSHExecutor,
+):
     """Restore a doodba instance database from a .zip backup.
 
     Payload:
@@ -1222,6 +1225,15 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 # 12-nov-2026); its result is not read.
                 {"detached": True},
             ),
+            # The last write before Odoo starts on what was loaded: a
+            # database that still has Odoo's default admin password gets
+            # a random one. Not fatal: Odoo starts on the restored
+            # database all the same, and the instance is checked again
+            # once it runs.
+            *(
+                [self._admin_password_step(d, inst, "stopped", loads=True)]
+                if self._checks_admin_password(inst) else []
+            ),
             (
                 "Start Odoo service",
                 self.run_script("compose_op.sh", [d, start_op, "odoo"]),
@@ -1239,6 +1251,27 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             ),
         ]
         return cmds
+
+    def _checks_admin_password(self, inst):
+        """Return whether this restore checks the admin's default password.
+
+        Every restore, but a move's of an instance already checked: it
+        loads the same database on the new host, inside the cut the
+        customer waits through, and what was checked holds.
+
+        :param inst: the instance restored
+        :rtype: bool
+        """
+        return not (self._as_move() and inst.admin_password_state)
+
+    def _loaded_unchecked(self, results):
+        """Return whether this job loaded a database it was to check.
+
+        :param dict results: the job's step results
+        :rtype: bool
+        """
+        return _LABEL_RESTORE_DB in (results or {}) \
+            and self._checks_admin_password(self._inst())
 
     def _updates_modules(self, inst, load_as):
         """Return whether this restore updates the modules it loads.
@@ -1264,7 +1297,8 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         errors = []
         for label, data in results.items():
             if label in ("Remove remote backup file",
-                         "Ensure incubacloud_connect"):
+                         "Ensure incubacloud_connect",
+                         LABEL_ADMIN_PASSWORD):
                 continue
             if label == "Verify integrity" and data.get('exit_status', 1) != 0:
                 # The script names each difference: that is the error.
@@ -1303,6 +1337,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             inst.sudo().write({
                 "pr_update_error": False, "pr_update_cut_off": False,
             })
+        self._record_admin_password(results, loaded=self._loaded_unchecked(results))
         self._call_addon_hook(inst, "_after_restore_hook", "restore")
         self._follow_preview_restore(inst)
 
@@ -1373,6 +1408,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         for err in errors:
             self._sys(f"✗ {err}")
         reason = self._report_failed_module_update(results)
+        self._record_admin_password(results, loaded=self._loaded_unchecked(results))
         inst = self._inst()
         if not inst.pr_number:
             inst.write({"status": "error"})

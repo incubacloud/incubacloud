@@ -71,6 +71,9 @@ def _make_restore_executor(payload, domain="staging.example.com",
         postgres_username=pg_user,
         environment=environment,
         auto_update=auto_update,
+        # Still to be checked: every restore checks its admin password.
+        admin_password_state=False,
+        admin_password_checked_at=False,
     )
     job = SimpleNamespace(id=42, instance_id=inst, payload=payload)
 
@@ -799,6 +802,7 @@ class TestRestoreBaseUrl(BaseCase):
                 "Restore database",
                 "Update changed modules",
                 "Ensure incubacloud_connect",
+                "Replace the default admin password",
                 "Start Odoo service",
                 "Remove remote backup file",
             ],

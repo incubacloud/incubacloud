@@ -22,6 +22,32 @@ import psycopg2
 
 from odoo import fields
 
+from odoo.addons.incubacloud.models._admin_password import (
+    record_admin_password_answer,
+)
+
+#: What ``admin=`` of a restore's result may say that is an answer of
+#: ``admin_password.sh``; ``failed`` and ``unchecked`` are none.
+_ADMIN_ANSWERS = ("changed", "own", "absent")
+
+
+def keep_admin_password_answer(inst, result, job):
+    """Keep on *inst* what a restore's check of its admin password found.
+
+    Whatever the restore's end: the answer of ``admin=`` when there is
+    one, else the instance stays to be checked once it runs. The restore
+    emptied the state when it started (``PitrRestoreExecutor``), so this
+    only fills it.
+
+    :param inst: the ``cloud.instance`` restored
+    :param dict result: the restore's ``IC_PITR_RESTORE`` fields, or its
+        ``restore_`` fields of a status reading
+    :param job: the ``cloud.job`` that closes the restore
+    """
+    admin = result.get("admin")
+    record_admin_password_answer(
+        inst, admin if admin in _ADMIN_ANSWERS else None, job=job,
+    )
 from odoo.addons.incubacloud.models._backup_dst import env_line
 from odoo.addons.incubacloud.models._job_server_limits import (
     attached_step_limit_seconds,
@@ -1015,6 +1041,7 @@ class PitrStatusExecutor(_PitrExecutor):
         ):
             self._follow_up_restore(inst)
             self._judge_modules(restore)
+            keep_admin_password_answer(inst, restore, self.job)
         if status.get("restoring") == "lost":
             self._pitr_alert(
                 ALERT_FAILING,
@@ -1211,6 +1238,11 @@ class PitrRestoreExecutor(_PitrExecutor):
         )
         if inst.auto_update:
             self._say_update_target(inst)
+        # From here the database may be replaced: the instance is to be
+        # checked until a closing of the restore keeps what its check
+        # found (``keep_admin_password_answer``), whichever job closes it.
+        # Durable, as the restore outlives this job on the host.
+        self._persist(inst.sudo(), {"admin_password_state": False})
 
     def get_commands(self):
         """Start the restore on the host (unless following one), then wait.
@@ -1268,7 +1300,11 @@ class PitrRestoreExecutor(_PitrExecutor):
         that cannot be recorded (its timeline unread) is followed up here
         all the same: the watch, which cannot record it either, never does.
         Whether its modules were updated is said either way
-        (``_judge_modules``).
+        (``_judge_modules``), and what the check of Odoo's default admin
+        password found (``admin``) is kept: without an answer the
+        instance is checked again once it runs. A watch that recorded the
+        restore first kept it then, and told a change: it is not kept a
+        second time.
 
         :param dict result: the restore's ``IC_PITR_RESTORE`` fields
         """
@@ -1278,6 +1314,7 @@ class PitrRestoreExecutor(_PitrExecutor):
             "pitr_state": "ok", "status": "ok", **inst._running_confirmed_vals(),
         })
         if recorded is not False:
+            keep_admin_password_answer(inst, result, self.job)
             self._follow_up_restore(inst)
         self._judge_modules(result)
 
@@ -1363,7 +1400,10 @@ class PitrRestoreExecutor(_PitrExecutor):
         elif state == "failed":
             # The script's ``finish`` brings the stack up whatever
             # happened: a stop the metrics cron reads now is the restart.
+            # A failure after the promotion checked the database it
+            # promoted (``admin=``).
             inst.sudo().write(inst._running_confirmed_vals())
+            keep_admin_password_answer(inst, result, self.job)
             message = (
                 f"Restoring '{inst.name}' to {when} UTC failed at "
                 f"'{result.get('stopped_at', '?')}'. Its database is as it "

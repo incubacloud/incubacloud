@@ -96,6 +96,9 @@ def _make_rebuild_executor(smtp_relay_host='', environment='production',
         "last_rebuild_fingerprint": 'fp0',
         # No repository line, unless a test says so.
         "repo_ids": [],
+        # Its admin password checked already: no check after the restart.
+        "admin_password_state": "own",
+        "admin_password_checked_at": False,
     } | extra)
 
     ex = object.__new__(RebuildInstanceExecutor)
