@@ -1,0 +1,102 @@
+{
+  "ansible-core 2.17.14": {
+    "ansible/executor/action_write_locks.py": [
+      "from ansible.utils.multiprocessing import context as multiprocessing_context",
+      "import multiprocessing.synchronize",
+      "multiprocessing.synchronize",
+      "multiprocessing.synchronize.Lock",
+      "multiprocessing_context.Lock"
+    ],
+    "ansible/executor/process/worker.py": [
+      "from ansible.utils.multiprocessing import context as multiprocessing_context",
+      "from multiprocessing.queues import Queue",
+      "multiprocessing_context.Process"
+    ],
+    "ansible/executor/task_queue_manager.py": [
+      "from ansible.utils.multiprocessing import context as multiprocessing_context",
+      "import multiprocessing.queues",
+      "multiprocessing.queues",
+      "multiprocessing.queues.SimpleQueue"
+    ],
+    "ansible/module_utils/facts/hardware/linux.py": [
+      "from multiprocessing import cpu_count",
+      "from multiprocessing.pool import ThreadPool"
+    ],
+    "ansible/module_utils/facts/timeout.py": [
+      "import multiprocessing",
+      "import multiprocessing.pool as mp",
+      "mp.ThreadPool",
+      "multiprocessing.TimeoutError"
+    ],
+    "ansible/modules/async_wrapper.py": [
+      "import multiprocessing",
+      "multiprocessing.Pipe"
+    ],
+    "ansible/plugins/strategy/__init__.py": [
+      "from ansible.utils.multiprocessing import context as multiprocessing_context",
+      "multiprocessing_context.Lock"
+    ],
+    "ansible/utils/display.py": [
+      "from ansible.utils.multiprocessing import context as multiprocessing_context",
+      "multiprocessing_context.parent_process"
+    ],
+    "ansible/utils/multiprocessing.py": [
+      "import multiprocessing",
+      "multiprocessing.get_context"
+    ]
+  },
+  "ansible-core 2.21.2": {
+    "ansible/_internal/_rpc_host.py": [
+      "from multiprocessing.context import BaseContext",
+      "from multiprocessing.managers import BaseManager",
+      "from multiprocessing.managers import Server",
+      "from multiprocessing.process import BaseProcess"
+    ],
+    "ansible/cli/_ssh_askpass.py": [
+      "from multiprocessing.shared_memory import SharedMemory",
+      "import multiprocessing.resource_tracker",
+      "multiprocessing.resource_tracker",
+      "multiprocessing.resource_tracker.unregister"
+    ],
+    "ansible/executor/process/worker.py": [
+      "from ansible.utils.multiprocessing import context as multiprocessing_context",
+      "from multiprocessing.queues import Queue",
+      "multiprocessing_context.Process"
+    ],
+    "ansible/executor/task_queue_manager.py": [
+      "from ansible.utils.multiprocessing import context as multiprocessing_context",
+      "import multiprocessing.queues",
+      "multiprocessing.queues",
+      "multiprocessing.queues.SimpleQueue"
+    ],
+    "ansible/module_utils/facts/timeout.py": [
+      "import multiprocessing",
+      "import multiprocessing.pool as mp",
+      "mp.ThreadPool",
+      "multiprocessing.TimeoutError"
+    ],
+    "ansible/modules/async_wrapper.py": [
+      "import multiprocessing",
+      "multiprocessing.Pipe"
+    ],
+    "ansible/plugins/connection/ssh.py": [
+      "from multiprocessing.shared_memory import SharedMemory"
+    ],
+    "ansible/utils/display.py": [
+      "from ansible.utils.multiprocessing import context as multiprocessing_context",
+      "multiprocessing_context.parent_process"
+    ],
+    "ansible/utils/multiprocessing.py": [
+      "import multiprocessing",
+      "multiprocessing.get_context"
+    ]
+  },
+  "ansible-runner 2.4.3": {
+    "ansible_runner/display_callback/callback/awx_display.py": [
+      "from ansible.utils.multiprocessing import context as multiprocessing_context",
+      "import multiprocessing as multiprocessing_context",
+      "multiprocessing_context.RLock",
+      "multiprocessing_context.parent_process"
+    ]
+  }
+}

@@ -328,6 +328,26 @@ each with its own review and QA.
   plan that has a step marked). A fetch is also read whole into memory,
   which on Odoo.sh may cut a large copy before the time does. The
   playbooks measured in production ended within two and a half minutes.
+  A playbook is stopped `PLAYBOOK_LIMIT_MARGIN_S` (60 s) before what its
+  attempt has left of the server's `limit_time_real`
+  (`AnsibleExecutor._playbook_timeout`), and the job fails through
+  `on_failure` with the run's private directory removed, instead of dying
+  with the request.
+- **Playbooks without `/dev/shm`.** ansible-core's controller passes its
+  tasks' results through `multiprocessing` queues, whose locks are POSIX
+  semaphores in `/dev/shm`. Where a lock cannot be made (Odoo.sh mounts
+  `/dev/shm` read-only), the executor says so in the job's log and starts
+  ansible-playbook as `<the panel's Python> <root>/bin/ansible-playbook
+  <playbook>`: a copy of `incubacloud/ansible_noshm.py`, read by Python so
+  a `noexec` `/tmp` does not matter, which gives the `fork` context locks
+  over pipes and refuses the primitives it has no substitute for, then
+  runs ansible-playbook's `main` in its own process. A panel where locks
+  work runs ansible-playbook as before. The CI job `ansible-noshm` runs
+  playbooks through it on a `/dev/shm` made read-only and compares what
+  ansible-core and ansible-runner use of `multiprocessing` with the
+  versions reviewed. A cancel kills the playbook's process group with
+  SIGKILL; from ansible-core 2.19 the workers leave that group, so the
+  task a worker was running ends on the host all the same.
 
 - **The step on the server** (`scripts/detached_step.sh`, its contract in
   its header). `start` runs the command in a session of its own

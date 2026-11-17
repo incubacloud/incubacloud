@@ -9,8 +9,12 @@ carries the credentials and the host-key pinning), the private data dir
 we build for it, and the way playbook output reaches the job log.
 """
 import asyncio
+import errno
 import os
+import shutil
+import sys
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -18,7 +22,9 @@ import yaml
 
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud import ansible_noshm
 from odoo.addons.incubacloud.models import ansible_executor as ansible_executor_module
+from odoo.addons.incubacloud.models.abstract_executor import AbstractExecutor
 from odoo.addons.incubacloud.models.ansible_executor import AnsibleExecutor
 
 PING_PLAYBOOK = "playbooks/ping.yml"
@@ -305,3 +311,288 @@ class TestRunnerEnvironment(AnsibleExecutorCase):
         envvars = runner_module.run.call_args.kwargs["envvars"]
         self.assertEqual(envvars["PATH"], "/home/odoo/.local/bin:/usr/bin")
         self.assertEqual(envvars["ANSIBLE_NOCOLOR"], "True")
+
+
+#: A server whose /dev/shm is read-only, as Odoo.sh's: put in PYTHONPATH,
+#: it makes every Python started there fail to create a semaphore or a
+#: shared memory block with EROFS, as sem_open and shm_open do there
+#: (tests/ansible_noshm/test_ansible_noshm.py has the same).
+SITECUSTOMIZE = """\
+import errno
+import multiprocessing.synchronize
+
+import _posixshmem
+
+
+def _read_only(*args, **kwargs):
+    raise OSError(errno.EROFS, "Read-only file system")
+
+
+multiprocessing.synchronize.SemLock.__init__ = _read_only
+_posixshmem.shm_open = _read_only
+"""
+
+READ_ONLY = OSError(errno.EROFS, "Read-only file system")
+
+#: A playbook on the panel's own server (``_LocalExecutor``).
+LOCAL_PLAYBOOK = [{
+    "name": "Without /dev/shm",
+    "hosts": "all",
+    "gather_facts": False,
+    "tasks": [
+        {"name": "Say", "ansible.builtin.command": "echo {{ item }}",
+         "loop": [1, 2], "changed_when": False},
+        {"name": "Wait", "ansible.builtin.command": "sleep {{ ic_sleep | default(0) }}",
+         "changed_when": False},
+        {"name": "Export", "ansible.builtin.set_stats": {
+            "aggregate": False, "data": {"ic_ran": True}}},
+    ],
+}]
+
+
+class _LocalExecutor(_PingExecutor):
+    """Runs ``LOCAL_PLAYBOOK`` on the panel's own server, with no SSH."""
+
+    def build_inventory(self, key_path, known_hosts_path):
+        """Return one local host, run by the panel's own Python."""
+        return {"all": {"hosts": {self.inventory_hostname(): {
+            "ansible_connection": "local",
+            "ansible_python_interpreter": sys.executable,
+        }}}}
+
+
+class _RunnerCase(AnsibleExecutorCase):
+    """``_run_playbook`` against ansible-runner, a mock or the real one."""
+
+    def setUp(self):
+        super().setUp()
+        if ansible_executor_module.ansible_runner is None:
+            self.skipTest("ansible-runner is not installed")
+        self.root = tempfile.mkdtemp(prefix="ic-ansible-test-")
+        self.addCleanup(shutil.rmtree, self.root, True)
+
+    def _mock_runner(self, status="successful", rc=0, during=None):
+        """Patch ansible-runner with a mock whose ``run`` returns *status*.
+
+        :param during: called with ``run``'s keyword arguments while it runs
+        :return: the mocked module
+        """
+        real = ansible_executor_module.ansible_runner
+        runner_module = MagicMock(spec=real)
+
+        def run(**kwargs):
+            if during:
+                during(kwargs)
+            return MagicMock(spec=real.Runner, rc=rc, status=status)
+
+        runner_module.run.side_effect = run
+        patcher = patch.object(ansible_executor_module, "ansible_runner", runner_module)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return runner_module
+
+    def _read_only_shm(self):
+        """Make the Pythons ansible-runner starts see a read-only /dev/shm."""
+        site = Path(self.root, "site")
+        site.mkdir()
+        (site / "sitecustomize.py").write_text(SITECUSTOMIZE)
+        patcher = patch.dict(os.environ, {"PYTHONPATH": str(site)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _local(self, extra_vars=None):
+        """An executor whose ``LOCAL_PLAYBOOK`` is in ``self.root``."""
+        executor = self._make_executor(_LocalExecutor)
+        executor._facts = {}
+        executor.get_extra_vars = lambda: dict(extra_vars or {})
+        executor._build_private_data_dir(self.root)
+        with open(os.path.join(self.root, "project", "playbooks", "ic_local.yml"), "w") as fh:
+            yaml.safe_dump(LOCAL_PLAYBOOK, fh, sort_keys=False)
+        executor._playbook = "playbooks/ic_local.yml"
+        return executor
+
+    def _log(self, executor):
+        """The executor's log so far, one string."""
+        return "\n".join(line for line, _source in executor._log_buffer)
+
+
+class TestWithWorkingSemaphores(_RunnerCase):
+    """A server with a usable /dev/shm runs ansible-playbook as before."""
+
+    def test_ansible_playbook_runs_with_the_playbook_as_before(self):
+        runner = self._mock_runner()
+        self.assertEqual(self.executor._run_playbook(self.root), (0, "successful"))
+        kwargs = runner.run.call_args.kwargs
+        self.assertEqual(kwargs["playbook"], PING_PLAYBOOK)
+        self.assertIsNone(kwargs["cmdline"])
+        self.assertNotIn("binary", kwargs)
+        self.assertFalse(Path(self.root, "bin").exists())
+
+    def test_check_mode_is_the_same_option_as_before(self):
+        runner = self._mock_runner()
+        self.executor._check_mode = True
+        self.executor._run_playbook(self.root)
+        self.assertEqual(runner.run.call_args.kwargs["cmdline"], "--check")
+        self.assertNotIn("binary", runner.run.call_args.kwargs)
+
+
+class TestWithoutDevShm(_RunnerCase):
+    """Odoo.sh mounts /dev/shm read-only: ``ansible_noshm`` runs the playbook."""
+
+    def test_the_panels_python_starts_the_launcher_with_the_playbook(self):
+        seen = {}
+
+        def during(kwargs):
+            launcher = os.path.join(self.root, "bin", "ansible-playbook")
+            seen["mode"] = os.stat(launcher).st_mode & 0o777
+            with open(launcher, "rb") as fh, open(ansible_noshm.__file__, "rb") as own:
+                seen["same"] = fh.read() == own.read()
+
+        runner = self._mock_runner(during=during)
+        self.executor._run_playbook(self.root, READ_ONLY)
+        kwargs = runner.run.call_args.kwargs
+        launcher = os.path.join(self.root, "bin", "ansible-playbook")
+        self.assertEqual(kwargs["binary"], sys.executable)
+        self.assertEqual(kwargs["cmdline"], f"{launcher} {PING_PLAYBOOK}")
+        self.assertNotIn("playbook", kwargs)
+        self.assertEqual(seen, {"mode": 0o600, "same": True})
+        self.assertEqual(kwargs["envvars"]["ANSIBLE_HOST_KEY_CHECKING"], "True")
+
+    def test_check_mode_reaches_the_launcher(self):
+        runner = self._mock_runner()
+        self.executor._check_mode = True
+        self.executor._run_playbook(self.root, READ_ONLY)
+        self.assertTrue(runner.run.call_args.kwargs["cmdline"].endswith(
+            f"{PING_PLAYBOOK} --check"
+        ))
+
+    def _entry(self, error, status="successful", rc=0):
+        """Run ``_async_entry`` with the probe answering *error*.
+
+        :return: the private directory the run had, and the results the
+            closing hooks were given
+        """
+        seen = {}
+        self._mock_runner(
+            status=status, rc=rc,
+            during=lambda kwargs: seen.update(root=kwargs["private_data_dir"]),
+        )
+        with (
+            patch.object(ansible_noshm, "semaphore_error", return_value=error),
+            patch.object(
+                AbstractExecutor, "_dispatch_outcome", autospec=True,
+            ) as outcome,
+        ):
+            asyncio.run(self.executor._async_entry())
+        return seen["root"], outcome.call_args.args[1]
+
+    def test_the_log_names_the_read_only_dev_shm_and_the_run_leaves_nothing(self):
+        root, _results = self._entry(READ_ONLY)
+        self.assertIn(
+            "/dev/shm is not writable on this server (EROFS: Read-only file "
+            "system): Ansible runs with its locks over pipes.",
+            self._log(self.executor),
+        )
+        self.assertFalse(Path(root).exists())
+
+    def test_with_working_semaphores_the_log_says_nothing_of_dev_shm(self):
+        self._entry(None)
+        self.assertNotIn("/dev/shm", self._log(self.executor))
+
+    def test_ansible_fails_as_on_odoo_sh_without_the_launcher(self):
+        """The fault itself: what the panel ran before, on a read-only /dev/shm."""
+        self._read_only_shm()
+        executor = self._local()
+        rc, status = executor._run_playbook(self.root)
+        self.assertEqual(status, "failed", self._log(executor))
+        self.assertIn("lack of access to /dev/shm", self._log(executor))
+
+    def test_a_playbook_runs_through_the_launcher_on_a_read_only_dev_shm(self):
+        self._read_only_shm()
+        executor = self._local()
+        rc, status = executor._run_playbook(self.root, READ_ONLY)
+        self.assertEqual((rc, status), (0, "successful"), self._log(executor))
+        self.assertEqual(executor.playbook_facts(), {"ic_ran": True})
+        self.assertIn("Say", self._log(executor))
+
+
+def _patch_limit(case, seconds):
+    """Patch the server's ``limit_time_real`` for the rest of *case*'s test."""
+    patcher = patch.object(ansible_executor_module, "config", {"limit_time_real": seconds})
+    patcher.start()
+    case.addCleanup(patcher.stop)
+
+
+class TestPlaybookTimeLimit(AnsibleExecutorCase):
+    """A playbook ends before the request's ``limit_time_real`` does."""
+
+    def _limit(self, seconds):
+        """Patch the server's ``limit_time_real``."""
+        _patch_limit(self, seconds)
+
+    def test_the_playbook_gets_what_the_request_has_left_less_the_margin(self):
+        self._limit(900)
+        self.executor._attempt_started = time.monotonic() - 100
+        timeout = self.executor._playbook_timeout()
+        margin = ansible_executor_module.PLAYBOOK_LIMIT_MARGIN_S
+        self.assertLessEqual(timeout, 900 - 100 - margin)
+        self.assertGreaterEqual(timeout, 900 - 102 - margin)
+
+    def test_a_configured_budget_does_not_shorten_it(self):
+        """``attempt_budget_seconds`` = 60 stands for a 100 s limit; the server's is 900."""
+        self._limit(900)
+        self.executor._attempt_started = time.monotonic()
+        self.executor._attempt_limit = 100
+        margin = ansible_executor_module.PLAYBOOK_LIMIT_MARGIN_S
+        self.assertGreaterEqual(self.executor._playbook_timeout(), 900 - 2 - margin)
+
+    def test_without_a_limit_or_a_clock_nothing_cuts_it(self):
+        self._limit(0)
+        self.executor._attempt_started = time.monotonic()
+        self.assertIsNone(self.executor._playbook_timeout())
+        self._limit(900)
+        self.executor._attempt_started = None
+        self.assertIsNone(self.executor._playbook_timeout())
+
+    def test_a_request_with_nothing_left_still_gives_a_second(self):
+        self._limit(900)
+        self.executor._attempt_started = time.monotonic() - 2000
+        self.assertEqual(self.executor._playbook_timeout(), 1)
+
+class TestPlaybookStopped(_RunnerCase):
+    """ansible-runner stops a playbook past its time; the job fails."""
+
+    def _limit(self, seconds):
+        """Patch the server's ``limit_time_real``."""
+        _patch_limit(self, seconds)
+
+    def test_the_time_limit_reaches_ansible_runner(self):
+        runner = self._mock_runner()
+        self._limit(900)
+        self.executor._attempt_started = time.monotonic()
+        self.executor._run_playbook(self.root)
+        self.assertGreater(runner.run.call_args.kwargs["timeout"], 700)
+        self._limit(0)
+        self.executor._run_playbook(self.root, READ_ONLY)
+        self.assertIsNone(runner.run.call_args.kwargs["timeout"])
+
+    def test_a_playbook_past_its_time_is_stopped_and_fails_the_job(self):
+        self._limit(ansible_executor_module.PLAYBOOK_LIMIT_MARGIN_S + 3)
+        executor = self._local({"ic_sleep": 60})
+        executor._attempt_started = time.monotonic()
+        started = time.monotonic()
+        rc, status = executor._run_playbook(self.root)
+        self.assertEqual((rc, status), (254, "timeout"), self._log(executor))
+        self.assertLess(time.monotonic() - started, 30)
+
+    def test_a_stopped_playbook_says_why_and_closes_through_on_failure(self):
+        self._limit(900)
+        with (
+            patch.object(ansible_noshm, "semaphore_error", return_value=None),
+            patch.object(AbstractExecutor, "_dispatch_outcome", autospec=True) as outcome,
+        ):
+            self._mock_runner(status="timeout", rc=254)
+            asyncio.run(self.executor._async_entry())
+        self.assertIn("The playbook was stopped", self._log(self.executor))
+        results = outcome.call_args.args[1]
+        self.assertEqual(results[PING_PLAYBOOK]["exit_status"], 254)

@@ -523,6 +523,32 @@ jobs:
       - name: Run ansible-lint
         run: ansible-lint incubacloud/ansible
 
+  ansible-noshm:
+    name: Ansible without /dev/shm (pytest)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        with:
+          python-version: "3.12"
+
+      # The Odoo suite cannot run these: the CI's Odoo image has Python
+      # 3.10, below what ansible-core 2.21 runs on, and no Ansible. Here
+      # the launcher runs playbooks with the ansible-core and
+      # ansible-runner of requirements.txt on a /dev/shm made read-only,
+      # and the tripwire compares what they use of multiprocessing with
+      # the versions reviewed.
+      - name: Install ansible-core, ansible-runner and pytest
+        run: pip install 'ansible-core==2.21.2' 'ansible-runner==2.4.3' 'pytest==9.1.1'
+
+      - name: Run the launcher's tests
+        run: python -m pytest -p no:cacheprovider tests/ansible_noshm
+
   bandit:
     name: Security (bandit)
     runs-on: ubuntu-24.04
