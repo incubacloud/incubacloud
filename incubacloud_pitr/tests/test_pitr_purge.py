@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from odoo import fields
 from odoo.exceptions import UserError
 from odoo.modules.neutralize import neutralize_database
+from odoo.tests.common import tagged
 
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
 
@@ -524,6 +525,9 @@ class TestArchivingFreezesTheRenderedPrefix(_SwitchedOffCase):
         self.assertEqual(self.inst.pitr_archived_prefix, PREFIX)
 
 
+# After every module is loaded: Odoo 18 neutralizes only the modules
+# already installed, and at install this one is still "to install".
+@tagged("post_install", "-at_install")
 class TestANeutralizedCopy(_SwitchedOffCase):
 
     def test_it_keeps_no_date_cluster_nor_prefix_of_production(self):
