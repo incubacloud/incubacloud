@@ -11,9 +11,9 @@ import {formatNumber} from "./formatters";
  * servers by load, memory, root disk and disk activity, and which
  * servers went silent in the window.
  *
- * The server decides whose servers these are (``scope``): every
- * account's on the panel that deployed the central, the panel's own
- * anywhere else. A server of this panel opens its own board.
+ * The servers are this panel's own, on every panel: the route reads
+ * the central with the panel's account and names each server as the
+ * panel does. One the reader can open (``own``) opens its own board.
  */
 export class FleetBoard extends ChartBoard {
   static template = "incubacloud.FleetBoard";
@@ -29,19 +29,14 @@ export class FleetBoard extends ChartBoard {
     return "/cloud/fleet/resource_series";
   }
 
-  /** Whether the board shows every account's servers. */
-  get isOperator() {
-    return this.state.board?.scope === "operator";
-  }
-
   /** Whose servers the board shows, in words. */
   get scopeText() {
-    return this.isOperator ? _t("Every account on the central") : _t("Your servers");
+    return _t("Your servers");
   }
 
   /**
-   * One panel's series; on the operator's board a server of another
-   * account carries its account in the legend.
+   * One panel's series, each server by its name; the Security chart's
+   * two lines by what they count.
    *
    * @param {string} key a panel's key
    * @returns {Array<Object>}
@@ -51,10 +46,7 @@ export class FleetBoard extends ChartBoard {
       const kinds = {failed: _t("failed SSH logins"), bans: _t("addresses banned")};
       return super.series(key).map((s) => ({...s, label: kinds[s.role] || s.label}));
     }
-    return super.series(key).map((s) => ({
-      ...s,
-      name: this.isOperator && !s.own && s.account ? `${s.name} (${s.account})` : s.name,
-    }));
+    return super.series(key);
   }
 
   /**
@@ -70,8 +62,8 @@ export class FleetBoard extends ChartBoard {
   }
 
   /**
-   * The Security figures, each with its tone: the central's (every
-   * account's on the operator's board) and the panel's own.
+   * The Security figures, each with its tone: those the central counts
+   * and those the panel counts from its own records.
    *
    * @returns {Array<{key: string, label: string, value: string, tone: string}>}
    */
@@ -235,18 +227,8 @@ export class FleetBoard extends ChartBoard {
   }
 
   /**
-   * A row's name on the line; another account's server carries it.
-   *
-   * @param {Object} row
-   * @returns {string}
-   */
-  rowName(row) {
-    return this.isOperator && !row.own && row.account ? `${row.name} (${row.account})` : row.name;
-  }
-
-  /**
-   * Whether a server of the board can open its own board: one of this
-   * panel's, for whoever manages hosts.
+   * Whether a server of the board can open its own board: one the
+   * reader can open on this panel, for whoever manages hosts.
    *
    * @param {Object} item a series or a row with ``own`` and ``host_id``
    * @returns {boolean}

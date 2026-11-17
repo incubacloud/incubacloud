@@ -589,11 +589,10 @@ class OpsMixin:
     def cloud_fleet_resource_series(self, range_key="1h", start=None, end=None):
         """Return the fleet's board of Monitoring.
 
-        The panel that deployed the central sees every account's
-        servers through the operator's read-only route; any other panel
-        sees its own (``scope``). The browser names only a range or a
-        window; which credential reads is decided here
-        (``cloud.host._fleet_metrics_board``).
+        This panel's own servers, read with its account credential:
+        no panel draws another account's, the one that deployed the
+        central included (``cloud.host._fleet_metrics_board``). The
+        browser names only a range or a window.
 
         :param str range_key: ``1h``, ``6h``, ``24h`` or ``7d``.
         :param start: zoom window start, unix seconds.

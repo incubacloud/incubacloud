@@ -199,6 +199,35 @@ gestionado de copias* on a running panel too.
 
 ### Fixed
 
+- **Every line of Monitoring's Load per core names its server.** The
+  fleet's load is the 15-minute load divided by the cores, matched on the
+  account and the server's id, and a division matched on some labels keeps
+  only those: the lines reached the legend without the server's name, as
+  a dash or as an account alone. The division keeps it now
+  (`group_left`), and the board names each server as the panel names it
+  when the reader can open it, by the name its agents report otherwise,
+  and as *Server <id>* without one, so a legend never has an unnamed line
+  and a renamed server reads by its new name at once.
+- **A server's charts and table name an instance with its project.**
+  *CPU per instance*, *Memory per instance*, the other charts by instance
+  and the *Right now* table of a server's board took the instance's own
+  name, which repeats from one project to the next (`prod`) and says
+  nothing where instances are named by a code. They read
+  `project/instance`, as the job history does
+  (`cloud.instance._metrics_label`), for the instances the reader can
+  open; any other keeps the name its agents report. The server's
+  diagnosis names the instance to look at the same way.
+- **The boards of Monitoring leave no empty column on a wide screen.**
+  Where three cards fit in a row, the fleet's fourth chart stood alone
+  with *Are the servers reporting?* in a section of its own below, and a
+  server's *Load per core* and *Waiting for resources* left the third
+  column empty over a full-width *Memory in use*. *Are the servers
+  reporting?* is now a card of the fleet's charts, on the row the fourth
+  leaves; a server's load, waiting and memory share a row; its two charts
+  by instance and its two of traffic take half the width each, and its
+  four of disk make two rows of two. A narrower screen shows them in two
+  columns, a phone in one, as before.
+
 - **Deleting a server whose proxy was never deployed takes the panel's
   access off it.** `/cloud/delete_host` archived such a host at once, with
   no teardown, so a server hardened before a Full Setup that failed kept
@@ -413,6 +442,23 @@ gestionado de copias* on a running panel too.
   and 65535.», where the default one came out in English in Spanish.
 
 ### Security
+
+- **Monitoring's Fleet view is the panel's own servers, on every panel.**
+  The panel that deployed the central holds the central's operator
+  credential, which reads every account, and its Fleet view read with
+  it: the figures counted, and the charts and *Are the servers
+  reporting?* named, the servers of every other panel that writes to
+  that central, each with its account. A panel's fleet is the servers it
+  manages, and no panel lists or charts another account's. The board is
+  now read with the panel's own account alone, as a server's and an
+  instance's boards are, so the central filters it; should a gateway
+  that does not filter answer a series of another account, it is dropped
+  before the answer is built (`cloud.host._fleet_own_servers`), and the
+  answer carries no account at all. `/cloud/fleet/resource_series` has no
+  `scope` any more, and the heading always reads *Your servers*. The
+  Security figures of that view count the panel's own servers too. The
+  operator credential stays what deletes series; nothing in the panel
+  reads with it.
 
 - **Deleting a server takes the panel's access off it.** The teardown
   stopped the agents and the proxy but left the panel's key in the

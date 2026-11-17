@@ -1734,12 +1734,6 @@ msgid "A rule must confirm after at least one evaluation."
 msgstr "Una regla debe confirmarse tras al menos una evaluación."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
-msgid "A sample at each step of the window"
-msgstr "Una muestra en cada paso del intervalo"
-
-#. module: incubacloud
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_security_event_identity_uniq
 msgid "A security event is remembered once."
 msgstr "Un evento de seguridad se guarda una sola vez."
@@ -6226,12 +6220,6 @@ msgid "Event Type"
 msgstr "Tipo de evento"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
-msgid "Every account on the central"
-msgstr "Todas las cuentas de la central"
-
-#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_collect_pg
 msgid ""
 "Every minute, each instance's database connections, running queries, lock "
@@ -8180,6 +8168,12 @@ msgstr "URL de latido de las acciones planificadas"
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Server: waiting for resources"
 msgstr "Servidor: espera por recursos"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_charts.py:0
+msgid "Server %s"
+msgstr "Servidor %s"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -21124,6 +21118,12 @@ msgstr "los diez servidores más cargados · el disco más ocupado de cada uno"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid "a sample at each step of the window"
+msgstr "una muestra en cada paso del intervalo"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
 msgid "ten fullest servers"
 msgstr "los diez servidores más llenos"
@@ -27578,16 +27578,6 @@ msgid ""
 msgstr ""
 "Solo cifras: quién lo intentó y desde dónde se ve en la pestaña Métricas de "
 "cada servidor, en Seguridad."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
-msgid ""
-"The central's figures count every account's servers; only this panel's "
-"servers are listed."
-msgstr ""
-"Las cifras de la central cuentan los servidores de todas las cuentas; solo "
-"se listan los servidores de este panel."
 
 #. module: incubacloud
 #. odoo-javascript

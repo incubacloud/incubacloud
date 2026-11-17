@@ -59,6 +59,10 @@ describe("HostBoard", () => {
         ]);
     });
 
+    test("load, waiting and memory share a row: none of them takes a row of its own", () => {
+        expect(boardWith(HostBoard, null).cardsOf("load").some((c) => c.wide)).toBe(false);
+    });
+
     test("an empty board says why, from the server's own facts", () => {
         const texts = {
             agents_missing: "are not installed",
@@ -125,14 +129,19 @@ describe("HostBoard", () => {
 describe("FleetBoard", () => {
     beforeEach(() => allowTranslations());
 
-    test("another account's server carries its account on the operator's board", () => {
-        const comp = boardWith(FleetBoard, { scope: "operator", panels: { load: { series: [
-            { name: "mine", role: "use", own: true, account: "acct_a", host_id: "3", points: [[1, 1]] },
-            { name: "theirs", role: "use", own: false, account: "acct_b", host_id: "3", points: [[1, 1]] },
+    test("every line of a legend is a server by its name, and the board is the panel's own", () => {
+        const comp = boardWith(FleetBoard, { panels: { load: { series: [
+            { name: "srv-01", role: "use", own: true, host_id: "3", points: [[1, 1]] },
+            { name: "Server 9", role: "use", own: false, host_id: "9", points: [[1, 1]] },
         ] } } });
-        expect(comp.series("load").map((s) => s.name)).toEqual(["mine", "theirs (acct_b)"]);
-        expect(comp.scopeText).toBe("Every account on the central");
-        expect(boardWith(FleetBoard, { scope: "account", panels: {} }).scopeText).toBe("Your servers");
+        expect(comp.series("load").map((s) => s.name)).toEqual(["srv-01", "Server 9"]);
+        expect(comp.scopeText).toBe("Your servers");
+        // An answer that says "operator", as before 17-nov-2026, changes nothing.
+        expect(boardWith(FleetBoard, { scope: "operator", panels: {} }).scopeText).toBe("Your servers");
+    });
+
+    test("the four charts come with the ingestion line's card after them", () => {
+        expect(boardWith(FleetBoard, { panels: {} }).cards.map((c) => c.key)).toEqual(["load", "memory", "root", "io"]);
     });
 
     test("a figure that needs a look takes a tone", () => {
@@ -305,7 +314,7 @@ describe("Boards, mounted", () => {
         const opened = [];
         answer({
             "/cloud/fleet/resource_series": {
-                ok: true, scope: "operator", start: 0, end: 3600, step: 30, timing: {},
+                ok: true, start: 0, end: 3600, step: 30, timing: {},
                 panels: {
                     summary: { value: { hosts: 3 } }, ingest: { rows: [], hidden: 0 },
                     security: { value: { ssh_failed_1h: 340, ssh_bruteforce: 2, bans_1h: 5,
@@ -327,7 +336,7 @@ describe("Boards, mounted", () => {
         await animationFrame();
         expect("[data-security=ready] [data-tile=ssh_bruteforce] .ic-fb-tile-value").toHaveText("2");
         expect("[data-security=ready] [data-tile=off] .ic-fb-tile-value").toHaveText("1");
-        expect("[data-note=operator]").toHaveCount(1);
+        expect("[data-note=operator]").toHaveCount(0);
         expect(".ic-fb-sec-row").toHaveCount(2);
         expect(".ic-fb-sec-row[data-host='3'] [data-flag=alerts]").toHaveClass("is-bad");
         expect(".ic-fb-sec-row[data-host='5'] [data-flag=off]").toHaveText("Security logs off");
@@ -336,10 +345,50 @@ describe("Boards, mounted", () => {
         expect(opened).toEqual([3]);
     });
 
+    test("the ingestion line is a card of the charts' grid, each server by its name", async () => {
+        const opened = [];
+        const flat = [[0, 1], [30, 1]];
+        const line = (name, host_id, own) => ({ name, role: "use", own, host_id, points: flat });
+        answer({
+            "/cloud/fleet/resource_series": {
+                ok: true, start: 0, end: 3600, step: 30, timing: {},
+                panels: {
+                    summary: { value: { hosts: 2 } },
+                    load: { series: [line("srv-01", "3", true), line("Server 9", "9", false)] },
+                    ingest: { hidden: 0, rows: [
+                        { name: "srv-01", host_id: "3", own: true, segments: [{ start: 0, end: 3600, state: "ok" }] },
+                        { name: "Server 9", host_id: "9", own: false, segments: [
+                            { start: 0, end: 1800, state: "ok" }, { start: 1800, end: 3600, state: "silent" },
+                        ] },
+                    ] },
+                },
+                alerts: { performance: 0, security: 0 },
+                silence: { code: "window" },
+            },
+        });
+        await mountWithCleanup(FleetBoard, {
+            props: { onOpenHost: (id) => opened.push(id) }, env: ENV, noMainContainer: true,
+        });
+        await animationFrame();
+        // One grid: the four charts, then the line, which fills the row.
+        expect(".ic-mb-fill > [data-panel]").toHaveCount(5);
+        expect(".ic-mb-fill > [data-panel]:last-child").toHaveAttribute("data-panel", "ingest");
+        expect(".ic-mb-fill > [data-panel=ingest]").toHaveClass("ic-mb-span2");
+        expect("[data-panel=ingest] .rl-ovtitle").toHaveText(/are the servers reporting\?/i);
+        expect("[data-panel=ingest] .ic-fb-tl-row").toHaveCount(2);
+        expect("[data-panel=ingest] .ic-fb-tl-row:first-child .ic-fb-tl-name").toHaveText("srv-01");
+        expect("[data-panel=ingest] .ic-fb-tl-seg.is-silent").toHaveCount(1);
+        expect("[data-panel=ingest]").not.toHaveText(/acct_/);
+        // Only the server the reader can open links to its board.
+        expect("[data-panel=ingest] a").toHaveCount(1);
+        await click("[data-panel=ingest] a");
+        expect(opened).toEqual([3]);
+    });
+
     test("the fleet's Security block of a panel without the permission says so alone", async () => {
         answer({
             "/cloud/fleet/resource_series": {
-                ok: true, scope: "account", start: 0, end: 3600, step: 30, timing: {},
+                ok: true, start: 0, end: 3600, step: 30, timing: {},
                 panels: { summary: { value: { hosts: 1 } }, ingest: { rows: [], hidden: 0 } },
                 alerts: { performance: 0, security: 0 },
                 silence: { code: "window" },
@@ -357,7 +406,7 @@ describe("Boards, mounted", () => {
         const { asked } = answer({
             "/cloud/monitoring/config": { ok: true, hosts: [{ id: 3, name: "srv-01" }, { id: 5, name: "srv-02" }] },
             "/cloud/fleet/resource_series": {
-                ok: true, scope: "account", start: 0, end: 3600, step: 30, timing: {},
+                ok: true, start: 0, end: 3600, step: 30, timing: {},
                 panels: { summary: { value: { hosts: 2 } }, ingest: { rows: [], hidden: 0 } },
                 alerts: { performance: 0, security: 0 },
                 silence: { code: "window" },

@@ -228,6 +228,36 @@
   grid-column: 1 / -1;
 }
 
+// A grid whose rows always fill the board: a row with fewer cards than
+// columns, or the cards beside a wide one, grow into the room a grid
+// would leave empty on a wide screen (17-nov-2026). The same 420px
+// minimum, so the cards wrap where the grid's columns would.
+.ic-mb-fill {
+  display: flex;
+  flex-wrap: wrap;
+
+  > * {
+    flex: 1 1 420px;
+  }
+
+  > .ic-mb-wide {
+    flex-basis: 100%;
+  }
+
+  // Two columns' worth (2 × 420px and their gap): beside one card where
+  // three fit in a row, in line with the columns above; a row of its
+  // own on a narrower board.
+  > .ic-mb-span2 {
+    flex: 2 1 852px;
+  }
+}
+
+// Never more than two cards in a row: four cards make two rows of two
+// where three would fit, instead of three and one.
+.ic-mb-pairs > * {
+  flex-basis: #{"max(420px, 34%)"};
+}
+
 .ic-mb-card {
   padding-block: 12px 8px;
   padding-inline: 12px;

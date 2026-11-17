@@ -49,7 +49,7 @@
                         <t t-if="isZoomed">Zoomed window.</t>
                         <t t-else="">Drag across a chart to zoom.</t>
                     </p>
-                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')" t-att-aria-busy="state.loading ? 'true' : 'false'">
+                    <div t-att-class="'ic-mb-grid ic-mb-fill' + (state.loading ? ' is-loading' : '')" t-att-aria-busy="state.loading ? 'true' : 'false'">
                         <t t-foreach="cardsOf('load')" t-as="c" t-key="c.key">
                             <t t-call="incubacloud.ChartBoardCard"/>
                         </t>
@@ -59,7 +59,7 @@
                 <!-- Who uses it -->
                 <section class="ic-mb-section" aria-labelledby="ic-hb-use">
                     <h3 class="ic-mb-h" id="ic-hb-use">Which instance uses it?</h3>
-                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')">
+                    <div t-att-class="'ic-mb-grid ic-mb-fill' + (state.loading ? ' is-loading' : '')">
                         <t t-foreach="cardsOf('use')" t-as="c" t-key="c.key">
                             <t t-call="incubacloud.ChartBoardCard"/>
                         </t>
@@ -101,7 +101,7 @@
                 <!-- Disk -->
                 <section class="ic-mb-section" aria-labelledby="ic-hb-disk">
                     <h3 class="ic-mb-h" id="ic-hb-disk">Disk</h3>
-                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')">
+                    <div t-att-class="'ic-mb-grid ic-mb-fill ic-mb-pairs' + (state.loading ? ' is-loading' : '')">
                         <t t-foreach="cardsOf('disk')" t-as="c" t-key="c.key">
                             <t t-call="incubacloud.ChartBoardCard"/>
                         </t>
@@ -111,7 +111,7 @@
                 <!-- Network and requests -->
                 <section class="ic-mb-section" aria-labelledby="ic-hb-traffic">
                     <h3 class="ic-mb-h" id="ic-hb-traffic">Network and requests</h3>
-                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')">
+                    <div t-att-class="'ic-mb-grid ic-mb-fill' + (state.loading ? ' is-loading' : '')">
                         <t t-foreach="cardsOf('traffic')" t-as="c" t-key="c.key">
                             <t t-call="incubacloud.ChartBoardCard"/>
                         </t>

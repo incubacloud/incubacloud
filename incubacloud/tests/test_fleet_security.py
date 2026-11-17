@@ -1,12 +1,13 @@
 """The fleet's Security block in Monitoring (``/cloud/fleet/resource_series``).
 
-Plan #84, cut C7, decision D4: figures only, every account's through the
-operator's route; the servers named are this panel's own, never another
-account's, whatever its id; the switch and the hardening are counted
-from the panel's database, not from the central; no address, user or
-alert text in the answer, for any role; nothing asked where this
-panel's servers may not send their security logs. Driven over real
-HTTP, with the central replaced at ``requests.get``.
+Plan #84, cut C7, decision D4: figures only, read with this panel's
+account and never with the operator's credential (17-nov-2026); the
+servers named are this panel's own, never another account's, whatever
+its id; the switch and the hardening are counted from the panel's
+database, not from the central; no address, user or alert text in the
+answer, for any role; nothing asked where this panel's servers may not
+send their security logs. Driven over real HTTP, with the central
+replaced at ``requests.get``.
 """
 import json
 from contextlib import nullcontext
@@ -34,17 +35,21 @@ class _Central:
 
     The other account's server has the same id as one of this panel's,
     as ids repeat across panels; it is under brute force and silent.
-    Keeps the queries it was sent.
+    A central filters the account's route by account; *unfiltered*
+    stands for a gateway that does not, and answers the other account's
+    rows too. Keeps the queries it was sent.
     """
 
-    def __init__(self, mine, off, refuse_security=False):
+    def __init__(self, mine, off, refuse_security=False, unfiltered=False):
         """Answer about *mine* (under SSH brute force) and *off* (switch off).
 
         :param bool refuse_security: answer the Security panels 403.
+        :param bool unfiltered: answer the other account's rows as well.
         """
         self.queries = []
         self.mine, self.off = str(mine.id), str(off.id)
         self.refuse_security = refuse_security
+        self.unfiltered = unfiltered
 
     def __call__(self, url, params, **kw):
         """Answer one ``requests.get`` of the board."""
@@ -53,13 +58,12 @@ class _Central:
         security = set(roles) & _SECURITY_ROLES
         if security and self.refuse_security:
             return _refusal(403)
-        operator = "/admin-r/" in url
         if "step" in params:
             return _matrix(params, [({"ic_role": role}, 1) for role in roles])
         if "ssh_failed_1h" in roles:
             return _vector([
                 ({"ic_role": "ssh_failed_1h"}, 340),
-                ({"ic_role": "ssh_bruteforce"}, 2 if operator else 1),
+                ({"ic_role": "ssh_bruteforce"}, 1),
                 ({"ic_role": "bans_1h"}, 5),
                 ({"ic_role": "weblogin_bruteforce"}, 3),
                 ({"ic_role": "silent"}, 1),
@@ -76,7 +80,7 @@ class _Central:
                 ({"ic_account": "acct_test", "host_id": self.off,
                   "ic_role": "silent"}, 1),
             ]
-            if operator:
+            if self.unfiltered:
                 rows += [
                     ({"ic_account": "acct_other", "host_id": self.off,
                       "ic_role": "ssh_bruteforce"}, 999),
@@ -156,15 +160,15 @@ class TestFleetSecurity(HttpCase):
         """Return the Security block's rows by server id."""
         return {row["host_id"]: row for row in res["security"]["rows"]}
 
-    def test_the_operator_names_only_this_panel_s_servers(self):
-        """Every account in figures; another account's server, same id or not, never named."""
+    def test_the_central_s_owner_names_only_this_panel_s_servers(self):
+        """Read with the account; another account's server, same id or not, never named."""
         self._require_available()
-        central = _Central(self.mine, self.off)
+        central = _Central(self.mine, self.off, unfiltered=True)
         res = self._board("fsec-mgr", central)
-        self.assertEqual(res["scope"], "operator")
+        self.assertNotIn("scope", res)
         self.assertTrue(central.security_queries())
-        self.assertTrue(all("/admin-r/" in url for url in central.security_queries()))
-        self.assertEqual(res["panels"]["security"]["value"]["ssh_bruteforce"], 2)
+        self.assertTrue(all("/r/api/v1/" in url for url, _query in central.queries))
+        self.assertEqual(res["panels"]["security"]["value"]["ssh_bruteforce"], 1)
         self.assertEqual(res["panels"]["security"]["value"]["weblogin_bruteforce"], 3)
         self.assertNotIn("security_hosts", res["panels"])
         rows = self._rows(res)
@@ -175,14 +179,13 @@ class TestFleetSecurity(HttpCase):
         # The other account's 999 on the same id is not this server's.
         self.assertNotIn("ssh_bruteforce", rows[self.off.id])
         self.assertTrue(all(row["own"] for row in rows.values()))
-        self.assertNotIn("acct_other", json.dumps(res["security"]))
+        self.assertNotIn("acct_", json.dumps(res))
 
-    def test_without_the_operator_route_only_the_account_is_read(self):
+    def test_without_the_operator_credential_the_answer_is_the_same(self):
         self._require_available()
         self.settings.metrics_operator_token = False
         central = _Central(self.mine, self.off)
         res = self._board("fsec-mgr", central)
-        self.assertEqual(res["scope"], "account")
         self.assertTrue(central.security_queries())
         self.assertTrue(all("/r/api/v1/" in url for url in central.security_queries()))
         self.assertEqual(res["panels"]["security"]["value"]["ssh_bruteforce"], 1)

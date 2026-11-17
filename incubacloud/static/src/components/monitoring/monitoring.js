@@ -12,8 +12,7 @@ import { HostBoard } from "../metrics/host_board";
  * Monitoring: the fleet and each server, drawn by the panel from the
  * metrics central (no frame of another tool since 12-nov-2026).
  *
- * Two views. Fleet: every account's servers on the panel that deployed
- * the central, the panel's own anywhere else (the server decides).
+ * Two views. Fleet: this panel's own servers, on every panel.
  * Hosts: one server's board, the same one as its Metrics tab, picked
  * among the hosts the caller can read.
  *

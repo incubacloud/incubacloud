@@ -236,8 +236,8 @@ that still writes is shared by agents' writes, logs and its panel: a cap
 there answered a write 429 while two reads ran (measured on v1.102.0 with
 a cap of 2), and after an outage every host empties its queue at once. So
 it has none, nor has the agents' user. The
-operator never writes; 16 covers four fleet boards at four queries each
-(measured: 16
+operator never writes; 16 covered four fleet boards at four queries each
+while the fleet's board read with it (until 17-nov-2026; measured: 16
 reads in flight pass, the 17th to 20th get 429, an account's 30 reads and
 its write meanwhile all pass). VictoriaMetrics queues the reads
 themselves: `-search.maxConcurrentRequests`, twice the cores (8 on a
@@ -248,8 +248,7 @@ with a read-only user per account, later.
 second (`_BUSY_PAUSE`); the rule cron, if it is still busy, evaluates
 nothing that run, raising nothing (no `metrics_backend_unreachable`) and
 resolving nothing; a board says *The metrics central is busy* (`reason:
-"busy"`, no since) and asks again on its own; a busy operator route does
-not fall back to the account's servers the way a refused one does.
+"busy"`, no since) and asks again on its own.
 
 ### On each server: the collectors
 
@@ -616,20 +615,26 @@ the time.
 
 Monitoring's **Fleet** view draws `PANELS["fleet"]` from
 `/cloud/fleet/resource_series`. Its expressions select no record: read
-with the account credential they are that account's servers, which is
-what a managed panel sees. The panel that holds the operator credential
-(`metrics_operator_token`, the one that deployed the central) reads the
-central's operator route instead, `metrics_central_url` with `/r`
-replaced by `/admin-r`, and sees every account; its aggregations keep
-`ic_account` beside `host_id` because `host_id` repeats across accounts.
-The answer's `scope` says which (`operator` or `account`), and each
-server says whether it is this panel's (`own`), the only ones that link
-to a board. A central whose gateway does not let the panel's address
-read `/admin-r` answers 403 to every panel; the board then reads the
-account route and says *Your servers*. The ingestion line (`kind:
-"state"`) is `count_over_time(up{job="node"}[window])` per server: a step
-with a sample is reporting, one without is silent; servers with a
-silence come first, twenty at most.
+with the account credential they are that account's servers, and that is
+the only credential the board reads with, on every panel. Until
+17-nov-2026 the panel that holds the operator credential
+(`metrics_operator_token`, the one that deployed the central) read the
+central's operator route, `/admin-r`, and drew every account's servers;
+it no longer does: a panel's Monitoring is its own fleet, and no panel
+lists or charts the servers of another account. The aggregations keep
+`ic_account` beside `host_id`, and `cloud.host._fleet_own_servers` drops
+any series or row of another account should a gateway that does not
+filter answer one, before taking the account out of the answer. Each
+server is named as the panel names it when the caller can read it
+(`own`, the only ones that link to a board), by the name its agents
+report otherwise, or *Server <id>* without one, so no line of a legend
+is unnamed; load per core divides with `group_left`, without which the
+division kept only the labels it matched on and lost the name. The
+ingestion line (`kind: "state"`) is
+`count_over_time(up{job="node"}[window])` per server: a step with a
+sample is reporting, one without is silent; servers with a silence come
+first, twenty at most. It is a card of the charts' grid, on the row the
+four charts leave unfinished.
 
 The three routes share one budget per user (20 boards a minute,
 `_BOARD_READS_PER_MIN`).
@@ -639,7 +644,7 @@ the same `developer` role and above, with no address, user or alert text
 for anyone:
 
 - **From the central** (`PANELS["fleet"]` with `needs: "fleet_security"`,
-  every account's on the operator's route): failed SSH logins and bans of
+  this panel's account, as the rest of the board): failed SSH logins and bans of
   the last hour and per hour over the window, the servers under SSH brute
   force and the instances under web-login brute force now (over the rules'
   10-minute windows and with the current thresholds of
@@ -652,9 +657,8 @@ for anyone:
 - **The servers to look at** are this panel's own the caller can read,
   twenty at most, the worst first. The per-server rows of the central
   (`kind: "hosts"`) are matched by account and `host_id`, so a server of
-  another account is never named on the operator's board even when its
-  id is one of this panel's; a server whose switch is off is not counted
-  as silent.
+  another account is never named even when its id is one of this
+  panel's; a server whose switch is off is not counted as silent.
 - **Not asked at all** where `_security_logs_available()` is false: the
   block says security logs are not available on this panel yet.
 
@@ -1460,8 +1464,8 @@ make sense together" is a reading, not an assertion.
 |---|---|---|---|---|---|---|---|
 | Partner, observability off | ✗ | ✗ | ✓ | hidden | (typed URL) "Observability is not enabled" | prompt + readings + recent requests | shown |
 | Partner, on without a central | ✓ | ✗ | ✓ | shown | "there is no metrics central" | "there is no metrics central" + readings + recent requests | shown |
-| Partner, with its central | ✓ | ✓ | ✓ | shown | fleet (every account) and hosts boards | board + readings + recent requests | shown |
-| Panel that pushes settings to others | ✓ | ✓ | ✓ | shown | fleet (every account) and hosts boards | board + readings + recent requests | shown |
+| Partner, with its central | ✓ | ✓ | ✓ | shown | fleet and hosts boards | board + readings + recent requests | shown |
+| Panel that pushes settings to others | ✓ | ✓ | ✓ | shown | fleet (its own servers) and hosts boards | board + readings + recent requests | shown |
 | Managed panel, granted | ✓ | ✓ | ✗ | shown | fleet and hosts boards of its account | board + readings + recent requests | hidden |
 | Managed panel, granted, no central pushed yet | ✓ | ✗ | ✗ | **hidden** | (typed URL) "Charts are not available on this panel" | "not available" + readings + recent requests | hidden |
 | Managed panel, not granted yet | ✗ | ✗ | ✗ | hidden | (typed URL) "Charts are not available on this panel" | no board; readings + recent requests | hidden |

@@ -31,9 +31,11 @@ Every series of an instance or a host selects by ``instance_id`` or
 ``host_id``, never by names: ids are unique within this panel's account,
 and the central forces the account label on every query this panel's
 credential makes. The fleet selects nothing: read with the account's
-credential it is that account's hosts; read with the operator's, on the
-central's ``/admin-r`` route, every account's, which is why its
-aggregations keep ``ic_account`` beside ``host_id``.
+credential, as every board is, it is that account's hosts and nobody
+else's. Its aggregations keep ``ic_account`` beside ``host_id``, which
+is how the panel drops a series that is not of its account should a
+central ever answer one (17-nov-2026: no panel reads another account's
+servers, the one that deployed the central included).
 """
 import configparser
 import logging
@@ -181,15 +183,6 @@ _FLEET_WEBLOGIN_BRUTEFORCE = (
     "round(sum by (ic_account, host_id, instance_id) (increase("
     'ic_weblogin_failed_total{instance_id!="0"}[10m]))) > %(weblogin_threshold)s'
 )
-
-#: The central's operator read route, beside the account read route
-#: (``/r``) that ``metrics_central_url`` names. Read-only: the same
-#: endpoints as the accounts' route, without the account filter.
-OPERATOR_READ_PREFIX = "/admin-r"
-
-#: The suffix of ``metrics_central_url`` on a central this panel deploys.
-_ACCOUNT_READ_SUFFIX = "/r"
-
 
 def _quantile(share):
     """Return the PromQL of a percentile of the instance's request time.
@@ -707,9 +700,12 @@ PANELS = {
             "digits": 2, "legend": "host",
             "needs": "fleet",
             "queries": (
+                # ``group_left``: a division matched ``on`` some labels
+                # keeps only those, and the server's name would be lost.
                 _q("use", "topk(10, max by (ic_account, host_id, host) ("
-                   "node_load15) / on (ic_account, host_id) count by "
-                   '(ic_account, host_id) (node_cpu_seconds_total{mode="idle"}))'),
+                   "node_load15) / on (ic_account, host_id) group_left "
+                   'count by (ic_account, host_id) ('
+                   'node_cpu_seconds_total{mode="idle"}))'),
             ),
         },
         {
@@ -752,9 +748,8 @@ PANELS = {
             ),
         },
         # The servers' security (plan #84, C7): figures, never an
-        # address or a user; every account's through the operator's
-        # route. Asked only where this panel's servers may send their
-        # security logs (``fleet_security``).
+        # address or a user. Asked only where this panel's servers may
+        # send their security logs (``fleet_security``).
         {
             "key": "security", "kind": "stat", "unit": None,
             "digits": 0, "legend": None,
@@ -772,8 +767,8 @@ PANELS = {
             ),
         },
         {
-            # One row per server with something to look at; the panel
-            # keeps only its own (``_fleet_security``).
+            # One row per server with something to look at, matched to
+            # the panel's servers (``_fleet_security``).
             "key": "security_hosts", "kind": "hosts", "unit": None,
             "digits": 0, "legend": "host",
             "needs": "fleet_security",
@@ -1291,29 +1286,6 @@ def metrics_source(env):
     }
 
 
-def operator_source(env, base):
-    """Return the central's operator read route, when this panel has one.
-
-    Only the panel that deployed the central holds the operator
-    credential, and only a central it deployed has an account route
-    ending in ``/r`` beside the operator's ``/admin-r``.
-
-    :param env: an Odoo environment.
-    :param str base: ``metrics_central_url``.
-    :returns: ``{"base", "user", "token"}``, or None.
-    :rtype: dict | None
-    """
-    user, token = env["cloud.settings"].sudo()._metrics_auth(operator=True)
-    root = base.rstrip("/")
-    if not token or not root.endswith(_ACCOUNT_READ_SUFFIX):
-        return None
-    return {
-        "base": root[: -len(_ACCOUNT_READ_SUFFIX)] + OPERATOR_READ_PREFIX,
-        "user": user, "token": token,
-        "verify": env["cloud.settings"].sudo()._central_tls_verify(),
-    }
-
-
 def failing_since(env):
     """Return since when the central has failed, as its alert says.
 
@@ -1331,18 +1303,6 @@ def failing_since(env):
         order="create_date", limit=1,
     )
     return _iso_utc(alert.create_date)
-
-
-def _all_refused(board):
-    """Whether the central refused every panel the board asked.
-
-    :param dict board: ``run_board``'s answer, ``asked`` still in it.
-    :rtype: bool
-    """
-    asked = board["asked"]
-    return bool(asked) and all(
-        board["panels"][key].get("error") == "refused" for key in asked
-    )
 
 
 def board_failure(env, board, user, token):
@@ -1514,6 +1474,20 @@ def summarize_hours(board):
 
 class CloudInstance(models.Model):
     _inherit = "cloud.instance"
+
+    def _metrics_label(self):
+        """Return the name this instance has on a server's charts and table.
+
+        ``project/instance``, as the job history names an instance: two
+        projects may each have a ``prod``, and an instance named by a
+        code is told apart by its project. Its own name without a
+        project.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        project = self.sudo().project_id.name
+        return f"{project}/{self.name}" if project else (self.name or "")
 
     def _configured_workers(self):
         """Return how many HTTP workers this instance's Odoo runs.
@@ -1729,16 +1703,51 @@ class CloudHost(models.Model):
             return failure
         consumers = board["panels"]["consumers"]
         consumers["rows"] = self._metrics_consumers(consumers.get("rows") or [])
+        self._metrics_name_instances(board["panels"])
         board["diagnosis"] = diagnose_host(board, self, now=time.time())
         board["silence"] = self._metrics_silence()
         return {"ok": True, **board}
 
+    def _metrics_name_instances(self, panels):
+        """Name the instances of a server's charts as the panel names them.
+
+        The agents label a series with the instance's own name, which
+        repeats from one project to the next and, where instances are
+        named by a code, says nothing to whoever reads the legend. A
+        series of an instance the caller can read is named with its
+        project (``cloud.instance._metrics_label``), as the table of
+        "who uses it" names it; any other keeps the agents' name. Each
+        legend is put back in the order of its names, the line that adds
+        up the rest last.
+
+        :param dict panels: ``run_board``'s panels, changed in place.
+        """
+        series = [
+            item for panel in panels.values() for item in panel.get("series") or []
+            if str(item.get("id") or "").isdigit()
+        ]
+        ids = sorted({int(item["id"]) for item in series})
+        labels = {
+            inst.id: inst._metrics_label()
+            for inst in self.env["cloud.instance"].search([("id", "in", ids)])
+        }
+        if not labels:
+            return
+        for item in series:
+            item["name"] = labels.get(int(item["id"])) or item["name"]
+        for panel in panels.values():
+            if any(str(s.get("id") or "").isdigit() for s in panel.get("series") or []):
+                panel["series"].sort(key=lambda s: (
+                    s["role"] == "others", s["name"], s["role"] == "limit", s["role"],
+                ))
+
     def _metrics_consumers(self, rows):
         """Match the central's rows of "who uses it" to the panel's instances.
 
-        A row of an instance the caller can read gets its name, project
-        and whether it runs, so the table links to its page; any other
-        keeps the name the agents gave it and no link. Busiest first.
+        A row of an instance the caller can read gets its name with its
+        project (``cloud.instance._metrics_label``), its project and
+        whether it runs, so the table links to its page; any other keeps
+        the name the agents gave it and no link. Busiest first.
 
         :param list rows: ``shape_table``'s rows.
         :returns: the rows, each with ``project_id`` (False without a
@@ -1760,7 +1769,7 @@ class CloudHost(models.Model):
             inst = readable.get(int(row["id"])) if str(row["id"]).isdigit() else None
             out.append({
                 **row,
-                "name": inst.name if inst else row["name"],
+                "name": inst._metrics_label() if inst else row["name"],
                 "project_id": inst.project_id.id if inst else False,
                 "environment": inst.environment if inst else False,
                 "running": bool(inst.running) if inst else None,
@@ -1796,70 +1805,90 @@ class CloudHost(models.Model):
 
     @api.model
     def _fleet_metrics_board(self, range_key=None, start=None, end=None):
-        """Read the fleet's board: every account's on the operator's panel.
+        """Read the fleet's board: this panel's own servers.
 
-        The panel that deployed the central reads it through the
-        operator's read-only route and sees every account; any other
-        panel, or a central that does not let this panel's address read
-        that route yet, reads its own account's servers. ``scope`` says
-        which, and each series and row says whether its host is one of
-        this panel's (``own``), which is what may link to its page.
+        Read with the panel's account credential, as an instance's and a
+        server's boards are: the central filters that route by account,
+        so the figures and the charts are of this panel's servers and of
+        nobody else's. That holds for the panel that deployed the
+        central too, which holds its operator credential: the board
+        never reads with it (17-nov-2026; until then that panel drew
+        every account's servers). Each series and row is then matched
+        to this panel's servers (``_fleet_own_servers``).
 
         :param str range_key: one of ``CHART_RANGES``.
         :param start: zoom window start, unix seconds (optional).
         :param end: zoom window end, unix seconds (optional).
-        :returns: ``{"ok": True, "scope": "operator" | "account",
-            "start", "end", "step", "panels", "alerts", "silence",
-            "timing"}``, or ``{"ok": False, "reason", "error"}``.
+        :returns: ``{"ok": True, "start", "end", "step", "panels",
+            "alerts", "silence", "security", "timing"}``, or ``{"ok":
+            False, "reason", "error"}``.
         :rtype: dict
         """
         source = metrics_source(self.env)
         if not source["ok"]:
             return source
-        board = None
-        scope = "account"
         security = self._security_logs_available()
         available = {"fleet", "fleet_security"} if security else {"fleet"}
-        values = self._fleet_security_thresholds()
-        operator = operator_source(self.env, source["base"])
-        if operator:
-            board = run_board(
-                "fleet", values, available,
-                operator["base"], operator["user"], operator["token"],
-                range_key=range_key, start=start, end=end,
-                verify=operator.get("verify", True),
-            )
-            if _all_refused(board):
-                # A central deployed before its operator route was open
-                # to this panel's address: its own servers still show.
-                _logger.info("[charts] fleet: operator route refused, "
-                             "reading this panel's account instead")
-                board = None
-            else:
-                scope = "operator"
-                source = operator
-        if board is None:
-            board = run_board(
-                "fleet", values, available,
-                source["base"], source["user"], source["token"],
-                range_key=range_key, start=start, end=end,
-                verify=source.get("verify", True),
-            )
+        board = run_board(
+            "fleet", self._fleet_security_thresholds(), available,
+            source["base"], source["user"], source["token"],
+            range_key=range_key, start=start, end=end,
+            verify=source.get("verify", True),
+        )
         failure = board_failure(self.env, board, source["user"], source["token"])
         if failure:
             return failure
-        account = self.env["cloud.settings"].sudo()._get_system().metrics_account
-        for panel in board["panels"].values():
-            for item in (panel.get("series") or []) + (panel.get("rows") or []):
-                if "account" in item:
-                    item["own"] = scope == "account" or item["account"] == account
-                    if scope == "account":
-                        item["account"] = ""
-        board["scope"] = scope
+        self._fleet_own_servers(board["panels"])
         board["alerts"] = self._fleet_alert_counts()
         board["silence"] = self._fleet_silence()
         board["security"] = self._fleet_security(board["panels"], security)
         return {"ok": True, **board}
+
+    @api.model
+    def _fleet_own_servers(self, panels):
+        """Keep this panel's servers on the fleet's board, each by its name.
+
+        The account credential already limits the answer to this panel's
+        account. Should a central answer a series or a row of another
+        account all the same (a hand-written gateway that does not
+        filter), it is dropped here: another account's server is never
+        named nor drawn. The account is then taken out of the answer,
+        which has no use for it.
+
+        A server the caller can read on this panel is named as the panel
+        names it and marked ``own``, which is what may link to its
+        board. Any other keeps the name its agents report, or
+        "Server <id>" without one: no line of a legend is left unnamed.
+
+        :param dict panels: ``run_board``'s panels, changed in place.
+        """
+        account = self.env["cloud.settings"].sudo()._get_system().metrics_account
+        kept = []
+        for panel in panels.values():
+            for key in ("series", "rows"):
+                items = panel.get(key)
+                if not items or "account" not in items[0]:
+                    continue
+                panel[key] = [
+                    item for item in items
+                    if not (account and item["account"] and item["account"] != account)
+                ]
+                kept += panel[key]
+        ids = {int(i["host_id"]) for i in kept if str(i["host_id"]).isdigit()}
+        names = {host.id: host.name for host in self.search([("id", "in", sorted(ids))])}
+        for item in kept:
+            del item["account"]
+            host_id = int(item["host_id"]) if str(item["host_id"]).isdigit() else 0
+            item["own"] = host_id in names
+            if "name" in item:
+                item["name"] = (
+                    names.get(host_id) or item["name"]
+                    or self.env._("Server %s", item["host_id"] or "?")
+                )
+        # A legend reads in the order of the names it shows.
+        for panel in panels.values():
+            if panel.get("series") and "own" in panel["series"][0]:
+                panel["series"].sort(key=itemgetter("name"))
 
     @api.model
     def _fleet_security_thresholds(self):
@@ -1883,12 +1912,11 @@ class CloudHost(models.Model):
     def _fleet_security(self, panels, available):
         """Build the fleet's Security block: figures and this panel's servers.
 
-        The central's figures (``panels["security"]``, every account's on
-        the operator's board) stay in ``panels``; the servers under
-        brute force or whose logs do not arrive come from
-        ``panels["security_hosts"]``, which is taken out of the answer
-        and kept only for this panel's own servers the caller can read:
-        another account's server is never named, whatever its id. Which
+        The central's figures (``panels["security"]``) stay in
+        ``panels``; the servers under brute force or whose logs do not
+        arrive come from ``panels["security_hosts"]``, which is taken
+        out of the answer and kept only for the servers the caller can
+        read on this panel (``own``, see ``_fleet_own_servers``). Which
         servers have their security logs off or no hardening, and which
         have active security alerts the caller can read, come from the
         panel's database. Never an address, a user or an alert's text.
