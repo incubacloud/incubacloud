@@ -3641,14 +3641,21 @@ class CloudJob(models.Model):
 
         What it relies on: a ``job_failed`` is one per job type and target,
         not per job (``_job_failed_domain``), and every new failure writes
-        its own job on it (``cloud.alert.raise_alert``), so one that names
-        a job with a conflict closed names the last failure of its type;
-        and a job carries a conflict alert with its ``job_id`` only when
-        it failed on it (the pre-flight of the deploy's re-sync). Dismissed
-        alerts are deleted after 60 days (``cloud.alert._gc``): a failure
-        whose conflict is gone counts when its message is the pre-flight's
-        and no conflict is open on its instance. Only instance queues: a
-        conflict is an instance's.
+        its own job and ``last_raised_at`` on it (``cloud.alert.raise_alert``),
+        so one that names a job with a conflict closed names the last
+        failure of its type. A job carries a conflict alert with its
+        ``job_id`` when it found the conflict: the pip pre-flight of the
+        deploy's re-sync fails it, the addon pre-flight blocks it and
+        ``unblock_and_enqueue`` runs the same job again once the conflict
+        is resolved, and ``on_failure`` files the addon conflict of a
+        failed deploy with the job too. So the failure counts only if it
+        was raised before the conflict was closed (``resolved_at``, or
+        the conflict's last write before 8-oct-2026): a failure raised
+        after it is the job's own, of a run that came after the answer.
+        Dismissed alerts are deleted after 60 days (``cloud.alert._gc``):
+        a failure whose conflict is gone counts when its message is the
+        pip pre-flight's and no conflict is open on its instance. Only
+        instance queues: a conflict is an instance's.
 
         :param scope: the queue to look at, as ``_scope_of_step`` returns
             it; every instance queue when not given
@@ -3675,7 +3682,14 @@ class CloudJob(models.Model):
             ])
             if any(conflict.state == "active" for conflict in conflicts):
                 continue
-            if not conflicts and not (
+            if conflicts:
+                closed_at = max(
+                    conflict.resolved_at or conflict.write_date
+                    for conflict in conflicts
+                )
+                if (alert.last_raised_at or alert.create_date) > closed_at:
+                    continue
+            elif not (
                 self._PREFLIGHT_PIP_RE.search(alert.message or "")
                 and not Alert.search_count([
                     ("instance_id", "=", alert.instance_id.id),
@@ -3691,13 +3705,15 @@ class CloudJob(models.Model):
     def _stale_hold_scopes(self):
         """Return the queues a stale conflict hold keeps (``_stale_conflict_holds``).
 
-        :return: ``(instance_id, None)`` pairs, sorted
+        :return: ``((instance_id, None), alert ids)`` pairs, sorted by
+            queue: the ids name the alerts to close by hand if the queue
+            cannot be released
         :rtype: list
         """
-        return sorted({
-            (alert.instance_id.id, None)
-            for alert in self._stale_conflict_holds()
-        })
+        by_scope = {}
+        for alert in self._stale_conflict_holds():
+            by_scope.setdefault((alert.instance_id.id, None), []).append(alert.id)
+        return sorted(by_scope.items())
 
     @api.model
     def _stale_hold_waiting(self, scope, stale_jobs):
@@ -3712,9 +3728,12 @@ class CloudJob(models.Model):
         queues and holds the others while it is first in them
         (``_entry_verdict``): in each queue where a chain cancelled here is
         first, what waits behind it is cancelled too, with the same
-        exceptions and at most ``QUEUE_MAX_WAITING`` entries, and so on
-        for the chains among them. A queue where the chain is not first
-        was not kept by it, and is left alone.
+        exceptions, and so on for the chains among them. Another queue is
+        left alone when the chain is not first in it (it was not kept by
+        the chain), when a failure of its own holds it (what waits there
+        waits for that failure) and when its lock is taken
+        (``_try_lock_scope``: its own dispatcher may be looking at the
+        chain).
 
         :param scope: the queue the stale holds keep
         :param stale_jobs: the failed jobs of those holds
@@ -3725,11 +3744,16 @@ class CloudJob(models.Model):
         seen = set()
         while todo:
             queue, holding, chain_key = todo.pop(0)
+            if chain_key is not None and (
+                not self._try_lock_scope(queue)
+                or self._queue_holding_alerts(*queue)
+            ):
+                continue
             entries = self._queue_entries(queue)
             if chain_key is not None:
                 if not entries or entries[0][:1].queue_chain_key != chain_key:
                     continue
-                entries = entries[1:QUEUE_MAX_WAITING + 1]
+                entries = entries[1:]
             for entry in entries:
                 first = entry[:1]
                 if (entry & plan) or first.queue_head or self._passes_hold(
@@ -3755,6 +3779,7 @@ class CloudJob(models.Model):
 
         Under the queue's lock the holds are read again
         (``_stale_conflict_holds``). If another hold still keeps the queue,
+        in this transaction or in what others committed (``_fresh_env``),
         only the stale ones are closed and what waits stays. Otherwise
         what waited behind them is cancelled first
         (``_stale_hold_waiting``), with a note that says to ask for it
@@ -3773,7 +3798,12 @@ class CloudJob(models.Model):
         if not stale:
             return stale, Job.browse()
         cancelled = Job.browse()
-        if not (Job._queue_holding_alerts(*scope) - stale):
+        with Job._fresh_env() as env:
+            committed = set(env["cloud.job"]._queue_holding_alerts(*scope).ids)
+        others = (set(Job._queue_holding_alerts(*scope).ids) | committed) - set(
+            stale.ids,
+        )
+        if not others:
             waiting = Job._stale_hold_waiting(scope, stale.mapped("job_id"))
             if waiting:
                 cancelled = Job._cancel_queued(waiting, self.env._(

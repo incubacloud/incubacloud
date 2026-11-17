@@ -607,7 +607,6 @@ class TestHold(_QueueCase):
         self.assertEqual(restart.state, "pending")
 
 
-@tagged("-at_install", "post_install")
 class TestStaleConflictHolds(_QueueCase):
     """A failure whose conflict was closed before 1.0.220 holds no queue (1.0.232).
 
@@ -630,12 +629,16 @@ class TestStaleConflictHolds(_QueueCase):
             "job_id": job.id,
         })
 
-    def _close_by_sql(self, alert):
-        """Close *alert* as 1.0.217 did: its job's failure stays open."""
+    def _close_by_sql(self, alert, at=None):
+        """Close *alert* as 1.0.217 did: its job's failure stays open.
+
+        :param at: when it was closed (``resolved_at``); now by default
+        """
         self.env.flush_all()
         self.env.cr.execute(
-            "UPDATE cloud_alert SET state = 'dismissed' WHERE id = %s",
-            (alert.id,),
+            "UPDATE cloud_alert SET state = 'dismissed', resolved_at = %s"
+            " WHERE id = %s",
+            (at or fields.Datetime.now(), alert.id),
         )
         self.env.invalidate_all()
 
@@ -662,7 +665,7 @@ class TestStaleConflictHolds(_QueueCase):
 
     def _release(self):
         """Run the update's release on every queue, as the migration does."""
-        for scope in self.Job._stale_hold_scopes():
+        for scope, _alert_ids in self.Job._stale_hold_scopes():
             self.Job._close_stale_conflict_holds_on(scope)
 
     def test_the_failure_closes_and_what_waited_is_cancelled_with_a_note(self):
@@ -672,7 +675,9 @@ class TestStaleConflictHolds(_QueueCase):
         _run_after_commit(self.env)
         self.assertEqual((rebuild.state, listing.state), ("queued", "queued"))
         self.assertTrue(rebuild._format()[0]["queue_held"])
-        self.assertEqual(self.Job._stale_hold_scopes(), [(self.inst.id, None)])
+        self.assertEqual(
+            self.Job._stale_hold_scopes(), [((self.inst.id, None), failure.ids)],
+        )
         closed, cancelled = self.Job._close_stale_conflict_holds_on(
             (self.inst.id, None),
         )
@@ -856,6 +861,94 @@ class TestStaleConflictHolds(_QueueCase):
         self.assertEqual(deploy.state, "cancelled")
         self.assertEqual(draft.state, "draft")
 
+    def test_a_failure_after_the_conflict_was_answered_is_the_jobs_own(self):
+        """The addon pre-flight blocks the job; resolving runs it again."""
+        deploy = self._job("deploy_instance", state="failed")
+        conflict = self._conflict(deploy, code="addon_conflict")
+        self._close_by_sql(
+            conflict, at=fields.Datetime.now() - timedelta(minutes=1),
+        )
+        self.Job._create_job_failed_alert(deploy, exc_message="boom")
+        failure = self._failure_of(deploy)
+        self.assertTrue(failure)
+        restart = self._enqueue("restart_instance")
+        self._release()
+        self.assertEqual(failure.state, "active")
+        self.assertEqual(restart.state, "queued")
+
+    def test_the_retry_and_a_superseding_push_are_not_cancelled(self):
+        job, _failure, _conflict = self._stale_pair()
+        self._job("restart_instance")
+        retry = self._job("rebuild_instance", state="queued", retry_of_id=job.id)
+        push = self._job(
+            "rebuild_instance", state="queued",
+            payload={"trigger": "webhook", "push_sha": "abc1234"},
+        )
+        restart = self._enqueue("restart_instance")
+        self.assertTrue(self.Job._passes_hold(push, job))
+        self._release()
+        self.assertEqual((retry.state, push.state), ("queued", "queued"))
+        self.assertEqual(restart.state, "cancelled")
+
+    def test_a_queue_held_by_a_failure_of_its_own_keeps_what_waits_behind_the_chain(
+        self,
+    ):
+        self._stale_pair()
+        prod = self._instance("queue-stale-prod", environment="production")
+        _deploy, real = self._failed_with_alert("deploy_instance", inst=prod)
+        chain = self._clone_chain(prod)
+        behind = self._enqueue("restart_instance", inst=prod)
+        self._release()
+        self.assertEqual(set(chain.mapped("state")), {"cancelled"})
+        self.assertEqual(behind.state, "queued")
+        self.assertEqual(real.state, "active")
+
+    def test_a_chain_behind_a_chain_is_followed_to_its_queues(self):
+        self._stale_pair()
+        prod = self._instance("queue-stale-prod", environment="production")
+        other = self._instance("queue-stale-other")
+        first = self._clone_chain(prod)
+        second = self.Job.browse(self.Job.enqueue_chain([
+            {"host_id": self.host.id, "instance_id": prod.id,
+             "job_type_code": "backup_create"},
+            {"host_id": self.host.id, "instance_id": other.id,
+             "job_type_code": "restore_instance",
+             "payload": {"source_job_id": "__chain_job_0__"}},
+        ]))
+        behind = self._enqueue("restart_instance", inst=other)
+        _run_after_commit(self.env)
+        self.assertEqual(behind.state, "queued")
+        self._release()
+        self.assertEqual(set((first | second).mapped("state")), {"cancelled"})
+        self.assertEqual(behind.state, "cancelled")
+
+    def test_a_queue_that_fails_leaves_the_others_and_the_update_going(self):
+        spec = importlib.util.spec_from_file_location(
+            "end_stale_holds_1_0_232",
+            file_path("incubacloud/migrations/1.0.232/end-stale-holds.py"),
+        )
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        broken = self._instance("queue-stale-broken")
+        _job, kept, _conflict = self._stale_pair(inst=broken)
+        _job, released, _conflict = self._stale_pair()
+        release = type(self.Job)._close_stale_conflict_holds_on
+
+        def fail_on_broken(job_model, scope):
+            """The real release, but for the broken instance's queue."""
+            if scope[0] == broken.id:
+                raise UserError("boom")
+            return release(job_model, scope)
+
+        with patch.object(
+            type(self.Job), "_close_stale_conflict_holds_on", autospec=True,
+            side_effect=fail_on_broken,
+        ), self.assertLogs("end_stale_holds_1_0_232", level="ERROR") as logs:
+            migration.migrate(self.env.cr, "19.0.1.0.231")
+        self.env.invalidate_all()
+        self.assertEqual((kept.state, released.state), ("active", "dismissed"))
+        self.assertIn(f"dismiss alert(s) {kept.id} by hand", logs.output[0])
+
     def test_the_migration_runs_on_an_update_only(self):
         spec = importlib.util.spec_from_file_location(
             "end_stale_holds_1_0_232",
@@ -875,6 +968,7 @@ class TestStaleConflictHolds(_QueueCase):
         )
 
 
+@tagged("-at_install", "post_install")
 class TestOnlyThePlatform(_QueueCase):
     """What only the platform may ask of a queue (``_check_internal_queue_flags``).
 

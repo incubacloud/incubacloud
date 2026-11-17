@@ -16,8 +16,10 @@ anyway, a queue still held by another failure and the heads of the queue
 are left alone.
 
 ``end`` and not ``post``: the cancel runs each executor's hook and the
-close the layers' own, with every module loaded. One savepoint per queue:
-one that fails is logged and the update goes on.
+close the layers' own, with every module loaded. One savepoint for the
+read and one per queue: a queue that fails is logged with the alerts to
+dismiss by hand, and the update goes on. The note is written in English:
+the update runs in no one's language, as the dispatcher does.
 """
 import logging
 
@@ -37,16 +39,18 @@ def migrate(cr, version):
     env = api.Environment(cr, SUPERUSER_ID, {})
     Job = env["cloud.job"]
     try:
-        scopes = Job._stale_hold_scopes()
+        with cr.savepoint():
+            scopes = Job._stale_hold_scopes()
     except Exception:  # the update goes on with the queues as they are
         _logger.exception("Stale conflict holds: reading them failed")
         return
-    for scope in scopes:
+    for scope, alert_ids in scopes:
         try:
             with cr.savepoint():
                 Job._close_stale_conflict_holds_on(scope)
         except Exception:  # this queue stays as it was; the rest go on
             _logger.exception(
-                "Stale conflict holds: instance %s could not be released",
-                scope[0],
+                "Stale conflict holds: instance %s could not be released;"
+                " dismiss alert(s) %s by hand",
+                scope[0], ", ".join(map(str, alert_ids)),
             )
