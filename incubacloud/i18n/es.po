@@ -9272,6 +9272,23 @@ msgstr ""
 "vaciado del tráfico de su origen hasta que su destino respondió sano."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_last_cut_breakdown
+msgid ""
+"Seconds of the last move's cut by part: drain, dns, fingerprint, dump, "
+"relay, restore, start, health, overhead (connections and script uploads), "
+"queue (from the end of one job's steps to the start of the next, including "
+"its closing hook and the close of its connection) and other (what the parts "
+"do not cover); with total, and incomplete when a part is missing."
+msgstr ""
+"Segundos del corte del último traslado por partes: drain (vaciado), dns, "
+"fingerprint (huella), dump (volcado), relay (relevo), restore "
+"(restauración), start (arranque), health (salud), overhead (conexiones y "
+"subida de scripts), queue (desde el fin de los pasos de un trabajo hasta el "
+"inicio del siguiente, incluidos su gancho de cierre y el cierre de su "
+"conexión) y other (lo que las partes no cubren); con total, e incomplete "
+"cuando falta una parte."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__backup_retention
 msgid ""
 "How long to keep old backups (e.g. 3M = 3 months, 30D = 30 days, 1Y = 1 "
@@ -10498,6 +10515,11 @@ msgid "Last Move Cut (s)"
 msgstr "Corte del último traslado (s)"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_last_cut_breakdown
+msgid "Last Move Cut Breakdown"
+msgstr "Desglose del corte del último traslado"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__last_rebuild_fingerprint
 msgid "Last Rebuild Fingerprint"
 msgstr "Última huella de reconstrucción"
@@ -11494,6 +11516,11 @@ msgstr "Traslado: limpiar el origen"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_cut_started_at
 msgid "Move Cut Started At"
 msgstr "Inicio del corte del traslado"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_cut_parts
+msgid "Move Cut Parts"
+msgstr "Partes del corte del traslado"
 
 #. module: incubacloud
 #: model:cloud.job.type,name:incubacloud.move_cutover
@@ -19588,6 +19615,17 @@ msgid ""
 msgstr ""
 "Cuándo empezó la parada del origen a vaciar su tráfico, durante un traslado:"
 " el inicio del corte que el cliente espera."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_cut_parts
+msgid ""
+"What each job of the move under way noted of the cut: when it started, "
+"connected, prepared and uploaded its scripts, when it ended and what each "
+"of its steps took. Reset when the cut starts and cleared when it ends."
+msgstr ""
+"Lo que anotó del corte cada trabajo del traslado en curso: cuándo empezó, se "
+"conectó, se preparó y subió sus scripts, cuándo terminó y cuánto tardó cada "
+"uno de sus pasos. Se reinicia al empezar el corte y se vacía al terminar."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__archived_at

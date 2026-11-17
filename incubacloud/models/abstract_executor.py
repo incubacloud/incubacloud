@@ -4,12 +4,14 @@ import contextlib
 import errno
 import hashlib
 import hmac
+import io
 import json
 import logging
 import re
 import secrets
 import shlex
 import socket
+import tarfile
 import time
 from abc import ABC, abstractmethod
 from datetime import timedelta
@@ -477,6 +479,22 @@ OUTCOME_ROOM_FACTOR = 0.85
 #: a park would only add its gap.
 OUTCOME_ROOM_MIN_ELAPSED_S = 60
 
+#: Seconds the one exchange that hands a host a job's scripts as a tar may
+#: take (16-nov-2026). The overlay is a few hundred KB (430 KB for the
+#: largest, 41 files), seconds at worst between regions: a host that has
+#: not taken it by then is not answering. Running out is not a failure of
+#: the tar and does not fall back to SFTP: the ``TimeoutError`` fails the
+#: job as a lost connection does, and an executor that retries on one
+#: (``_retry_on_connection_loss``) runs again.
+SCRIPTS_TAR_TIMEOUT_S = 120
+
+#: How long the note of a move's cut waits for the instance's row lock
+#: (16-nov-2026). It runs inside the cut, twice per job, with the job's
+#: event loop waiting: a note that cannot be written in 2 s is dropped
+#: (logged) rather than lengthen the cut it measures. The writes that
+#: take that row meanwhile (metrics, health) last milliseconds.
+MOVE_CUT_NOTE_LOCK_TIMEOUT = "2s"
+
 #: The header ``detached_step.sh read`` answers with: state, exit status,
 #: whether the cap cut the step, and the offset the bytes after it end at.
 _DETACHED_HEADER_RE = re.compile(
@@ -873,6 +891,11 @@ class AbstractExecutor(ABC):
     # person cancels is closed by ``on_failure`` with it, or by
     # ``on_abort`` while it is None (``on_cancelled_running``).
     _step_results = None
+
+    #: Wall-clock marks of the attempt (``time.time()``): ``start``,
+    #: ``connected``, ``prepared`` (``before_execute`` done) and
+    #: ``uploaded`` (the scripts on the host). None outside ``_async_entry``.
+    _cut_marks = None
     # The label of the step the run gave the host last (``_run_steps``):
     # one missing from ``_step_results`` never answered, as when the
     # connection dropped or its time ran out.
@@ -1248,9 +1271,14 @@ class AbstractExecutor(ABC):
         logger.debug("[_async_entry] Starting _async_entry")
         connected = False
         try:
+            # Wall-clock marks of this attempt, for the breakdown of a
+            # move's cut (``_note_move_cut_part``): the job runners share
+            # the machine, so the marks of one job and the next compare.
+            self._cut_marks = {"start": time.time()}
             self._sys(f"Connecting to {self.host}:{self.port}...")
             async with self._host_record.get_transport() as transport:
                 connected = True
+                self._cut_marks["connected"] = time.time()
                 logger.debug("[_async_entry] Connection established")
                 self._sys("Connection established.")
                 if self._lost_contact_since:
@@ -1270,6 +1298,7 @@ class AbstractExecutor(ABC):
                         # take up goes first: its row is not written over.
                         await self._close_stale_checkpoint(transport)
                         await self.before_execute(transport)
+                        self._cut_marks["prepared"] = time.time()
 
                         # Materialise the commands before running any of
                         # them: ``run_script()`` queues its uploads while
@@ -1278,6 +1307,8 @@ class AbstractExecutor(ABC):
                         # command fires.
                         commands = list(self.get_commands())
                         await self._upload_scripts(transport)
+                        self._cut_marks["uploaded"] = time.time()
+                        self._note_move_cut_part()
 
                     results, skipped = await self._run_steps(
                         transport, commands,
@@ -1426,7 +1457,8 @@ class AbstractExecutor(ABC):
         the steps before it.
 
         :return: ``(results, skipped)``. ``results`` maps each label that
-            ran to ``{'stdout': str, 'exit_status': int}``; ``skipped``
+            ran to ``{'stdout': str, 'exit_status': int, 'seconds': float}``;
+            ``skipped``
             lists, in order, the labels a ``stop_on_failure`` step cut
             off (empty when everything ran).
         """
@@ -1472,6 +1504,7 @@ class AbstractExecutor(ABC):
             # ``timeout``: a step that needs longer than the transport's
             # default per command (``fetch-repos``).
             extra = {"timeout": opts["timeout"]} if opts.get("timeout") else {}
+            step_started = time.monotonic()
             if opts.get("detached"):
                 result = await self._run_detached(
                     transport, index, label, command, opts, resume=resumed,
@@ -1481,7 +1514,13 @@ class AbstractExecutor(ABC):
                     command, self.on_stdout, self.on_stderr, **extra,
                 )
             status = result.exit_status
-            results[label] = {'stdout': result.stdout, 'exit_status': status}
+            # ``seconds``: what the step took in this attempt (a step apart
+            # resumed counts from the resumption), read by the breakdown of
+            # a move's cut (``_note_move_cut_part``).
+            results[label] = {
+                'stdout': result.stdout, 'exit_status': status,
+                'seconds': round(time.monotonic() - step_started, 2),
+            }
             stops = (
                 status != 0
                 and status not in opts.get('continue_on', ())
@@ -1625,6 +1664,10 @@ class AbstractExecutor(ABC):
         )
         if not errors and transport is not None:
             await self.after_commands(transport, results)
+        if not errors:
+            # Before the hook: a cutover's ``on_success`` reads the parts,
+            # its own among them, and clears the chain it filters on.
+            self._note_move_cut_part(results)
         logger.debug(
             "[_dispatch_outcome] %s START job_id=%s errors=%s",
             hook.__name__, self.job.id, errors,
@@ -1948,6 +1991,74 @@ class AbstractExecutor(ABC):
         self._owed = [*(self._owed or ()), {
             "kind": "instance_unlink", "instance_id": inst.id,
         }]
+
+    def _note_move_cut_part(self, results=None):
+        """Note this job's share of a move's cut, while the cut is on.
+
+        Only for a job of the instance's move chain (read in this job's
+        transaction: written when the chain was queued) once the source's
+        stop has stamped the cut (read on a cursor of its own: the stop
+        stamps it on one, and its own transaction never sees it). Kept in
+        ``cloud.instance.move_cut_parts`` under the job's id, which the
+        cutover reduces to ``move_last_cut_breakdown``:
+
+        - called with no *results*, once the scripts are uploaded: the
+          attempt's marks (:attr:`_cut_marks`), over those of an earlier
+          attempt that started again from the beginning;
+        - called with the *results*, before ``on_success``: the end, and
+          the ``seconds`` of every step. An attempt that resumed the job
+          (``_resumed``) keeps the marks of the attempt that started it and
+          says ``resumed``: the time between the two is the job's, not the
+          queue's.
+
+        Measurement only: whatever goes wrong is logged and the job goes on.
+
+        :param dict results: the steps' results, at the end; None at the
+            start
+        """
+        try:
+            inst = getattr(self.job, "instance_id", None)
+            chain = getattr(inst, "move_chain_job_ids", None) if inst else None
+            key = str(self.job.id)
+            if not isinstance(chain, str) or key not in chain.split(","):
+                return
+            marks = dict(self._cut_marks or {})
+            with self._durable_env() as env:
+                if isinstance(env.cr, Cursor):
+                    env.cr.execute(
+                        "SET LOCAL lock_timeout = %s",
+                        (MOVE_CUT_NOTE_LOCK_TIMEOUT,),
+                    )
+                row = env["cloud.instance"].browse(inst.id)
+                parts = row.move_cut_parts
+                if not row.move_cut_started_at or not isinstance(parts, dict):
+                    return
+                jobs = dict(parts.get("jobs") or {})
+                if results is None:
+                    entry = marks
+                else:
+                    entry = dict(jobs.get(key) or {})
+                    if self._resumed or not marks.get("start"):
+                        entry["resumed"] = True
+                    else:
+                        entry.update(marks)
+                    entry["end"] = time.time()
+                    entry["steps"] = {
+                        label: data["seconds"]
+                        for label, data in results.items()
+                        if isinstance(data, dict)
+                        and isinstance(data.get("seconds"), (int, float))
+                    }
+                entry["type"] = self._job_type
+                jobs[key] = entry
+                # With ``sudo``: the parts are the platform's
+                # (``cloud.instance._check_guarded_vals``).
+                row.sudo().write({"move_cut_parts": {**parts, "jobs": jobs}})
+        except Exception:  # noqa: BLE001 — a measurement never fails a job
+            logging.getLogger(__name__).warning(
+                "[job %s] could not note its part of the move's cut",
+                self.job.id, exc_info=True,
+            )
 
     # ===============================
     # DURABLE WRITES
@@ -3925,7 +4036,9 @@ class AbstractExecutor(ABC):
         the upload has happened. The scripts go in the job's own
         directory (:meth:`_job_dir`), created 0700 for this run: nothing
         an earlier run or another account left can shadow them, and
-        nobody else can read or replace them.
+        nobody else can read or replace them. They go as one tar
+        (:meth:`_upload_scripts_as_tar`), or file by file over SFTP when
+        the host does not take it.
 
         ``_async_entry`` calls this between ``get_commands()`` and the
         command loop. An executor that runs a script from
@@ -3949,8 +4062,12 @@ class AbstractExecutor(ABC):
             remote = f"{root}/{rel}"
             files[remote] = Path(local).read_text(encoding="utf-8")
             dirs.add(remote.rsplit("/", 1)[0])
-        mkdir = " ".join(sorted(dirs))
         await self._ensure_job_dir(transport)
+        if await self._upload_scripts_as_tar(transport, root, files):
+            self._scripts_uploaded = True
+            self._sys(f"Uploaded {len(files)} script file(s) to {root}.")
+            return
+        mkdir = " ".join(sorted(dirs))
         result = await transport.run(f"mkdir -p -m 700 {mkdir}")
         if result.exit_status != 0:
             raise RuntimeError(
@@ -3960,6 +4077,94 @@ class AbstractExecutor(ABC):
         await transport.upload_text_files(files)
         self._scripts_uploaded = True
         self._sys(f"Uploaded {len(files)} script file(s) to {root}.")
+
+    @staticmethod
+    def _scripts_tar(root, files):
+        """Pack the scripts of *files* as a tar to unpack in *root*.
+
+        Uncompressed USTAR (no pax headers), owner and group 0 without
+        names, a whole-second time; directories 0700 and files 0600, so
+        what unpacks is as private as the job's directory it lands in.
+        The directory entries come first, every one the files need.
+
+        :param str root: the remote directory the paths are relative to
+        :param dict files: ``{remote_path: text_content}``, every path in
+            *root*
+        :return: the archive
+        :rtype: bytes
+        """
+        stamp = int(time.time())
+
+        def member(name, kind, mode, size=0):
+            info = tarfile.TarInfo(name)
+            info.type, info.mode, info.size = kind, mode, size
+            info.mtime, info.uid, info.gid = stamp, 0, 0
+            info.uname = info.gname = ""
+            return info
+
+        rels = {path[len(root) + 1:]: text for path, text in files.items()}
+        dirs = set()
+        for rel in rels:
+            parts = rel.split("/")[:-1]
+            dirs.update("/".join(parts[:i]) for i in range(1, len(parts) + 1))
+        buffer = io.BytesIO()
+        with tarfile.open(
+            fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT,
+        ) as archive:
+            for rel in sorted(dirs):
+                archive.addfile(member(rel, tarfile.DIRTYPE, 0o700))
+            for rel in sorted(rels):
+                data = rels[rel].encode("utf-8")
+                archive.addfile(
+                    member(rel, tarfile.REGTYPE, 0o600, len(data)),
+                    io.BytesIO(data),
+                )
+        return buffer.getvalue()
+
+    async def _upload_scripts_as_tar(self, transport, root, files):
+        """Hand the host the job's scripts in one exchange, if it takes it.
+
+        One ``mkdir … && tar -x`` fed the overlay as a tar
+        (:meth:`_scripts_tar`) instead of an SFTP round trip per file:
+        2-3 s less per job between regions (measured on a move, 4-nov-2026),
+        for every job of the platform. Any exit status but 0, or a
+        transport without ``run_with_stdin``, is reported and answered with
+        False, and the caller uploads file by file as before: a host where
+        the tar fails must still run jobs. A cancellation, the time running
+        out or a lost connection is not a failure of the tar, and goes up.
+
+        :param transport: the job's open transport
+        :param str root: :meth:`_script_root`
+        :param dict files: ``{remote_path: text_content}``
+        :return: whether the scripts are on the host
+        :rtype: bool
+        """
+        command = (
+            f"mkdir -p -m 700 {shlex.quote(root)}"
+            f" && tar -xmf - -C {shlex.quote(root)}"
+        )
+        try:
+            result = await transport.run_with_stdin(
+                command, self._scripts_tar(root, files),
+                timeout=SCRIPTS_TAR_TIMEOUT_S,
+            )
+        except NotImplementedError:
+            return False
+        if getattr(result, "exit_status", None) == 0:
+            return True
+        status = getattr(result, "exit_status", None)
+        output = (getattr(result, "stdout", "") or "")
+        output = output.strip() if isinstance(output, str) else ""
+        logging.getLogger(__name__).warning(
+            "[job %s] the scripts' tar failed on the host (exit %s): %s;"
+            " uploading them file by file",
+            self.job.id, status, output[-500:],
+        )
+        self._sys(
+            f"⚠ The host did not unpack the scripts in one go (exit"
+            f" {status}); uploading them one by one."
+        )
+        return False
 
     #: Remote paths of the secrets this job staged with
     #: :meth:`_upload_private_files` (a tuple, so an executor built

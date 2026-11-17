@@ -29,6 +29,7 @@ from ..models.registry import executor_registry
 from ..models.transport import CommandResult, SSHTransport
 from ..restore_staging import new_upload_path
 from .test_executor_features import _make_rebuild_executor
+from ._transport import take_the_tar
 
 #: What ``rebuild.sh check-unapplied`` prints over a rebuild's mark.
 _BUILD_MARK = "IC_UNAPPLIED job=400 kind=build\n"
@@ -50,6 +51,7 @@ def _host_answering(mark_stdout, mark_status):
         return CommandResult("", 0)
 
     transport = MagicMock(spec=SSHTransport)
+    take_the_tar(transport)
     transport.run = AsyncMock(side_effect=_run)
     transport.upload_text_files = AsyncMock()
     transport.upload_file = AsyncMock()
@@ -244,6 +246,7 @@ class TestRestoresRefuseOverAMark(_MarkCase):
                 payload["share_secret_key"] = True
         executor = self._executor("restore_instance", payload, inst=inst)
         source_host = MagicMock(spec=SSHTransport)
+        take_the_tar(source_host)
         source_host.download_file = AsyncMock()
 
         @asynccontextmanager

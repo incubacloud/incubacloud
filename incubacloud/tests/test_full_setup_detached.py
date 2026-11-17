@@ -22,6 +22,7 @@ from odoo.tests.common import TransactionCase
 from ..models.abstract_executor import DETACHED_EXIT_MISSING_TOOLS
 from ..models.full_setup_executor import FullSetupExecutor
 from ..models.transport import CommandResult, SSHTransport
+from ._transport import take_the_tar
 
 _INSTALL = "Install host tools"
 
@@ -103,6 +104,7 @@ class TestFullSetupInstallsItsToolsApart(_FullSetupCase):
             return CommandResult("", 0)
 
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         transport.run.side_effect = _run
         transport.execute = AsyncMock(return_value=CommandResult("ok", 0))
         transport.upload_text_files = AsyncMock()
@@ -115,7 +117,10 @@ class TestFullSetupInstallsItsToolsApart(_FullSetupCase):
                 await executor._discard_staging(transport)
 
         results, _skipped = asyncio.run(_go())
-        self.assertEqual(results[_INSTALL], {"stdout": "ok", "exit_status": 0})
+        install_result = dict(results[_INSTALL])
+        # What the step took (``seconds``) is not compared.
+        install_result.pop("seconds", None)
+        self.assertEqual(install_result, {"stdout": "ok", "exit_status": 0})
         self.assertIn(
             install, [call.args[0] for call in transport.execute.await_args_list],
         )

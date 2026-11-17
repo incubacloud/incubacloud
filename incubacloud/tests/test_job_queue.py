@@ -56,6 +56,7 @@ from ..models.registry import executor_registry
 from ..models.restart_instance_executor import RestartInstanceExecutor
 from ..models.restore_instance_executor import RestoreInstanceExecutor
 from ..models.transport import CommandResult, SSHTransport
+from ._transport import take_the_tar
 from .test_cloud_job import _run_after_commit
 
 #: An id no job of the test's transaction has: what a fresh read returns
@@ -2170,6 +2171,7 @@ class TestTheSourceOfARestore(_QueueCase):
     def test_its_archive_is_not_read(self):
         """``from_job``: refused before the archive is read or sent."""
         transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
         with self.assertRaises(AccessError):
             asyncio.run(
                 self._executor("from_job", self.foreign).before_execute(transport),
@@ -2934,6 +2936,7 @@ class TestMoves(_QueueCase):
         async def connect(host):
             """A connection to *host* that records what it is sent and says 0."""
             transport = MagicMock(spec=SSHTransport)
+            take_the_tar(transport)
 
             def answer(command, *_args, **_kwargs):
                 """Record *command* on *host*; answer as a command that worked."""

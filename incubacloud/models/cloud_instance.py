@@ -175,6 +175,7 @@ _PLATFORM_FIELDS = frozenset({
     "move_origin_host_id", "move_target_host_id", "move_chain_job_ids",
     "move_rollback_in_progress", "move_frozen_source_host_id",
     "move_frozen_until", "move_cut_started_at", "move_last_cut_seconds",
+    "move_cut_parts", "move_last_cut_breakdown",
     "pr_number", "pr_repo", "pr_head_branch", "pr_comment_id",
     "pr_installation_id", "pr_provider_id", "pr_state", "pr_update_error",
     "pr_update_cut_off", "pr_rebuild_failed_job",
@@ -363,6 +364,26 @@ class CloudInstance(models.Model):
         readonly=True,
         help="How long the last move kept the instance unavailable, from "
         "the drain of its source to its destination answering healthy.",
+    )
+    move_cut_parts = fields.Json(
+        string="Move Cut Parts",
+        copy=False,
+        readonly=True,
+        help="What each job of the move under way noted of the cut: when "
+        "it started, connected, prepared and uploaded its scripts, when it "
+        "ended and what each of its steps took. Reset when the cut starts "
+        "and cleared when it ends.",
+    )
+    move_last_cut_breakdown = fields.Json(
+        string="Last Move Cut Breakdown",
+        copy=False,
+        readonly=True,
+        help="Seconds of the last move's cut by part: drain, dns, "
+        "fingerprint, dump, relay, restore, start, health, overhead "
+        "(connections and script uploads), queue (from the end of one job's "
+        "steps to the start of the next, including its closing hook and "
+        "the close of its connection) and other (what the parts do not "
+        "cover); with total, and incomplete when a part is missing.",
     )
     scheduling_priority = fields.Selection(
         selection=[
@@ -5756,6 +5777,7 @@ class CloudInstance(models.Model):
                         "move_chain_job_ids": False,
                         "move_rollback_in_progress": False,
                         "move_cut_started_at": False,
+                        "move_cut_parts": False,
                     }
                 )
                 # The source was restarted: the move is undone even if the

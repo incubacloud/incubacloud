@@ -197,6 +197,7 @@ class MoveRollbackCleanupExecutor(DeleteInstanceExecutor):
                 'move_chain_job_ids': False,
                 'move_rollback_in_progress': False,
                 'move_cut_started_at': False,
+                'move_cut_parts': False,
             })
             # Dismiss any stale move_stuck alert that may have been
             # raised by a previous cron recovery pass.
