@@ -3297,6 +3297,16 @@ msgstr "Cancelado en cola por %(user)s."
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Cancelled: it waited behind a failure whose conflict had been resolved "
+"before this update. Ask for it again if it is still needed."
+msgstr ""
+"Cancelado: esperaba detrás de un fallo cuyo conflicto ya se había resuelto "
+"antes de esta actualización. Vuelva a pedirlo si todavía hace falta."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid "Cancelled: the instance is no longer there."

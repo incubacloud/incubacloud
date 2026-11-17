@@ -20,6 +20,7 @@ queueing registered is spent — and once after the event under test.
 """
 import asyncio
 import contextlib
+import importlib.util
 import json
 import re
 from datetime import timedelta
@@ -34,7 +35,7 @@ from odoo.tests import tagged
 from odoo.tests.common import HttpCase, TransactionCase, new_test_user
 from odoo.tools import mute_logger
 
-from odoo.tools.misc import Callbacks
+from odoo.tools.misc import Callbacks, file_path
 
 from odoo.addons.queue_job.exception import JobError
 from odoo.addons.queue_job.job import Job as QueueJob
@@ -607,6 +608,273 @@ class TestHold(_QueueCase):
 
 
 @tagged("-at_install", "post_install")
+class TestStaleConflictHolds(_QueueCase):
+    """A failure whose conflict was closed before 1.0.220 holds no queue (1.0.232).
+
+    Until 1.0.220 closing a conflict left its job's ``job_failed`` open,
+    and that alert held the instance's queue for good. The update closes
+    those failures and cancels what waited behind them, with a note.
+    """
+
+    _PREFLIGHT = "Pre-flight: 1 pip dependency conflict(s)"
+
+    def _conflict(self, job, code="pip_conflict", level="warning", inst=None):
+        """An open conflict alert of *code* filed by *job*."""
+        inst = self.inst if inst is None else inst
+        return self.env["cloud.alert"].create({
+            "code": code,
+            "message": code,
+            "level": level,
+            "instance_id": inst.id if inst else False,
+            "host_id": False if inst else job.host_id.id,
+            "job_id": job.id,
+        })
+
+    def _close_by_sql(self, alert):
+        """Close *alert* as 1.0.217 did: its job's failure stays open."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_alert SET state = 'dismissed' WHERE id = %s",
+            (alert.id,),
+        )
+        self.env.invalidate_all()
+
+    def _failure_of(self, job):
+        """The open ``job_failed`` that names *job*."""
+        return self.env["cloud.alert"].search([
+            ("job_id", "=", job.id), ("code", "=", "job_failed"),
+            ("state", "=", "active"),
+        ])
+
+    def _stale_pair(self, code="rebuild_instance", inst=None):
+        """A failed *code* job with its failure open and its pip conflict closed.
+
+        :return: the job, its ``job_failed`` and its conflict alert
+        """
+        inst = self.inst if inst is None else inst
+        job = self._job(code, state="failed", inst=inst)
+        conflict = self._conflict(job, inst=inst)
+        self.Job._create_job_failed_alert(job, exc_message=self._PREFLIGHT)
+        failure = self._failure_of(job)
+        self.assertTrue(failure)
+        self._close_by_sql(conflict)
+        return job, failure, conflict
+
+    def _release(self):
+        """Run the update's release on every queue, as the migration does."""
+        for scope in self.Job._stale_hold_scopes():
+            self.Job._close_stale_conflict_holds_on(scope)
+
+    def test_the_failure_closes_and_what_waited_is_cancelled_with_a_note(self):
+        _job, failure, _conflict = self._stale_pair()
+        rebuild = self._enqueue("rebuild_instance")
+        listing = self._enqueue("backup_list")
+        _run_after_commit(self.env)
+        self.assertEqual((rebuild.state, listing.state), ("queued", "queued"))
+        self.assertTrue(rebuild._format()[0]["queue_held"])
+        self.assertEqual(self.Job._stale_hold_scopes(), [(self.inst.id, None)])
+        closed, cancelled = self.Job._close_stale_conflict_holds_on(
+            (self.inst.id, None),
+        )
+        self.assertEqual(closed, failure)
+        self.assertEqual(
+            (failure.state, failure.resolution), ("dismissed", "auto"),
+        )
+        self.assertEqual(cancelled, rebuild | listing)
+        self.assertEqual(
+            (rebuild.state, listing.state), ("cancelled", "cancelled"),
+        )
+        self.assertIn("whose conflict had been resolved", self._note(rebuild))
+        _run_after_commit(self.env)
+        self.assertFalse(self.Job._queue_held_by(self.inst.id, None))
+        self.assertEqual(self._enqueue("restart_instance").state, "pending")
+
+    def test_an_open_conflict_keeps_its_failure(self):
+        job = self._job("rebuild_instance", state="failed")
+        self._conflict(job)
+        self.Job._create_job_failed_alert(job, exc_message=self._PREFLIGHT)
+        restart = self._enqueue("restart_instance")
+        self._release()
+        self.assertEqual(self._failure_of(job).state, "active")
+        self.assertEqual(restart.state, "queued")
+
+    def test_a_failure_with_no_conflict_keeps_its_hold(self):
+        _job, alert = self._failed_with_alert("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        self._release()
+        self.assertEqual(alert.state, "active")
+        self.assertEqual(restart.state, "queued")
+
+    def test_a_pre_flight_failure_whose_conflict_is_gone_closes(self):
+        """Dismissed alerts are deleted after 60 days: the message says it."""
+        _job, failure, conflict = self._stale_pair()
+        self.env.cr.execute("DELETE FROM cloud_alert WHERE id = %s", (conflict.id,))
+        self.env.invalidate_all()
+        restart = self._enqueue("restart_instance")
+        self._release()
+        self.assertEqual(failure.state, "dismissed")
+        self.assertEqual(restart.state, "cancelled")
+
+    def test_a_conflict_open_on_the_instance_keeps_a_failure_whose_own_is_gone(self):
+        _job, failure, conflict = self._stale_pair()
+        self.env.cr.execute("DELETE FROM cloud_alert WHERE id = %s", (conflict.id,))
+        self.env.invalidate_all()
+        self.env["cloud.alert"].create({
+            "code": "addon_conflict", "message": "addon_conflict",
+            "instance_id": self.inst.id,
+        })
+        self._release()
+        self.assertEqual(failure.state, "active")
+
+    def test_a_second_pass_finds_nothing(self):
+        _job, failure, _conflict = self._stale_pair()
+        restart = self._enqueue("restart_instance")
+        self._release()
+        _run_after_commit(self.env)
+        self.assertFalse(self.Job._stale_hold_scopes())
+        closed, cancelled = self.Job._close_stale_conflict_holds_on(
+            (self.inst.id, None),
+        )
+        self.assertFalse(closed)
+        self.assertFalse(cancelled)
+        self.assertEqual((failure.state, restart.state), ("dismissed", "cancelled"))
+
+    def test_a_host_queue_is_left_alone(self):
+        job = self._job("deploy_instance", state="failed", inst=False)
+        conflict = self._conflict(job, inst=False)
+        self.Job._create_job_failed_alert(job, exc_message=self._PREFLIGHT)
+        failure = self._failure_of(job)
+        self.assertTrue(failure)
+        self._close_by_sql(conflict)
+        self.assertFalse(self.Job._stale_hold_scopes())
+        self.assertFalse(self.Job._stale_conflict_holds((None, self.host.id)))
+        self._release()
+        self.assertEqual(failure.state, "active")
+
+    def test_a_later_real_failure_of_the_type_is_not_stale(self):
+        """The failure of a type and target names its last job."""
+        _job, failure, _conflict = self._stale_pair()
+        again = self._job("rebuild_instance", state="failed")
+        self.Job._create_job_failed_alert(again, exc_message="boom")
+        self.assertEqual(failure.job_id, again)
+        restart = self._enqueue("restart_instance")
+        self._release()
+        self.assertEqual(failure.state, "active")
+        self.assertEqual(restart.state, "queued")
+
+    def test_a_failure_whose_job_is_another_is_left_alone(self):
+        """The conflict closed names one job; the failure, another."""
+        answered = self._job("rebuild_instance", state="failed")
+        self._close_by_sql(self._conflict(answered))
+        failed, failure = self._failed_with_alert("deploy_instance")
+        self.assertEqual(failure.job_id, failed)
+        self._release()
+        self.assertEqual(failure.state, "active")
+
+    def test_an_open_critical_conflict_still_holds_what_waits(self):
+        _job, failure, _conflict = self._stale_pair()
+        deploy = self._job("deploy_instance", state="failed")
+        addon = self._conflict(deploy, code="addon_conflict", level="critical")
+        self.Job._create_job_failed_alert(deploy, exc_message="addon conflict")
+        self.assertFalse(self._failure_of(deploy))
+        restart = self._enqueue("restart_instance")
+        self._release()
+        self.assertEqual(failure.state, "dismissed")
+        self.assertEqual(restart.state, "queued")
+        self.assertEqual(self.Job._queue_held_by(self.inst.id, None), addon)
+
+    def test_what_passes_the_hold_and_the_heads_are_not_cancelled(self):
+        """A delete waits for the running job alone; a head is a follow-up."""
+        self._stale_pair()
+        running = self._job("restart_instance")
+        delete = self._enqueue("delete_instance")
+        self.assertEqual(delete.state, "queued")
+        head = self._job("backup_list", state="queued", queue_head=True)
+        self._release()
+        self.assertEqual((delete.state, head.state), ("queued", "queued"))
+        self.assertFalse(self.Job._queue_held_by(self.inst.id, None))
+        running.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(head.state, "pending")
+
+    def test_a_moves_rollback_waiting_is_not_cancelled(self):
+        self._stale_pair()
+        self._job("restart_instance")
+        self.inst.write({"move_rollback_in_progress": True})
+        rollback = self._job(
+            "start_instance", state="queued", payload={"move_rollback": True},
+        )
+        restart = self._enqueue("restart_instance")
+        self._release()
+        self.assertEqual(rollback.state, "queued")
+        self.assertEqual(restart.state, "cancelled")
+
+    def _clone_chain(self, prod):
+        """A download on *prod* and a restore on the staging, as one chain."""
+        return self.Job.browse(self.Job.enqueue_chain([
+            {"host_id": self.host.id, "instance_id": prod.id,
+             "job_type_code": "backup_download"},
+            {"host_id": self.host.id, "instance_id": self.inst.id,
+             "job_type_code": "restore_instance",
+             "payload": {"source_job_id": "__chain_job_0__"}},
+        ]))
+
+    def test_a_chain_and_what_it_held_in_its_other_queue_are_cancelled(self):
+        self._stale_pair()
+        prod = self._instance("queue-stale-prod", environment="production")
+        chain = self._clone_chain(prod)
+        behind = self._enqueue("restart_instance", inst=prod)
+        _run_after_commit(self.env)
+        self.assertEqual(set(chain.mapped("state")), {"queued"})
+        self.assertEqual(behind.state, "queued")
+        self._release()
+        self.assertEqual(set(chain.mapped("state")), {"cancelled"})
+        self.assertEqual(behind.state, "cancelled")
+        self.assertIn("whose conflict had been resolved", self._note(behind))
+
+    def test_a_queue_the_chain_was_not_first_in_is_left_alone(self):
+        self._stale_pair()
+        prod = self._instance("queue-stale-prod", environment="production")
+        running = self._job("rebuild_instance", inst=prod)
+        ahead = self._enqueue("restart_instance", inst=prod)
+        chain = self._clone_chain(prod)
+        behind = self._enqueue("backup_list", inst=prod)
+        self._release()
+        self.assertEqual(set(chain.mapped("state")), {"cancelled"})
+        self.assertEqual((ahead.state, behind.state), ("queued", "queued"))
+        running.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(ahead.state, "pending")
+
+    def test_a_deploy_cancelled_puts_its_instance_back_in_draft(self):
+        draft = self._instance("queue-stale-draft", state="draft")
+        self._stale_pair(code="deploy_instance", inst=draft)
+        draft._transition("deploying")
+        deploy = self._enqueue("deploy_instance", inst=draft)
+        self.assertEqual(deploy.state, "queued")
+        self._release()
+        self.assertEqual(deploy.state, "cancelled")
+        self.assertEqual(draft.state, "draft")
+
+    def test_the_migration_runs_on_an_update_only(self):
+        spec = importlib.util.spec_from_file_location(
+            "end_stale_holds_1_0_232",
+            file_path("incubacloud/migrations/1.0.232/end-stale-holds.py"),
+        )
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        _job, failure, _conflict = self._stale_pair()
+        restart = self._enqueue("restart_instance")
+        migration.migrate(self.env.cr, None)
+        self.env.invalidate_all()
+        self.assertEqual((failure.state, restart.state), ("active", "queued"))
+        migration.migrate(self.env.cr, "19.0.1.0.231")
+        self.env.invalidate_all()
+        self.assertEqual(
+            (failure.state, restart.state), ("dismissed", "cancelled"),
+        )
+
+
 class TestOnlyThePlatform(_QueueCase):
     """What only the platform may ask of a queue (``_check_internal_queue_flags``).
 

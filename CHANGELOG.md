@@ -45,7 +45,9 @@ panel already holds, marked as backfilled; each mark in a savepoint of its
 own, and what fails is logged without breaking the update. A third,
 1.0.232's `post-translations`, reloads the module's translations, so the
 Spanish name of the cron of unused managed backends says *almacenamiento
-gestionado de copias* on a running panel too.
+gestionado de copias* on a running panel too. A fourth, 1.0.232's
+`end-stale-holds`, closes the failures a conflict answered before 1.0.220
+left holding an instance's queue, and cancels what waited behind them.
 
 ### Added
 
@@ -199,6 +201,20 @@ gestionado de copias* on a running panel too.
 
 ### Fixed
 
+- **A conflict answered before 1.0.220 no longer holds its instance's
+  queue.** Until 1.0.220 closing a `pip_conflict` or `addon_conflict` left
+  open the `job_failed` of the job that failed on it, and that alert held
+  the instance's queue: what was asked for behind it never started (a
+  rebuild and a listing of backups waited a week on a tenant's panel).
+  1.0.220 closed both from then on; the update closes the failures left
+  so, and cancels what waited behind them with a note to ask for it again
+  (`cloud.job._close_stale_conflict_holds_on`). What passes the hold (a
+  delete, a move's rollback, the retry, a push's rebuild that supersedes
+  it), the heads of the queue and a queue another failure still holds are
+  left alone. What waited behind a chain cancelled so, in a queue where
+  that chain came first, is cancelled too. A failure whose conflict alert
+  was deleted after its 60 days counts when its message is the
+  pre-flight's and no conflict is open on its instance.
 - **Deleting a server whose proxy was never deployed takes the panel's
   access off it.** `/cloud/delete_host` archived such a host at once, with
   no teardown, so a server hardened before a Full Setup that failed kept
@@ -568,6 +584,10 @@ gestionado de copias* on a running panel too.
   the server's creation, a deployed instance, at the instance's, and the
   oldest backup listed. Nothing is written where a layer turns the steps
   off.
+- 1.0.232's `end-stale-holds` closes, `auto`, the `job_failed` alerts left
+  holding an instance's queue after their conflict was closed, and cancels
+  what waited behind them; one savepoint per instance, and what fails is
+  logged without breaking the update.
 
 ## [1.0.231] — unreleased
 
