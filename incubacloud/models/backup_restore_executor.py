@@ -1,5 +1,6 @@
 from odoo import _
 
+from ._admin_password import LABEL_ADMIN_PASSWORD, AdminPasswordMixin
 from .abstract_executor import (
     COMPOSE_OP_EXIT_UNCHECKED,
     AbstractSSHExecutor,
@@ -8,7 +9,7 @@ from .abstract_executor import (
 )
 
 
-class BackupRestoreExecutor(AbstractSSHExecutor):
+class BackupRestoreExecutor(AdminPasswordMixin, AbstractSSHExecutor):
     """Restore a production instance from a duplicity backup.
 
     Follows the documented doodba restore flow:
@@ -18,7 +19,9 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
     4. createdb
     5. psql -f $SRC/$PGDATABASE.sql
     6. click-odoo-update, unless the instance's ``auto_update`` is off
-    7. docker compose up -d
+    7. Odoo's default admin password, if the backup still has it,
+       replaced with a random one (``_admin_password``)
+    8. docker compose up -d
 
     Payload:
         time: duplicity timestamp (e.g. '2026-03-19T02:00:00')
@@ -115,6 +118,9 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
         # alone (``auto_update`` off).
         if inst.auto_update:
             cmds.append(self._update_restored_modules_step(d, inst))
+        # Not fatal: the stack starts on the restored database all the
+        # same, and the instance is checked again once it runs.
+        cmds.append(self._admin_password_step(d, inst, "stopped", loads=True))
         cmds.append((
             "Start instance",
             self.run_script("compose_op.sh", [d, "up"]),
@@ -130,6 +136,7 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
             f"'{label}' exited with status {data.get('exit_status')}"
             for label, data in results.items()
             if data.get('exit_status', 1) != 0
+            and label != LABEL_ADMIN_PASSWORD
         ]
 
     async def on_success(self, results):
@@ -139,6 +146,7 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
         self._inst().write({
             'status': 'ok', **self._inst()._running_confirmed_vals(),
         })
+        self._record_admin_password(results, loaded=True)
         self._call_addon_hook(
             self._inst(), '_after_restore_hook', 'backup_restore',
         )
@@ -179,6 +187,9 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
     async def on_failure(self, results, errors):
         for err in errors:
             self._sys(f"✗ {err}")
+        self._record_admin_password(
+            results, loaded="Drop database" in (results or {}),
+        )
         if self._report_failed_module_update(results):
             self._inst().write({'status': 'error'})
             return

@@ -143,6 +143,22 @@ msgstr ""
 "opciones."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__admin_password_checked_at
+msgid "Admin password checked"
+msgstr "Contraseña del administrador comprobada"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance_admin_password.py:0
+msgid "Admin password replaced"
+msgstr "Contraseña del administrador sustituida"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__admin_password_state
+msgid "Admin user's password"
+msgstr "Contraseña del usuario administrador"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_backup_backend.py:0
 msgid ""
@@ -181,6 +197,28 @@ msgstr "Cambiar"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid "Change the SFTP server"
 msgstr "Cambiar el servidor SFTP"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.check_admin_password
+msgid "Check Admin Password"
+msgstr "Comprobar la contraseña del administrador"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_check_admin_passwords_ir_actions_server
+msgid "Check admin passwords"
+msgstr "Comprobar las contraseñas de administrador"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.check_admin_password
+msgid ""
+"Checks whether a running instance's Odoo admin user still has Odoo's "
+"default password and, only then, gives it a random one that is not kept "
+"anywhere and restarts Odoo. A password somebody set is left as it is."
+msgstr ""
+"Comprueba si el usuario administrador del Odoo de una instancia en marcha "
+"aún tiene la contraseña predeterminada de Odoo y, solo en ese caso, le pone "
+"una aleatoria que no se guarda en ninguna parte y reinicia Odoo. Una "
+"contraseña que alguien haya establecido se deja como está."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -315,6 +353,11 @@ msgstr ""
 "host."
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__admin_password_state__own
+msgid "Its own password"
+msgstr "Contraseña propia"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "Keys"
@@ -325,6 +368,11 @@ msgstr "Claves"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid "New key generated: add it to the server."
 msgstr "Clave nueva generada: añádala al servidor."
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__admin_password_state__absent
+msgid "No admin user"
+msgstr "Sin usuario administrador"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -354,6 +402,11 @@ msgstr "Solo un destino SFTP tiene clave de servidor."
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "Public key for the server's authorized_keys"
 msgstr "Clave pública para el authorized_keys del servidor"
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__admin_password_state__changed
+msgid "Random password set"
+msgstr "Contraseña aleatoria establecida"
 
 #. module: incubacloud
 #. odoo-python
@@ -542,6 +595,17 @@ msgid ""
 msgstr ""
 "El usuario SFTP puede contener letras, dígitos, puntos, guiones y guiones "
 "bajos, hasta 100 caracteres."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance_admin_password.py:0
+msgid ""
+"The admin user still had Odoo's default password; it now has a random one. "
+"Sign in with Connect to set your own."
+msgstr ""
+"El usuario administrador aún tenía la contraseña predeterminada de Odoo; "
+"ahora tiene una aleatoria. Inicie sesión con Conectar para establecer la "
+"suya."
 
 #. module: incubacloud
 #. odoo-python
@@ -19367,6 +19431,19 @@ msgstr ""
 "pierde con ella, y lo vuelve a escribir el intento que encuentra esta marca."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__admin_password_state
+msgid ""
+"What the last check of the instance's Odoo admin user found: Odoo's default "
+"password, which was replaced with a random one; a password of its own, left "
+"as it is; or no admin user. Empty while the instance is still to be checked."
+msgstr ""
+"Lo que encontró la última comprobación del usuario administrador del Odoo "
+"de la instancia: la contraseña predeterminada de Odoo, que se sustituyó por "
+"una aleatoria; una contraseña propia, que se deja como está; o ningún "
+"usuario administrador. Vacío mientras la instancia está pendiente de "
+"comprobar."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__archive_copy_state
 msgid ""
 "What the last verification pass found at the frozen backup path. Written by "
@@ -19585,6 +19662,16 @@ msgid ""
 msgstr ""
 "Cuándo se puede eliminar la copia congelada que dejó el último traslado. Una"
 " tarea horaria la elimina una vez pasado ese momento."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__admin_password_checked_at
+msgid ""
+"When the instance's admin user was last checked for Odoo's default "
+"password. Kept while the instance is to be checked again."
+msgstr ""
+"Cuándo se comprobó por última vez si el usuario administrador de la "
+"instancia tenía la contraseña predeterminada de Odoo. Se conserva mientras "
+"la instancia está pendiente de comprobar de nuevo."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_direct_checked_at

@@ -1725,6 +1725,10 @@ class TestARestore(_PitrCase):
         take_the_tar(transport)
         transport.upload_text_files = AsyncMock()
         transport.run = AsyncMock(return_value=CommandResult(answer or self.LIST, 0))
+        # ``before_execute`` empties the admin password's state durably
+        # (``_persist``): its cursor rides on the test's transaction.
+        if not type(self)._registry_patched:
+            self.registry_enter_test_mode()
         asyncio.run(executor.before_execute(transport))
         return executor
 
@@ -2200,6 +2204,120 @@ class TestARestoreUpdatesItsModules(_PitrCase):
             self.assertTrue(self._alerts(ex.ALERT_MODULES), "no update, no settling")
             self.inst.with_context(ic_modules_updated=True)._after_stack_rendered()
         self.assertFalse(self._alerts(ex.ALERT_MODULES))
+
+
+class TestARestoreChecksTheAdminPassword(_PitrCase):
+    """A database restored to a moment has Odoo's default admin password
+    replaced on the host, before the stack comes up (``admin=`` in the
+    result); the instance keeps what was found, and a change is told."""
+
+    LIST = TestARestore.LIST
+    _planned = TestARestore._planned
+
+    def setUp(self):
+        """An instance archiving, with base copies to restore from."""
+        super().setUp()
+        self.inst.write({
+            "pitr_enabled": True, "pitr_state": "ok", "pitr_cluster_id": "77",
+        })
+
+    def _ended(self, admin):
+        """What the host answers once the restore ended with *admin*."""
+        tail = f" admin={admin}" if admin else ""
+        return {"Wait for the restore": {"stdout": (
+            "IC_PITR_RESTORE job=1 state=done timeline=00000002 "
+            "promoted_at=1792369056 target=2026-10-18T22:31:00+00 "
+            f"filestore=restored modules=skipped cancelled=0{tail}"
+        ), "exit_status": 0}}
+
+    def _restore(self, admin):
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True):
+            asyncio.run(executor.on_success(self._ended(admin)))
+        self.inst.invalidate_recordset()
+
+    def test_the_restore_is_told_the_database(self):
+        start = dict(c[:2] for c in self._planned().get_commands())["Start the restore"]
+        self.assertIn(" prod ", start)
+
+    def test_a_changed_password_is_kept_and_told(self):
+        self._restore("changed")
+        self.assertEqual(self.inst.admin_password_state, "changed")
+        self.assertTrue(self.inst.admin_password_checked_at)
+        self.assertTrue(self._alerts("admin_password_replaced"))
+
+    def test_a_password_of_its_own_is_kept_quietly(self):
+        self._restore("own")
+        self.assertEqual(self.inst.admin_password_state, "own")
+        self.assertFalse(self._alerts("admin_password_replaced"))
+
+    def test_no_answer_leaves_it_to_be_checked(self):
+        for admin in ("failed", "unchecked", None):
+            with self.subTest(admin=admin):
+                self.inst.sudo().write({
+                    "admin_password_state": "own",
+                    "admin_password_checked_at": fields.Datetime.now(),
+                })
+                self._restore(admin)
+                self.assertFalse(self.inst.admin_password_state)
+
+    def test_the_restore_leaves_it_to_be_checked_when_it_starts(self):
+        """Durably: whichever job closes the restore, or none, the
+        instance is checked again unless a closing keeps an answer."""
+        self.inst.sudo().write({
+            "admin_password_state": "own",
+            "admin_password_checked_at": fields.Datetime.now(),
+        })
+        self._planned()
+        self.inst.invalidate_recordset()
+        self.assertFalse(self.inst.admin_password_state)
+        self.assertTrue(self.inst.admin_password_checked_at, "kept: the next since")
+
+    def test_the_watch_that_closes_a_restore_keeps_its_answer(self):
+        """A restore that outlived its jobs: the reading records it."""
+        watch = self._executor(ex.PitrStatusExecutor, "pitr_status")
+        with patch.object(self.Job, "enqueue", autospec=True):
+            asyncio.run(watch.on_success({"r": {"stdout": (
+                "IC_PITR_STATUS restoring=1 restore_job=9 restore_state=done "
+                "restore_timeline=00000002 restore_promoted_at=1792369056 "
+                "restore_target=2026-10-19T00:06:30+00 restore_admin=changed"
+            ), "exit_status": 0}}))
+        self.inst.invalidate_recordset()
+        self.assertEqual(self.inst.admin_password_state, "changed")
+        self.assertTrue(self._alerts("admin_password_replaced"))
+
+    def test_a_restore_the_watch_closed_first_is_told_once(self):
+        """The watch kept the answer and told the change: the restore's
+        own job, reading the same restore after it, writes no second
+        audit row."""
+        executor = self._planned()
+        watch = self._executor(ex.PitrStatusExecutor, "pitr_status")
+        with patch.object(self.Job, "enqueue", autospec=True):
+            asyncio.run(watch.on_success({"r": {"stdout": (
+                "IC_PITR_STATUS restoring=1 restore_job=1 restore_state=done "
+                "restore_timeline=00000002 restore_promoted_at=1792369056 "
+                "restore_target=2026-10-18T22:31:00+00 restore_admin=changed"
+            ), "exit_status": 0}}))
+            asyncio.run(executor.on_success(self._ended("changed")))
+        self.inst.invalidate_recordset()
+        self.assertEqual(self.inst.admin_password_state, "changed")
+        self.assertEqual(len(self.env["cloud.audit.log"].sudo().search([
+            ("action", "=", "Admin password replaced"),
+            ("instance_id", "=", self.inst.id),
+        ])), 1)
+
+    def test_a_restore_failed_after_its_promotion_keeps_its_answer(self):
+        executor = self._planned()
+        failed = {"Wait for the restore": {"stdout": (
+            "IC_PITR_RESTORE job=1 state=failed stopped_at=filestore "
+            "timeline=00000002 promoted_at=1792369056 "
+            "target=2026-10-18T22:31:00+00 filestore=no modules=skipped "
+            "admin=own cancelled=0"
+        ), "exit_status": 1}}
+        with patch.object(self.Job, "enqueue", autospec=True):
+            asyncio.run(executor.on_failure(failed, ["x"]))
+        self.inst.invalidate_recordset()
+        self.assertEqual(self.inst.admin_password_state, "own")
 
 
 class TestCancellingARestore(_PitrCase):

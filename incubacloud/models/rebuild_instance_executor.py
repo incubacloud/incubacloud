@@ -30,6 +30,7 @@ from .deploy_instance_executor import (
     _build_retried_once,
     _then_context_prune,
 )
+from ._admin_password import LABEL_ADMIN_PASSWORD
 from .docker_prune_executor import after_build_prune, build_cache_prune_if_low
 from .restore_instance_executor import LABEL_NEUTRALIZE_AGAIN
 
@@ -499,6 +500,20 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 [(_LABEL_AFTER_BUILD_PRUNE, after_build_prune())]
                 if self._builds_image else []
             ),
+            # 13b. An instance whose admin password is still to be checked
+            #      (one stopped, or not reached by the sweep yet) has it
+            #      checked once the stack is back up, in the running odoo
+            #      container: Odoo's default one replaced, and Odoo
+            #      restarted by the step. The restart above does not always
+            #      recreate the container (``up -d`` leaves one whose
+            #      configuration did not change), so only that restart ends
+            #      the sessions and what Odoo keeps in memory of the uid and
+            #      password RPC calls signed in with. Not fatal; a checked
+            #      instance skips it.
+            *(
+                [self._admin_password_step(d, inst, "running")]
+                if not inst.admin_password_state else []
+            ),
             # 13. Set web.base.url and report.url in ir.config_parameter
             #     (shared with deploy via the same script; base_url arrives
             #     already sql-escaped).
@@ -548,7 +563,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             return [stopped]
         # "List services" exit_status != 0 only means compose isn't configured;
         # don't treat it as a fatal error — the rebuild itself may have worked.
-        ignored = {"List services"}
+        ignored = {"List services", LABEL_ADMIN_PASSWORD}
         return [
             f"'{label}' exited with status {data.get('exit_status')}"
             for label, data in results.items()
@@ -668,6 +683,8 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             write_vals.update(inst._running_confirmed_vals())
         inst.write(write_vals)
         self._report_boot_test(results)
+        if LABEL_ADMIN_PASSWORD in results:
+            self._record_admin_password(results, loaded=False)
         self._sys(
             f"✓ '{inst.name}' rebuilt and restarted"
             f" with updated configuration."
@@ -1020,5 +1037,8 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         inst = self._inst()
         if inst and self._failure_leaves_error(results):
             inst.write({"status": "error"})
+        if inst and LABEL_ADMIN_PASSWORD in (results or {}):
+            # A step after the check failed: what it found stands.
+            self._record_admin_password(results, loaded=False)
         if inst:
             inst._preview_rebuild_failed(self.job)

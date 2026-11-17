@@ -59,6 +59,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         "data/restore_upload_grant_gc_cron.xml",
         "data/archive_verify_cron.xml",
         "data/read_last_login_cron.xml",
+        "data/admin_password_cron.xml",
         "data/secret_key_escrow_cron.xml",
         "data/readable_secrets_cron.xml",
         "data/staging_autopurge_cron.xml",
