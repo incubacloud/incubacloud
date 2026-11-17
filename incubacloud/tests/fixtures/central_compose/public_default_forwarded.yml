@@ -39,8 +39,8 @@ services:
     # as the hand-written gateway of a central next to its panel
     # (docs/observability-operations.md, «Publishing the central»): the
     # account prefixes for everyone (vmauth asks each for its
-    # credential), the operator's read and deletion routes for
-    # the addresses in ``ic_operator_sources`` only.
+    # credential), the operator's deletion route for the
+    # addresses in ``ic_operator_sources`` only.
     networks:
       - default
       - inverseproxy_shared
@@ -60,17 +60,8 @@ services:
       traefik.http.routers.ic-central-delete.middlewares: ic-central-delete-sources
       traefik.http.middlewares.ic-central-delete-sources.ipwhitelist.sourcerange: "127.0.0.1/32"
       traefik.http.middlewares.ic-central-delete-sources.ipwhitelist.ipstrategy.depth: "1"
-      # The cross-account read, behind the same list as the
-      # deletion: vmauth serves only the accounts' read
-      # endpoints and health there. Empty list: this host only.
-      traefik.http.routers.ic-central-read.rule: "Host(`metrics-central.example.test`) && PathPrefix(`/admin-r/`)"
-      traefik.http.routers.ic-central-read.entrypoints: https
-      traefik.http.routers.ic-central-read.service: ic-central-gateway
-      traefik.http.routers.ic-central-read.priority: "30"
-      traefik.http.routers.ic-central-read.middlewares: ic-central-delete-sources
       traefik.http.routers.ic-central-data.tls: "true"
       traefik.http.routers.ic-central-delete.tls: "true"
-      traefik.http.routers.ic-central-read.tls: "true"
     depends_on:
       - victoriametrics
       - loki

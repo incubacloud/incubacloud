@@ -484,6 +484,23 @@ gestionado de copias* on a running panel too.
   operator credential stays what deletes series; nothing in the panel
   reads with it.
 
+- **The central has no cross-account read any more.** Its gateway served
+  the operator's `/admin-r/` (the accounts' `query` and `query_range` and
+  `/health`) to the panel's address under the public name and the single
+  name. Nothing read it since the Fleet view above, and the route is
+  gone: vmauth's operator user keeps the series deletion alone,
+  `/admin-d/api/v1/admin/tsdb/delete_series`, and is left out of the list
+  while the central has no deletion key; the proxy's `ic-central-read`
+  router is gone and the single name's operator router serves `/admin-d/`
+  only. A request to `/admin-r/` meets no route. The deployment and the
+  account sync prove the gateway with the panel's own account instead,
+  `/r/api/v1/query?query=vector(1)`, rather than the operator's
+  `/admin-r/health`. The central's revision is now 4, so the
+  reconciliation cron deploys every central again after the update. The
+  setting *Who may delete series and read the fleet on the central* is
+  now *Who may delete series on the central*, and its help, like the
+  operator credential's, says only that.
+
 - **Deleting a server takes the panel's access off it.** The teardown
   stopped the agents and the proxy but left the panel's key in the
   server's `authorized_keys`, the operator account hardening creates and
@@ -632,6 +649,9 @@ gestionado de copias* on a running panel too.
   and bringing it back.
 - *Connect a server* says that the automatic placement chooses a
   `Compatible` server only with 14 GB free.
+- RB-11 and RB-36 check the central through `/r/` with the panel's own
+  account, which the operator's `/admin-r/` no longer serves, and RB-11
+  names the read user's cap of 8 requests in flight.
 
 ### Migration
 

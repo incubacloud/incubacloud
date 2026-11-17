@@ -33,7 +33,8 @@
    operator (12-nov-2026: revision 1, the central without Grafana;
    14-nov-2026: revision 2, Loki's series per query and its restart when
    its configuration changes; 15-nov-2026: revision 3, Loki splitting a
-   query by day). A change of Loki's configuration restarts Loki alone:
+   query by day; 17-nov-2026: revision 4, the operator's `/admin-r/`
+   closed in vmauth and in the proxy's routers). A change of Loki's configuration restarts Loki alone:
    about 20 s in which a log read says the central does not answer and
    the agents keep their lines and send them again (Loki 2.9.8, its
    write-ahead log on the volume).
@@ -62,7 +63,7 @@ the platform.
 ┌──────────────────────────────┐   ┌──────────────────────────────────┐
 │ node_exporter  (system)      │   │  vmauth  ← the account boundary  │
 │ cAdvisor       (containers)  │   │    /w/  /r/  /lw/  /lr/           │
-│ Traefik        (HTTP, :8082) │   │  /admin-r/ /admin-d/             │
+│ Traefik        (HTTP, :8082) │   │  /admin-d/  (operator: delete)   │
 │ vmagent   ── push ───────────┼──▶│         │                        │
 │ Fluent Bit ── push ──────────┼──▶│         ├→ VictoriaMetrics       │
 │  (security logs, if on)      │   │         └→ Loki (security logs)  │
@@ -130,15 +131,20 @@ its own, scoped to itself, which the panel reads with, and an *agents'
 user*, `<account>-agent`, which only writes (`/w/` and `/lw/`), forced to
 the same account's label and Loki `X-Scope-OrgID`: the agents write with it, so
 root on one server can no longer read the logs and metrics of the
-account's other servers. The *operator* credential reads across every
-account (`/admin-r/`), deletes series (`/admin-d/`) and is never written
-to any host. `/admin-r/` serves the same read endpoints as an account's
-`/r/`, `query` and `query_range`, plus `/health` (`_OPERATOR_READ_PATHS`);
-anything else, imports, exports, snapshots or flags, answers 400. It was
-`/admin-r/.*`, the whole backend, until 12-nov-2026, when it was closed so
-the route could be opened to the panel's address under the public name.
-`/r/` and `/lr/` served Grafana's endpoints too (series, labels, label
-values, metadata, the log index) until 1.0.230.
+account's other servers. The *operator* credential only deletes series
+(`/admin-d/`, exactly `delete_series`) and is never written to any host;
+vmauth carries it only while the central has a deletion key, since a user
+without a route is a configuration vmauth refuses. No credential reads
+across accounts: the operator's read route, `/admin-r/`, closed on
+17-nov-2026, in vmauth and in the proxy's routers alike, and a request
+there now meets no route (the host's catch-all, or vmauth's 400 on the
+bridge). It served the accounts' `query` and `query_range` and `/health`
+from 12-nov-2026, and the whole backend (`/admin-r/.*`) before. The
+deployment and the account sync prove the gateway with the panel's own
+account instead: `/r/api/v1/query?query=vector(1)` must answer 200
+(`tasks/vmauth_acl_apply.yml`). `/r/` and `/lr/` served Grafana's
+endpoints too (series, labels, label values, metadata, the log index)
+until 1.0.230.
 
 **The agents' user is handed out by state, never by version** (1.0.230,
 plan #84 A2):
@@ -236,8 +242,9 @@ that still writes is shared by agents' writes, logs and its panel: a cap
 there answered a write 429 while two reads ran (measured on v1.102.0 with
 a cap of 2), and after an outage every host empties its queue at once. So
 it has none, nor has the agents' user. The
-operator never writes; 16 covered four fleet boards at four queries each
-while the fleet's board read with it (until 17-nov-2026; measured: 16
+operator never writes and, since 17-nov-2026, only deletes series; 16
+covered four fleet boards at four queries each while the fleet's board
+read with it (measured: 16
 reads in flight pass, the 17th to 20th get 429, an account's 30 reads and
 its write meanwhile all pass). VictoriaMetrics queues the reads
 themselves: `-search.maxConcurrentRequests`, twice the cores (8 on a
@@ -830,10 +837,9 @@ below is only for a central next to the panel.
 3. Point the direct name's A record at it too (DNS-only, no AAAA). If the DNS
    token is restricted to client addresses, add the new host's.
 4. In Settings → Monitoring → *Advanced…*, fill in **Central's public
-   name** with that name and **Who may delete series and read the fleet
-   on the central** with the panel's public address (`/32`): it opens the series deletion
-   and the cross-account read (`/admin-r/`) to that address, under the
-   name.
+   name** with that name and **Who may delete series on the central**
+   with the panel's public address (`/32`): it opens the series deletion
+   to that address, under the name.
 5. Pick the new host under *Where the central runs* and press *Start an
    empty central* (*Enable observability* is refused there while the
    central runs on the old host). When the job answers, the panel's query
@@ -850,13 +856,15 @@ the switch. The old host can be deleted once the new central runs.
 
 What the deployment publishes under the name is what the hand-written
 gateway publishes (next section), with one difference: the operator's
-`/admin-r/` and `/admin-d/` have routers of their own (`ic-central-read`,
-`ic-central-delete`, priority 30) that admit the addresses in **Who may
-delete series on the central** plus the host itself, the forwarded
-address when the name is behind a CDN (`ipstrategy.depth: 1`). With the
-setting empty, both answer the host only, as before 12-nov-2026. No
-operator route is published on the direct entrypoint. Removing a router
-label recreates vmauth, a few seconds the agents' queues cover.
+`/admin-d/` has a router of its own (`ic-central-delete`, priority 30)
+that admits the addresses in **Who may delete series on the central**
+plus the host itself, the forwarded address when the name is behind a
+CDN (`ipstrategy.depth: 1`). With the setting empty, it answers the host
+only. The operator's read had a router there too, `ic-central-read` on
+`/admin-r/`, until 17-nov-2026; the deployment of central revision 4
+removes it. No operator route is published on the direct entrypoint.
+Removing a router label recreates vmauth, a few seconds the agents'
+queues cover.
 
 ## Undo
 
@@ -1089,9 +1097,11 @@ one-time edit to Traefik's dynamic config on the central's host — a
 **separate file**, so a bad edit is rejected without taking the rest of
 the proxy down. Its shape:
 
-- `Host(metrics.<domain>)` and `/admin-r/` or `/admin-d/` → **denied**
-  from the public (an `ipWhitelist`). Every operator route vmauth serves
-  must be on this list; a test pins it to what the code renders. Their
+- `Host(metrics.<domain>)` and `/admin-d/` → **denied** from the public
+  (an `ipWhitelist`). Every operator route vmauth serves must be on this
+  list; a test pins it to what the code renders. vmauth serves no
+  `/admin-r/` since 17-nov-2026, so a file that still denies it denies
+  nothing more. Their
   only real caller, the panel, reaches vmauth over the bridge, never
   through Traefik.
 - `Host(metrics.<domain>)` and `/w/ /r/ /lw/ /lr/` → vmauth's bridge
@@ -1240,7 +1250,7 @@ published beside the single name on the same port, so both work during a transit
 **Who can write to the central.** *Only this panel's servers, by their address* (the
 default): the platform port of the central's server admits the panel's hosts, the
 private ranges (what is born on that server) and, with the single path on, the
-addresses in **Who may delete series and read the fleet on the central** (the panel
+addresses in **Who may delete series on the central** (the panel
 itself, when it runs elsewhere). *Any address, with each account's credential*: that
 one port admits every address, and vmauth's credential is the only barrier; for
 servers behind NAT or with an address that changes. The other servers' ports keep the
@@ -1263,11 +1273,11 @@ silence alone raises nothing while the panel cannot reach that server either
 (`host_unreachable` open: switched off, or its network down), or while its own last
 check got 401 leaving with the address the panel has for it.
 
-**The operator's routes** (`/admin-r/`, `/admin-d/`) answer under the name on the
-platform port to the server itself, the private ranges (a panel beside the central
-reaches the port through Docker's DNAT, with a container's address) and the addresses
-in **Who may delete series and read the fleet on the central**; the operator's
-credential and the deletion key still guard them.
+**The operator's route** (`/admin-d/`, series deletion; `/admin-r/` until
+17-nov-2026) answers under the name on the platform port to the server itself, the
+private ranges (a panel beside the central reaches the port through Docker's DNAT,
+with a container's address) and the addresses in **Who may delete series on the
+central**; the operator's credential and the deletion key still guard it.
 
 To move a central with its history to another server by hand, see
 [RB-36](runbooks/RB-36-move-the-central-by-hand.md).

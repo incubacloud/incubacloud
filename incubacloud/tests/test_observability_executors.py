@@ -9,6 +9,7 @@ Built the same way as the hardening executor's tests — instantiated
 without ``__init__`` so no SSH transport or job record is needed.
 """
 import asyncio
+import pathlib
 import re
 from unittest.mock import MagicMock, patch
 
@@ -35,7 +36,6 @@ from odoo.addons.incubacloud.models.observability_central_executor import (
     _DELETE_KEY_IN_FILE_PARAM,
     _OPERATOR_DELETE_PATH,
     _OPERATOR_MAX_CONCURRENT,
-    _OPERATOR_READ_PATHS,
     ObservabilityCentralExecutor,
 )
 from odoo.addons.incubacloud.tests._direct import central_names_as_new
@@ -268,24 +268,43 @@ class TestCentralExecutor(ObservabilityExecutorCase):
         self.assertIn("extra_label=ic_account=acct_test01", write["url_prefix"])
 
     def test_the_operator_credential_is_separate_and_generated(self):
-        """It reads across accounts, so it must never be an account's own.
+        """It deletes any account's series, so it must never be an account's own.
 
         Reusing the account credential here would hand every host a key
-        to the unfiltered view — the exact opposite of what the split
+        to every account's series — the exact opposite of what the split
         exists for.
         """
         extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
         cfg = yaml.safe_load(extra["ic_vmauth_config"])
         operator = self._user(cfg, "operator")
         self.assertIsNotNone(operator)
-        self.assertTrue(extra["ic_operator_plain"])
-        self.assertNotEqual(extra["ic_operator_plain"], "shared-secret")
-        self.assertEqual(operator["password"], extra["ic_operator_plain"])
-        # The operator owns the cross-account doors and nothing else.
-        paths = {sp for entry in operator["url_map"] for sp in entry["src_paths"]}
-        self.assertEqual(
-            paths, {_OPERATOR_READ_PATHS, _OPERATOR_DELETE_PATH},
+        self.assertTrue(operator["password"])
+        self.assertNotEqual(operator["password"], "shared-secret")
+        self.assertNotEqual(
+            operator["password"], self._user(cfg, "acct_test01")["password"],
         )
+        # The operator owns the deletion and nothing else (17-nov-2026).
+        paths = {sp for entry in operator["url_map"] for sp in entry["src_paths"]}
+        self.assertEqual(paths, {_OPERATOR_DELETE_PATH})
+
+    def test_the_probe_reads_as_the_panels_own_account(self):
+        """The deployment and the sync prove the gateway with ``/r/``.
+
+        Not with the operator, which has no read since 17-nov-2026: the
+        credential handed to the playbook is one the list grants a read.
+        """
+        for cls in (ObservabilityCentralExecutor, MetricsAclSyncExecutor):
+            with self.subTest(job=cls._job_type):
+                extra = self._make(cls).get_extra_vars()
+                cfg = yaml.safe_load(extra["ic_vmauth_config"])
+                self.assertNotIn("ic_operator_plain", extra)
+                self.assertEqual(extra["ic_probe_user"], "acct_test01")
+                account = self._user(cfg, "acct_test01")
+                self.assertEqual(extra["ic_probe_plain"], account["password"])
+                self.assertIn(
+                    _ACCOUNT_READ_PATHS,
+                    [sp for e in account["url_map"] for sp in e["src_paths"]],
+                )
 
     def test_only_the_operator_has_a_cap_on_requests_in_flight(self):
         """vmauth counts per user and answers 429 at once (Fable A1, 12-nov-2026).
@@ -489,71 +508,81 @@ class TestAccountRoutesNameTheirEndpoints(ObservabilityExecutorCase):
             self.assertNotIn(".*", pattern, pattern)
 
 
-class TestTheOperatorReadNamesItsEndpoints(ObservabilityExecutorCase):
-    """The operator's ``/admin-r/`` serves the accounts' reads and health.
+class TestTheOperatorReadsNothing(ObservabilityExecutorCase):
+    """The operator's cross-account read, ``/admin-r/``, is closed (17-nov-2026).
 
-    It was ``/admin-r/.*``: the whole backend. Closed before the route
-    can be opened under the public name (Fable M2/M3, 12-nov-2026);
-    measured against vmauth v1.102.0, an unlisted path answers 400.
+    A panel reads only its own account, through ``/r/``. The operator's
+    one route is series deletion, and the probe of the deployment and the
+    sync reads as the panel's own account instead.
     """
 
-    _ALLOWED = (
+    #: What the operator's ``/admin-r/`` served until 17-nov-2026, and
+    #: what it never did.
+    _GONE = (
         "/admin-r/health",
         "/admin-r/api/v1/query",
         "/admin-r/api/v1/query_range",
-    )
-
-    _REFUSED = (
         "/admin-r/api/v1/import/prometheus",
-        "/admin-r/api/v1/import",
-        "/admin-r/api/v1/write",
         "/admin-r/api/v1/export",
         "/admin-r/api/v1/admin/tsdb/delete_series",
-        "/admin-r/api/v1/status/tsdb",
-        "/admin-r/snapshot/create",
-        "/admin-r/internal/force_merge",
-        "/admin-r/flags",
-        "/admin-r/metrics",
-        "/admin-r/healthz",
-        "/admin-r/health/../flags",
-        "/admin-r/api/v1/label/a/b/values",
         "/admin-r/api/v1/series",
-        "/admin-r/api/v1/labels",
-        "/admin-r/api/v1/metadata",
+        "/admin-r/flags",
     )
 
-    def _read_patterns(self, executor_cls=ObservabilityCentralExecutor):
-        """Return the operator's ``src_paths`` that reach VictoriaMetrics."""
+    _APPLY_TASKS = (
+        pathlib.Path(__file__).resolve().parent.parent
+        / "ansible" / "playbooks" / "tasks" / "vmauth_acl_apply.yml"
+    )
+
+    def _config(self, executor_cls):
+        """Return the parsed vmauth config *executor_cls* would ship."""
         self.settings._ensure_operator_credential()
+        self.settings.metrics_delete_auth_key = "k" * 43
+        # Recorded as handed in a file, so the deployment keeps it.
+        self.env["ir.config_parameter"].sudo().set_param(
+            _DELETE_KEY_IN_FILE_PARAM, "1",
+        )
         extra = self._make(executor_cls).get_extra_vars()
-        operator = self._user(yaml.safe_load(extra["ic_vmauth_config"]), "operator")
-        return [
-            sp for entry in operator["url_map"] for sp in entry["src_paths"]
-            if entry["url_prefix"] == "http://victoriametrics:8428/"
-        ]
+        return yaml.safe_load(extra["ic_vmauth_config"])
 
-    def test_the_reads_in_use_and_health_are_reachable(self):
-        """The fleet board, RB-11, RB-16 and the deployment's probe."""
+    def test_no_user_reaches_admin_r(self):
         for cls in (ObservabilityCentralExecutor, MetricsAclSyncExecutor):
-            patterns = self._read_patterns(cls)
-            for path in self._ALLOWED:
-                with self.subTest(job=cls._job_type, path=path):
-                    self.assertTrue(
-                        any(re.fullmatch(p, path) for p in patterns),
-                    )
-
-    def test_writes_snapshots_and_flags_are_not(self):
-        for cls in (ObservabilityCentralExecutor, MetricsAclSyncExecutor):
-            patterns = self._read_patterns(cls)
-            for path in self._REFUSED:
+            cfg = self._config(cls)
+            patterns = [
+                sp for user in cfg["users"]
+                for entry in user["url_map"] for sp in entry["src_paths"]
+            ]
+            for path in self._GONE:
                 with self.subTest(job=cls._job_type, path=path):
                     self.assertFalse(
                         any(re.fullmatch(p, path) for p in patterns),
                     )
 
-    def test_no_operator_read_is_a_catch_all(self):
-        for pattern in self._read_patterns():
-            self.assertNotIn(".*", pattern, pattern)
+    def test_the_operator_keeps_series_deletion_alone(self):
+        for cls in (ObservabilityCentralExecutor, MetricsAclSyncExecutor):
+            with self.subTest(job=cls._job_type):
+                operator = self._user(self._config(cls), "operator")
+                self.assertEqual(
+                    [sp for e in operator["url_map"] for sp in e["src_paths"]],
+                    [_OPERATOR_DELETE_PATH],
+                )
+                self.assertTrue(
+                    self._route(operator, _OPERATOR_DELETE_PATH)["url_prefix"]
+                    .endswith("?authKey=" + "k" * 43),
+                )
+
+    def test_the_probe_reads_through_the_accounts_route(self):
+        """The task's path is one the account's read route serves."""
+        tasks = yaml.safe_load(self._APPLY_TASKS.read_text())
+        probe = next(t for t in tasks if t["name"] == "Wait for vmauth to answer")
+        uri = probe["ansible.builtin.uri"]
+        path = uri["url"].split("}}", 1)[1].split("?", 1)[0]
+        self.assertEqual(path, "/r/api/v1/query")
+        self.assertTrue(re.fullmatch(_ACCOUNT_READ_PATHS, path))
+        self.assertNotIn("admin-r", yaml.safe_dump(probe))
+        self.assertEqual(uri["url_username"], "{{ ic_probe_user }}")
+        self.assertEqual(uri["url_password"], "{{ ic_probe_plain }}")
+        self.assertTrue(probe["no_log"])
 
 
 class TestSeriesDeletionKey(ObservabilityExecutorCase):
@@ -663,18 +692,17 @@ class TestSeriesDeletionKey(ObservabilityExecutorCase):
 
         A route carrying a key VictoriaMetrics was never given answers
         401, so a sync on a central deployed before deletions existed
-        leaves the route out rather than inventing one.
+        leaves the route out rather than inventing one. Deletion being the
+        operator's only route, the operator is left out with it: vmauth
+        refuses a user without a route.
         """
         self.settings.metrics_delete_auth_key = False
         self.settings._ensure_operator_credential()
         _extra, cfg = self._config(MetricsAclSyncExecutor)
-        paths = {
-            sp
-            for entry in self._user(cfg, "operator")["url_map"]
-            for sp in entry["src_paths"]
-        }
-        self.assertNotIn(_OPERATOR_DELETE_PATH, paths)
+        self.assertIsNone(self._user(cfg, "operator"))
         self.assertFalse(self.settings.metrics_delete_auth_key)
+        for user in cfg["users"]:
+            self.assertTrue(user["url_map"], user["username"])
 
 
 class TestTheListInForceIsAnnounced(ObservabilityExecutorCase):
@@ -826,9 +854,10 @@ class TestTheCentralsSecretsOutliveTheJob(JobEndAssertions, ObservabilityExecuto
 
     def _assert_saved(self, extra):
         """Every credential the playbook received is the one in the database."""
+        cfg = yaml.safe_load(extra["ic_vmauth_config"])
         users = {
             u["username"]: u["password"]
-            for u in yaml.safe_load(extra["ic_vmauth_config"])["users"]
+            for u in cfg["users"]
             if u["username"] != "operator"
         }
         accounts = [user for user in users if not user.endswith("-agent")]
@@ -845,10 +874,16 @@ class TestTheCentralsSecretsOutliveTheJob(JobEndAssertions, ObservabilityExecuto
             self.assertEqual(
                 self.stored(self.settings, "metrics_agent_token"), agent,
             )
-        self.assertEqual(
-            self.stored(self.settings, "metrics_operator_token"),
-            extra["ic_operator_plain"],
-        )
+        # The probe's, which is the account's own.
+        self.assertEqual(extra["ic_probe_plain"], users[account])
+        # The operator's, shipped with the deletion key only.
+        self.assertTrue(self.stored(self.settings, "metrics_operator_token"))
+        operator = self._user(cfg, "operator")
+        if operator:
+            self.assertEqual(
+                self.stored(self.settings, "metrics_operator_token"),
+                operator["password"],
+            )
 
     def test_the_deployment_saves_everything_it_ships(self):
         """

@@ -1959,16 +1959,13 @@ msgstr "Módulos"
 msgid ""
 "Address ranges, one per line (e.g. 198.51.100.7/32), allowed to reach the "
 "central's series-deletion route under its public name: the panel's own "
-"public address. They may also read every account's series there, through the"
-" operator's read-only route. Empty: only the central's host itself, which is"
-" right while the panel runs there."
+"public address. Empty: only the central's host itself, which is right while"
+" the panel runs there."
 msgstr ""
 "Rangos de direcciones, uno por línea (p. ej. 198.51.100.7/32), a los que se "
 "permite llegar a la ruta de borrado de series de la central bajo su nombre "
-"público: la dirección pública del propio panel. También pueden leer allí las"
-" series de todas las cuentas, por la ruta de lectura del operador. Vacío: "
-"solo el propio host de la central, que es lo correcto mientras el panel "
-"corre allí."
+"público: la dirección pública del propio panel. Vacío: solo el propio host "
+"de la central, que es lo correcto mientras el panel corre allí."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__security_geoip
@@ -13047,8 +13044,8 @@ msgstr "Operativo"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_operator_token
-msgid "Operator read credential"
-msgstr "Credencial de lectura del operador"
+msgid "Operator credential"
+msgstr "Credencial del operador"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__alert_email
@@ -15560,15 +15557,13 @@ msgstr "Buscar…"
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_operator_token
 msgid ""
-"Second credential, for the UNFILTERED read of every account's series (the "
-"fleet's board) and for deleting series. Only meaningful on the panel that "
+"Second credential, for deleting series. Only meaningful on the panel that "
 "owns the central, and deliberately never written to any host — that is the "
 "whole point of keeping it apart from the account credential above."
 msgstr ""
-"Segunda credencial, para la lectura SIN FILTRAR de las series de todas las "
-"cuentas (el tablero de la flota) y para borrar series. Solo tiene sentido en"
-" el panel dueño de la central, y a propósito nunca se escribe en ningún "
-"host: para eso se mantiene separada de la credencial de la cuenta de arriba."
+"Segunda credencial, para borrar series. Solo tiene sentido en el panel dueño"
+" de la central, y a propósito nunca se escribe en ningún host: para eso se "
+"mantiene separada de la credencial de la cuenta de arriba."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__log_search_timeout_s
@@ -24905,8 +24900,8 @@ msgstr "La instalación de los agentes de métricas en este host falló."
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_operator_sources
-msgid "Who may delete series and read the fleet on the central"
-msgstr "Quién puede borrar series y leer la flota en la central"
+msgid "Who may delete series on the central"
+msgstr "Quién puede borrar series en la central"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__security_geoip
@@ -24917,11 +24912,11 @@ msgstr "Mostrar el país de las direcciones"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 msgid ""
-"One range per line: the panel's public address, which deletes series and "
-"reads every account's. Used only with a public name."
+"One range per line: the panel's public address, which deletes series. Used "
+"only with a public name."
 msgstr ""
-"Un rango por línea: la dirección pública del panel, que borra series y lee "
-"las de todas las cuentas. Solo se usa con un nombre público."
+"Un rango por línea: la dirección pública del panel, que borra series. Solo "
+"se usa con un nombre público."
 
 #. module: incubacloud
 #. odoo-javascript

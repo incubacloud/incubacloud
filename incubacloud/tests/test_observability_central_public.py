@@ -25,6 +25,7 @@ from odoo.addons.incubacloud.models.metrics_acl_sync_executor import (
     MetricsAclSyncExecutor,
 )
 from odoo.addons.incubacloud.models.observability_central_executor import (
+    CENTRAL_REVISION,
     ObservabilityCentralExecutor,
 )
 from odoo.addons.incubacloud.tests.test_observability_executors import (
@@ -149,53 +150,46 @@ class TestTheComposeFile(BaseCase):
             labels[f"{prefix}.sourcerange"], "127.0.0.1/32,198.51.100.7/32",
         )
 
-    def test_the_cross_account_read_answers_the_named_sources_only(self):
-        """Its own router, behind the deletion's list (Fable M2, 12-nov-2026).
+    def test_no_router_reaches_the_operators_read(self):
+        """``/admin-r/`` is closed on the central (17-nov-2026).
 
-        vmauth serves only the accounts' read endpoints and health there,
-        so opening it to the panel's address opens nothing else.
+        Neither under the public name, the single name nor the direct
+        one: a panel reads its own account through ``/r/``. The deletion
+        route stays, behind its list.
         """
-        labels = _published()["services"]["vmauth"]["labels"]
-        router = "traefik.http.routers.ic-central-read"
-        self.assertEqual(
-            labels[f"{router}.rule"], f"Host(`{PUBLIC}`) && PathPrefix(`/admin-r/`)",
-        )
-        self.assertEqual(labels[f"{router}.middlewares"], "ic-central-delete-sources")
-        self.assertEqual(labels[f"{router}.entrypoints"], "https")
-        self.assertEqual(labels[f"{router}.service"], "ic-central-gateway")
-        self.assertGreater(
-            int(labels[f"{router}.priority"]),
-            int(labels["traefik.http.routers.ic-central-data.priority"]),
-        )
+        variants = {
+            "public acme": _compose(
+                ic_public_host=PUBLIC, ic_public_tls="acme",
+                ic_operator_sources=["127.0.0.1/32"],
+            ),
+            "public behind a CDN": _compose(
+                ic_public_host=PUBLIC, ic_public_tls="default",
+                ic_public_forwarded=True, ic_operator_sources=["127.0.0.1/32"],
+            ),
+            "single name": _compose(
+                ic_single_host=PUBLIC, ic_central_port=9443,
+                ic_single_operator_sources=["127.0.0.1/32"],
+            ),
+            "direct name": _compose(ic_direct_host=DIRECT),
+        }
+        for name, rendered in variants.items():
+            with self.subTest(variant=name):
+                self.assertNotIn("/admin-r/", rendered)
+                self.assertNotIn("ic-central-read", rendered)
+                labels = yaml.safe_load(rendered)["services"]["vmauth"]["labels"]
+                rules = [
+                    value for key, value in labels.items() if key.endswith(".rule")
+                ]
+                self.assertTrue(rules)
+                if name != "direct name":
+                    self.assertTrue(
+                        [rule for rule in rules if "PathPrefix(`/admin-d/`)" in rule],
+                        rules,
+                    )
 
-    def test_behind_a_cdn_the_read_checks_the_forwarded_address(self):
-        labels = _published(tls="default", forwarded=True)["services"]["vmauth"][
-            "labels"
-        ]
-        self.assertEqual(
-            labels["traefik.http.routers.ic-central-read.middlewares"],
-            "ic-central-delete-sources",
-        )
-        self.assertEqual(
-            labels[
-                "traefik.http.middlewares.ic-central-delete-sources"
-                ".ipwhitelist.ipstrategy.depth"
-            ],
-            "1",
-        )
-
-    def test_with_no_source_named_the_read_answers_the_host_only(self):
-        """The setting empty: the read reaches no one new, as before."""
-        labels = _published(sources=("127.0.0.1/32",))["services"]["vmauth"][
-            "labels"
-        ]
-        self.assertEqual(
-            labels[
-                "traefik.http.middlewares.ic-central-delete-sources"
-                ".ipwhitelist.sourcerange"
-            ],
-            "127.0.0.1/32",
-        )
+    def test_the_central_is_deployed_again(self):
+        """The revision moves, so the cron deploys every central again."""
+        self.assertGreaterEqual(CENTRAL_REVISION, 4)
 
     def test_grafana_is_neither_run_nor_published(self):
         """Its service, its route under the public name and ``/gadmin/``

@@ -9,8 +9,9 @@ query, or one that succeeded on its automatic retry, raises nothing).
 While this lasts, **metric-based alerts are not being evaluated**.
 
 A **429** never raises it (since 12-nov-2026): vmauth answers 429 to a
-user over its cap of requests in flight, and only the operator has one
-(16). The central is then busy, not down; the cron skips that run without
+user over its cap of requests in flight, which only the users that never
+write have: an account's read user once its credential is rotated (8) and
+the operator (16). The central is then busy, not down; the cron skips that run without
 resolving anything, and a board says *The metrics central is busy*. See
 "Costs and sizing" in `docs/observability-operations.md`.
 
@@ -32,25 +33,27 @@ the panel's requests before touching the stack.
 
 ```bash
 # From the central host. vmauth is the published data port; VM and Loki
-# have none, so this is the path to test.
-curl -sS -u operator:<operator credential> \
-  http://172.17.0.1:8428/admin-r/health
+# have none, so this is the path to test. 200 with "status":"success".
+curl -sS -u <account>:<account credential> \
+  'http://172.17.0.1:8428/r/api/v1/query?query=vector(1)'
 
 # Is the stack even running?
 docker compose -p incubacloud-central ps
 ```
 
-The operator credential is in **Settings → Monitoring → Advanced** on the
-panel that owns the central. It is not the account credential the hosts
-carry, and it is deliberately not on any host.
+The credential is the panel's own metrics account, the one its charts read
+with: in the panel's Odoo shell,
+`env["cloud.settings"]._get_system()._metrics_auth()` returns
+`(account, password)`. The deployment and the account sync probe the same
+query with it.
 
-`/admin-r/` serves `/health` and the read endpoints of `/r/`, `query` and
-`query_range` (since 1.0.230: `series`, `labels`, label values, `metadata`,
-`rules` and `status/buildinfo` went with Grafana); anything else there
-answers **400** ("missing route"), which is the list working, not the
-central failing.
+`/r/` serves `query` and `query_range` and nothing else; any other path
+there answers **400** ("missing route"), which is the list working, not
+the central failing. The operator credential no longer reads: its
+`/admin-r/` route closed on 17-nov-2026, and `/admin-d/` only deletes
+series.
 
-- `health` answers and containers are up → the panel cannot *reach* it:
+- The query answers and containers are up → the panel cannot *reach* it:
   jump to step 3.
 - Containers are down or restarting → step 2.
 
@@ -90,8 +93,8 @@ entrypoint is not: hosts are back on the public path; follow
   host's; and a URL pointing straight at VictoriaMetrics, which no longer
   has a published port — every path goes through vmauth.
 - A **429** is not this alert: the central answered, busy. If boards say
-  *busy* for long, see who holds the operator's 16 requests in flight
-  (fleet boards open at once).
+  *busy* for long, see who holds the account's 8 requests in flight
+  (boards open at once).
 - A **401** means the panel's account credential and the central's user
   list disagree. Re-deploy the central: the list is rebuilt from the
   panel's own state, so that reconciles them.
@@ -101,7 +104,8 @@ entrypoint is not: hosts are back on the public path; follow
   honoured.
 - From the panel container, not the host:
   ```bash
-  docker compose exec odoo curl -sS <metrics backend URL>/health
+  docker compose exec odoo curl -sS -u <account>:<account credential> \
+    '<metrics backend URL>/api/v1/query?query=vector(1)'
   ```
   A loopback URL that works on the host but not in the container means
   the URL needs to be reachable from the container's network namespace.
