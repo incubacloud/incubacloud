@@ -82,6 +82,16 @@ waited behind them.
   or an answer of another kind (401, unreachable, a server error), shows
   the error as before.
 
+- **A backup destination's retention owner says who deletes old backups.**
+  Under Advanced, the field reads *Who deletes old backups*, with the note
+  *Backups older than the retention period are deleted by this.* and the
+  options *The backup service (Duplicity)*, *A lifecycle rule on the
+  bucket* and *Nobody: keep everything*, in the form and in the model's
+  selection alike, and in the alert of an unconfirmed retention and the
+  refusal of a lifecycle rule on an SFTP server. The values (`cron`, `lifecycle`,
+  `none`) and the behaviour are the same. The Spanish says *Quién borra las
+  copias antiguas*.
+
 ### Fixed
 
 - **Every line of Monitoring's Load per core names its server.** The
@@ -207,6 +217,10 @@ waited behind them.
 - *Projects* says that the GitHub App can be created under an organization,
   by its owners and App managers, and that one created under your account
   can still be installed on an organization.
+
+- *Backups* names the retention options as the panel does: *Who deletes old
+  backups*, with *The backup service (Duplicity)*, *A lifecycle rule on the
+  bucket* and *Nobody: keep everything*.
 
 ### Migration
 
