@@ -108,6 +108,11 @@ def _run_program(dbname, info, since=0, schema=None, timeout=120):
                      ("user", "PGUSER"), ("password", "PGPASSWORD")):
         if info.get(key):
             env[var] = str(info[key])
+        elif os.environ.get(var):
+            # Odoo 18 reads no PG variable into its options: where the
+            # server reaches PostgreSQL through them, as in the CI, the
+            # program needs them as the test's process has them.
+            env[var] = os.environ[var]
     done = subprocess.run(
         [sys.executable, "-"], input=_program(), env=env,
         capture_output=True, text=True, timeout=timeout, check=False,
