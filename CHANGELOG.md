@@ -396,7 +396,8 @@ gestionado de copias* on a running panel too.
   tabbing to it drew nothing. It is now named Show password (translated),
   reports whether the password is shown (`aria-pressed`) and draws an
   outline when focused from the keyboard. The sign-in and its OAuth
-  buttons are unchanged.
+  buttons are unchanged. Odoo 18's sign-in page has no such button, so
+  on 18.0 nothing changes there.
 
 - **A step that fails on a full disk says so.** A build that ran out of
   disk on its server was reported as «neither ended nor runs on the
