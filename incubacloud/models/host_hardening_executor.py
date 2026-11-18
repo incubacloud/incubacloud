@@ -119,7 +119,11 @@ _EQUIVALENT_RECIPES = {
     # connected as a user of its image (AWS's ``admin``), where the copy
     # locked the panel out, so no such host was left hardened. A host
     # hardened from root got root's keys, which is what the new step gives.
-    "0b5a14aa18f2": frozenset({"3ab1139825de"}),
+    # 18-nov-2026: the preflight admits Ubuntu 26.04, and the check of
+    # ``sshd -T`` also takes ``prohibit-password``, which OpenSSH 10.2
+    # prints where 10.0 and before print ``without-password``. A host on
+    # any OS admitted before runs the same steps with the same values.
+    "261515794a0b": frozenset({"0b5a14aa18f2", "3ab1139825de"}),
 }
 
 
