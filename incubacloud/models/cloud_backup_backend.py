@@ -28,6 +28,7 @@ from ._backup_dst import (
     endpoint_url_is_valid,
     image_tag_is_valid,
     normalize_endpoint_url,
+    region_is_valid,
 )
 from ._backup_retention import valid_backup_retention
 from .cloud_instance import _GLOBAL_BACKUP_PARAM
@@ -104,6 +105,12 @@ class CloudBackupBackend(models.Model):
     s3_endpoint_url = fields.Char(
         string="Endpoint URL",
         help="Leave empty for AWS S3. Set for MinIO, Wasabi, Backblaze, etc.",
+    )
+    s3_region = fields.Char(
+        string="Region",
+        help="The bucket's region, as the provider names it (e.g. "
+        "eu-west-par). Continuous recovery signs its requests with it. "
+        "Leave empty for Cloudflare R2, or for AWS S3 in us-east-1.",
     )
     s3_access_key_id = fields.Char(
         string="Access Key ID",
@@ -792,8 +799,8 @@ class CloudBackupBackend(models.Model):
                 )
 
     @api.constrains(
-        "s3_endpoint_url", "s3_access_key_id", "s3_secret_access_key",
-        "passphrase",
+        "s3_endpoint_url", "s3_region", "s3_access_key_id",
+        "s3_secret_access_key", "passphrase",
     )
     def _check_s3_access_shape(self):
         """Keep the endpoint and the secrets to one line of an environment file.
@@ -807,7 +814,8 @@ class CloudBackupBackend(models.Model):
         ``$`` and cuts at `` #`` (``_backup_dst.compose_env_line``): a
         passphrase would be another one, and lost to a restore. The
         endpoint is an ``http``/``https`` URL of a host
-        (``endpoint_url_is_valid``), the keys hold letters, digits and
+        (``endpoint_url_is_valid``), the region a provider's name of one
+        (``region_is_valid``), the keys hold letters, digits and
         ``/ + = . _ -`` only (``access_key_is_valid``), and the passphrase
         none of what compose reads as more (``compose_env_breaks``); the
         one the panel generates holds none. Checked when they are written;
@@ -825,6 +833,13 @@ class CloudBackupBackend(models.Model):
                     "The endpoint URL of %(name)s must be an http:// or "
                     "https:// address of a host, with an optional port and "
                     "path, and no spaces.",
+                    name=rec.name,
+                ))
+            if rec.s3_region and not region_is_valid(rec.s3_region):
+                raise ValidationError(_(
+                    "The region of %(name)s may hold only letters, digits "
+                    "and the characters . _ -, as the provider names it "
+                    "(e.g. eu-west-par).",
                     name=rec.name,
                 ))
             for key in (secrets.s3_access_key_id, secrets.s3_secret_access_key):
@@ -1089,6 +1104,8 @@ class CloudBackupBackend(models.Model):
                 del vals[field]
         if vals.get("s3_endpoint_url"):
             vals["s3_endpoint_url"] = normalize_endpoint_url(vals["s3_endpoint_url"])
+        if isinstance(vals.get("s3_region"), str):
+            vals["s3_region"] = vals["s3_region"].strip()
         if "backend_type" in vals and any(
             rec.backend_type != vals["backend_type"] for rec in self
         ):
@@ -1152,6 +1169,8 @@ class CloudBackupBackend(models.Model):
                 vals["s3_endpoint_url"] = normalize_endpoint_url(
                     vals["s3_endpoint_url"],
                 )
+            if isinstance(vals.get("s3_region"), str):
+                vals["s3_region"] = vals["s3_region"].strip()
             private = None
             if vals.get("backend_type") == "sftp":
                 pair = self._sftp_key_pair()
@@ -1313,6 +1332,8 @@ class CloudBackupBackend(models.Model):
         }
         if self.s3_endpoint_url:
             kwargs["endpoint_url"] = self.s3_endpoint_url
+        if self.s3_region:
+            kwargs["region_name"] = self.s3_region
         client = boto3.client("s3", **kwargs)
         total = 0
         count = 0
@@ -1357,6 +1378,8 @@ class CloudBackupBackend(models.Model):
         }
         if self.s3_endpoint_url:
             kwargs["endpoint_url"] = self.s3_endpoint_url
+        if self.s3_region:
+            kwargs["region_name"] = self.s3_region
         client = boto3.client("s3", **kwargs)
         prefix = (self.s3_path or "").strip("/")
         total = 0

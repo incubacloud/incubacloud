@@ -209,6 +209,8 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
             )
         if backend.s3_endpoint_url:
             lines.append(env_line("AWS_ENDPOINT_URL", backend.s3_endpoint_url))
+        if backend.s3_region:
+            lines.append(env_line("AWS_DEFAULT_REGION", backend.s3_region))
         return "\n".join(lines) + "\n"
 
     async def before_execute(self, transport):

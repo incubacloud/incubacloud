@@ -499,6 +499,18 @@
                     t-on-input="(ev) => this.onInput('s3_endpoint_url', ev)"
                   />
                                         </div>
+                                        <div class="rl-frow ic-w-m">
+                                            <label for="bbd-region">Region</label>
+                                            <input
+                    id="bbd-region"
+                    type="text"
+                    placeholder="eu-west-par"
+                    aria-describedby="bbd-region-note"
+                    t-att-value="state.form.s3_region"
+                    t-on-input="(ev) => this.onInput('s3_region', ev)"
+                  />
+                                            <span class="ic-form-note" id="bbd-region-note">As your provider names it. Continuous recovery signs its requests with it. Leave empty for Cloudflare R2 (auto) or AWS S3 in us-east-1.</span>
+                                        </div>
                                         <t t-if="backupDst">
                                             <div class="rl-frow ic-w-l">
                                                 <label for="bbd-dst">Backup path (preview)</label>

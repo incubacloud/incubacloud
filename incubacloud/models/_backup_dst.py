@@ -82,6 +82,10 @@ _IMAGE_TAG_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}")
 #: providers use. Nothing an environment file or compose reads as more.
 _ACCESS_KEY_RE = re.compile(r"[A-Za-z0-9/+=._-]+")
 
+#: An S3 region, as providers name theirs (``us-east-1``, ``eu-west-par``,
+#: ``auto``): nothing an environment file or compose reads as more.
+_REGION_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+
 #: What compose reads in an environment file as more than the value: a
 #: quote that opens a value ends it, and what follows on the line is
 #: read as another variable; ``$`` starts a variable it interpolates;
@@ -220,6 +224,17 @@ def access_key_is_valid(value):
     :rtype: bool
     """
     return bool(_ACCESS_KEY_RE.fullmatch(value or ""))
+
+
+def region_is_valid(value):
+    """Whether *value* is an S3 region the panel accepts.
+
+    :param str value: such as ``eu-west-par``
+    :return: True for letters, digits and ``. _ -``, up to 64, starting
+        with a letter or a digit
+    :rtype: bool
+    """
+    return bool(_REGION_RE.fullmatch(value or ""))
 
 
 def image_tag_is_valid(value):

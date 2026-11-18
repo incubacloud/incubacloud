@@ -670,7 +670,8 @@ class CloudInstance(models.Model):
 
         ``pitrs3`` is the bucket, ``pitr`` the instance's prefix in it and
         ``pitrc`` an encrypted remote over its ``fs/``. wal-g archives each
-        cluster under ``IC_PITR_PREFIX/<system id>``.
+        cluster under ``IC_PITR_PREFIX/<system id>``. Both sign with the
+        destination's region (``s3_region``).
 
         :rtype: str
         :raises ValueError: when compose would not read a value as it is
@@ -680,7 +681,12 @@ class CloudInstance(models.Model):
         backend = self.effective_backup_backend.sudo()
         bucket, path = self._pitr_bucket_path()
         key = self._pitr_key_value()
-        region = "auto" if backend.s3_endpoint_url else "us-east-1"
+        # The destination's region; without one, R2's ``auto`` behind an
+        # endpoint and AWS's default otherwise. Providers such as OVH
+        # refuse a request signed for another region.
+        region = backend.s3_region or (
+            "auto" if backend.s3_endpoint_url else "us-east-1"
+        )
         lines = [
             f"IC_PITR_PREFIX={self._pitr_prefix_base()}",
             f"AWS_ACCESS_KEY_ID={backend.s3_access_key_id or ''}",

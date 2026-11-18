@@ -14,10 +14,12 @@ critical alert of its own. Monitoring's Fleet view reads the panel's own
 servers alone, and the central serves no cross-account read. A conflict
 answered before 1.0.220 no longer holds its instance's queue. The GitHub
 App can be created under an organization, chosen on the setup page. A
-database that lost the panel's cron bot updates again.
+database that lost the panel's cron bot updates again. Continuous recovery
+works on S3 destinations that sign for a region of their own.
 
-The update adds the table `cloud_host_known_key`, empty, and the column
-`owner_type` to the GitHub App, empty on an App there is. Its data
+The update adds the table `cloud_host_known_key`, empty, the column
+`owner_type` to the GitHub App, empty on an App there is, and the column
+`s3_region` to `cloud_backup_backend`, empty. Its data
 migration, 1.0.236's `end-stale-holds`, closes the failures a conflict
 answered before 1.0.220 left holding an instance's queue, and cancels what
 waited behind them; the cron bot's end-migration recreates the bot only
@@ -189,6 +191,19 @@ when it is missing.
   does nothing without a bot and leaves a cron that is running at that
   moment on its user, with a warning, instead of failing on its locked
   row. An archived bot is found by its login.
+
+- **Continuous recovery signs with the destination's region.** wal-g and
+  rclone signed every request with `auto` behind an endpoint and with
+  `us-east-1` without one, and providers such as OVH, Scaleway, or AWS
+  outside `us-east-1` refused them (*400 AuthorizationHeaderMalformed*):
+  continuous recovery could not archive there, while the nightly backups,
+  through boto3, worked. An S3 destination now has a **Region**, in its
+  Storage tab, that `pitr.env` gives wal-g (`AWS_REGION`) and rclone, and
+  that `backup.env`, the purges' environments (`AWS_DEFAULT_REGION`), the
+  connection test, the usage measures and the backup listing's sizes sign
+  with. Empty, everything signs as before, so Cloudflare R2 keeps `auto`.
+  An instance imported from a server takes the region of its
+  `backup.env`.
 
 ### Security
 

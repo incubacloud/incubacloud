@@ -6290,6 +6290,51 @@ msgid "Endpoint URL"
 msgstr "URL del endpoint"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__s3_region
+msgid "Region"
+msgstr "Región"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__s3_region
+msgid ""
+"The bucket's region, as the provider names it (e.g. eu-west-par). Continuous"
+" recovery signs its requests with it. Leave empty for Cloudflare R2, or for "
+"AWS S3 in us-east-1."
+msgstr ""
+"La región del bucket, tal como la nombra el proveedor (p. ej., eu-west-par)."
+" La recuperación continua firma sus peticiones con ella. Déjela vacía para "
+"Cloudflare R2 o para AWS S3 en us-east-1."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The region of %(name)s may hold only letters, digits and the characters . _ "
+"-, as the provider names it (e.g. eu-west-par)."
+msgstr ""
+"La región de %(name)s solo puede contener letras, dígitos y los caracteres ."
+" _ -, tal como la nombra el proveedor (p. ej., eu-west-par)."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid ""
+"As your provider names it. Continuous recovery signs its requests with it. "
+"Leave empty for Cloudflare R2 (auto) or AWS S3 in us-east-1."
+msgstr ""
+"Tal como la nombra su proveedor. La recuperación continua firma sus "
+"peticiones con ella. Déjela vacía para Cloudflare R2 (auto) o AWS S3 en us-"
+"east-1."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "eu-west-par"
+msgstr "eu-west-par"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_remote_write_url
 msgid ""
 "Endpoint each host AGENT pushes to. It must resolve from inside the agent "

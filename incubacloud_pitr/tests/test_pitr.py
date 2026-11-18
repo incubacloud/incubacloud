@@ -289,6 +289,35 @@ class TestWhatReachesTheStack(_PitrCase):
             [".docker/pitr.env", ".walg/README.txt", ".walg/spool/README.txt"],
         )
 
+    def _signing_regions(self):
+        """The region wal-g and rclone sign with, as ``pitr.env`` names them.
+
+        :return: ``(AWS_REGION, RCLONE_CONFIG_PITRS3_REGION)``
+        :rtype: tuple
+        """
+        env = dict(
+            line.split("=", 1) for line in self.inst._pitr_env().splitlines()
+        )
+        return env["AWS_REGION"], env["RCLONE_CONFIG_PITRS3_REGION"]
+
+    def test_the_destination_s_region_signs_wal_g_and_rclone(self):
+        """OVH answered 400 AuthorizationHeaderMalformed to ``auto``."""
+        self.backend.write({
+            "s3_endpoint_url": "https://s3.eu-west-par.io.cloud.ovh.net",
+            "s3_region": "eu-west-par",
+        })
+        self.assertEqual(self._signing_regions(), ("eu-west-par", "eu-west-par"))
+
+    def test_without_a_region_an_endpoint_signs_with_auto(self):
+        """Cloudflare R2's, the managed destinations' included."""
+        self.assertFalse(self.backend.s3_region)
+        self.assertEqual(self._signing_regions(), ("auto", "auto"))
+
+    def test_without_a_region_or_an_endpoint_aws_s_default_signs(self):
+        self.backend.write({"s3_endpoint_url": False})
+        self.assertEqual(self._signing_regions(), ("us-east-1", "us-east-1"))
+        self.assertNotIn("AWS_ENDPOINT=", self.inst._pitr_env())
+
     def test_switched_off_the_credentials_stay_for_the_purge_not_the_agent(self):
         self.inst.write({"pitr_enabled": False, "pitr_cluster_id": "77"})
         self.assertEqual(self.inst._compose_override_fragments(), {})
