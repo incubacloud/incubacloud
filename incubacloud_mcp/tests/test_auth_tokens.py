@@ -11,6 +11,8 @@ from odoo.addons.incubacloud_mcp.protocol.errors import AuthError
 from .common import ISSUER, JwtMixin
 
 RESOURCE = "https://panel.example.test/mcp"
+#: This panel's two MCP URLs, as ``cloud.settings._mcp_audiences`` gives them.
+AUDIENCES = ("https://panel.example.test/cloud/mcp", RESOURCE)
 AUTH_LOGGER = "odoo.addons.incubacloud_mcp.models.mcp_auth"
 
 
@@ -25,7 +27,7 @@ class TestAccessTokens(JwtMixin, TransactionCase):
 
     def _verify(self, token):
         """Validate *token* for the test panel."""
-        return self.auth._verify_access_token(token, ISSUER, RESOURCE)
+        return self.auth._verify_access_token(token, ISSUER, AUDIENCES)
 
     def _refused(self, token, status=401):
         """Assert *token* is refused with *status*."""
@@ -92,6 +94,24 @@ class TestAccessTokens(JwtMixin, TransactionCase):
             self._token(aud=[RESOURCE, "https://other-panel.example.test/mcp"])
         )
         self.assertEqual(claims["sub"], "4242")
+
+    def test_either_address_of_this_panel_is_its_audience_and_no_other(self):
+        """A token for ``…/cloud/mcp`` or ``…/mcp`` of this panel opens it; one
+        for another path or origin does not, nor any without audiences."""
+        for audience in AUDIENCES:
+            with self.subTest(audience=audience):
+                self.assertEqual(self._verify(self._token(aud=audience))["sub"], "4242")
+        for audience in (
+            "https://panel.example.test/other/mcp",
+            "https://panel.example.test",
+            "http://panel.example.test/cloud/mcp",
+            "https://other-panel.example.test/cloud/mcp",
+        ):
+            with self.subTest(audience=audience):
+                self._refused(self._token(aud=audience))
+        for audiences in ((), ("",)):
+            with self.subTest(audiences=audiences), self.assertRaises(AuthError):
+                self.auth._verify_access_token(self._token(), ISSUER, audiences)
 
     def test_a_minute_of_clock_skew_is_tolerated(self):
         """Expired 30 s ago is still within the minute of margin."""

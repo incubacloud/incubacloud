@@ -213,14 +213,23 @@ class TestAuthenticate(JwtMixin, McpUsersMixin, TransactionCase):
         )
 
     def test_the_401_challenge_points_to_the_resource_document(self):
-        """With an issuer the challenge names the RFC 9728 document; else a realm."""
-        reply = self.auth._auth_reply(AuthError(401, "x"))
-        self.assertEqual(reply.status, 401)
-        self.assertEqual(
-            reply.headers["WWW-Authenticate"],
-            'Bearer resource_metadata="https://panel.example.test'
-            '/.well-known/oauth-protected-resource/mcp"',
-        )
+        """With an issuer the challenge names the RFC 9728 document of the
+        URL called (``/cloud/mcp``'s by default, also on a panel that stored
+        ``…/mcp``); else a realm."""
+        for path, document in (
+            ("", "/cloud/mcp"),
+            ("/cloud/mcp", "/cloud/mcp"),
+            ("/mcp", "/mcp"),
+            ("/mcp/", "/mcp"),
+        ):
+            with self.subTest(path=path):
+                reply = self.auth._auth_reply(AuthError(401, "x"), path)
+                self.assertEqual(reply.status, 401)
+                self.assertEqual(
+                    reply.headers["WWW-Authenticate"],
+                    'Bearer resource_metadata="https://panel.example.test'
+                    f'/.well-known/oauth-protected-resource{document}"',
+                )
         self.env["cloud.settings"]._get_system().mcp_oauth_issuer = False
         reply = self.auth._auth_reply(AuthError(401, "x", token_presented=True))
         self.assertEqual(

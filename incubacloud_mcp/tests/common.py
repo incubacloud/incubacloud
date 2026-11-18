@@ -171,7 +171,12 @@ class McpHttpMixin:
     """Talk to ``/mcp`` over real HTTP, as an agent does. For an ``HttpCase``."""
 
     def _resource_here(self):
-        """The canonical ``/mcp`` URL of the test server; also stored as the panel's."""
+        """The canonical ``/mcp`` URL of the test server; also stored as the panel's.
+
+        That is what a panel installed before ``/cloud/mcp`` stored, and what
+        the platform pushes to a panel it sets: a self-hosted panel gives
+        ``…/cloud/mcp`` for it, and takes tokens for either.
+        """
         resource = canonical_resource(self.base_url() + "/mcp")
         self.env["ir.config_parameter"].sudo().set_param(RESOURCE_PARAM, resource)
         return resource

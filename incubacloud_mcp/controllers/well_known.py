@@ -1,13 +1,14 @@
 """RFC 9728: which authorization server issues tokens for this panel.
 
 Served at the path-inserted URLs clients try first — of ``/cloud/mcp`` and
-of ``/mcp`` — and at the root one. The two last are aliases: they leave the
-routing map when another installed module declares them
-(``models/ir_http.py``). A path-inserted document answers only for the
-panel's resource: the other one is 404, as a client must not take a
-document whose resource is not the URL it asked for (RFC 9728, §3.3). A
-resource on a path neither route has (a proxy that maps it) is answered
-on both, as before.
+of ``/mcp`` — and at the root one. The two last are aliases, with ``/mcp``:
+they all leave the routing map when another installed module declares one
+(``models/ir_http.py``). A client takes a document only when its resource
+is the URL it called (RFC 9728, §3.3), so each path-inserted document names
+the URL of its path, and the root one names ``…/mcp``, the address that
+clients connected before ``/cloud/mcp`` call and check it against. A
+resource on a path neither route has (a proxy that maps it) is named by
+the three, as before (``cloud.settings._mcp_resource_at``).
 
 Without an issuer there is no document (404): the MCP specification
 requires at least one authorization server in it, and a panel with API
@@ -16,8 +17,6 @@ resource would only mislead the client.
 """
 
 import logging
-from urllib.parse import urlsplit
-
 from odoo import SUPERUSER_ID, http
 from odoo.http import request
 
@@ -26,9 +25,6 @@ from ..protocol.context import Reply
 from ._reply import respond
 
 _logger = logging.getLogger(__name__)
-
-#: The paths of the MCP routes, each with a path-inserted document.
-_SERVED = frozenset({MCP_PATH, ALIAS_PATH})
 
 
 class McpWellKnown(http.Controller):
@@ -51,7 +47,9 @@ class McpWellKnown(http.Controller):
         if not request.db:
             return respond(Reply(404))
         Settings = request.env(user=SUPERUSER_ID)["cloud.settings"]
-        issuer, resource = Settings._mcp_issuer(), Settings._mcp_resource()
+        inserted = request.httprequest.path[len(METADATA_PATH) :].rstrip("/")
+        issuer = Settings._mcp_issuer()
+        resource = Settings._mcp_resource_at(inserted or ALIAS_PATH)
         if not issuer:
             _logger.debug("[mcp] no agents' issuer: no protected resource document")
             return respond(Reply(404, {"error": "not_found"}))
@@ -61,15 +59,6 @@ class McpWellKnown(http.Controller):
                 "URL (incubacloud.mcp.resource, web.base.url): no protected "
                 "resource document",
                 issuer,
-            )
-            return respond(Reply(404, {"error": "not_found"}))
-        inserted = request.httprequest.path[len(METADATA_PATH) :].rstrip("/")
-        resource_path = urlsplit(resource).path
-        if inserted and resource_path in _SERVED and inserted != resource_path:
-            _logger.debug(
-                "[mcp] no protected resource document at %s: this panel's MCP is %s",
-                request.httprequest.path,
-                resource,
             )
             return respond(Reply(404, {"error": "not_found"}))
         return respond(

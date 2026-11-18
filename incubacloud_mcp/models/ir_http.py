@@ -9,17 +9,19 @@ alphabetical order of their modules, with no word: the first one wins
 (``ir.http.routing_map``). Whichever of the two that is, its agents would
 reach the wrong server.
 
-Here an alias another installed module also declares leaves the map, with
-a warning that names that module, and the URL is that module's. The map is
-built again on every load of the registry, so in each worker and after
-any module is installed or removed; when the other module goes, the alias
-comes back by itself. ``/cloud/mcp`` and its document stay ours.
+Here, as soon as another installed module declares any of the three, all
+of them leave the map, with a warning that names that module: a client
+that met the other module on one of them must not meet this panel on the
+next, and the URLs another module declares are its own. The map is built
+again on every load of the registry, so in each worker and after any
+module is installed or removed; when the other module goes, the aliases
+come back by themselves. ``/cloud/mcp`` and its document stay ours.
 """
 
 import functools
 import logging
 
-from odoo import api, models, tools
+from odoo import api, http, models, tools
 
 from ..protocol.canonical import ALIAS_PATH, MCP_PATH, METADATA_PATH
 
@@ -48,9 +50,10 @@ def route_module(endpoint):
     """Return the addon whose controller declares *endpoint*, or ``''``.
 
     The routing generator binds each route to an instance of a class built
-    from the controller and the classes that extend it: its first ancestor
-    from an addon is the controller that declared the route, whichever
-    module extends it.
+    from a top controller (a direct subclass of ``http.Controller``, which
+    Odoo registers under its addon) and the classes that extend it. The
+    top controller is the one that declared the route, whichever module
+    extends it, and whatever mixins the classes list beside it.
 
     :param endpoint: an endpoint of the routing map (a ``functools.partial``
         of the bound method)
@@ -63,6 +66,8 @@ def route_module(endpoint):
     if owner is None:
         return ""
     for cls in reversed(type(owner).__mro__):
+        if http.Controller not in cls.__bases__:
+            continue
         parts = cls.__module__.split(".")
         if parts[:2] == ["odoo", "addons"] and len(parts) > 2:
             return parts[2]
@@ -73,29 +78,33 @@ class IrHttp(models.AbstractModel):
     _inherit = "ir.http"
 
     def _generate_routing_rules(self, modules, converters):
-        """Leave out the MCP's aliases whose URL another module declares.
+        """Leave out all the MCP's aliases once another module declares one.
 
-        Each one left out is logged as a warning naming the other module:
-        that module answers it from now on, and this panel's agents go to
-        ``/cloud/mcp``.
+        Each URL another module declares is logged as a warning naming that
+        module: it answers that URL from now on, the panel answers none of
+        its aliases, and its agents go to ``/cloud/mcp``.
         """
         rules = list(super()._generate_routing_rules(modules, converters))
         taken = {}
         for url, endpoint in rules:
-            alias, module = _alias(url), route_module(endpoint)
-            if alias and module != MODULE:
+            alias = _alias(url)
+            if not alias:
+                continue
+            module = route_module(endpoint)
+            if module != MODULE:
                 taken.setdefault(alias, set()).add(module or "?")
         for alias in sorted(taken):
             _logger.warning(
-                "[mcp] %s is also declared by %s: this panel's alias leaves the "
-                "routing map and that module answers it; agents reach this "
+                "[mcp] %s is also declared by %s: this panel's aliases (%s) leave "
+                "the routing map and that module answers it; agents reach this "
                 "panel at %s",
                 alias,
                 ", ".join(sorted(taken[alias])),
+                ", ".join(sorted(ALIASES)),
                 MCP_PATH,
             )
         for url, endpoint in rules:
-            if _alias(url) in taken and route_module(endpoint) == MODULE:
+            if taken and _alias(url) and route_module(endpoint) == MODULE:
                 continue
             yield url, endpoint
 
@@ -108,14 +117,17 @@ class IrHttp(models.AbstractModel):
         the map (``routing``): both are built again on every load of the
         registry.
 
-        :return: ``((alias, module), …)``, sorted; empty when every alias
-            is the MCP's own
+        :return: ``((alias, module), …)``, sorted, of the aliases another
+            module declares (the MCP gave up all three); empty when every
+            alias is the MCP's own
         :rtype: tuple
         """
         owners = {}
         for rule in self.routing_map().iter_rules():
             alias = _alias(rule.rule)
+            if not alias:
+                continue
             module = route_module(rule.endpoint)
-            if alias and module != MODULE:
+            if module != MODULE:
                 owners.setdefault(alias, module or "?")
         return tuple(sorted(owners.items()))

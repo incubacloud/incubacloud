@@ -20,6 +20,8 @@ _logger = logging.getLogger(__name__)
 
 SECRET_PARAM = "incubacloud.mcp.secret"
 RESOURCE_PARAM = "incubacloud.mcp.resource"
+#: The two paths the MCP answers at.
+_PATHS = frozenset({MCP_PATH, ALIAS_PATH})
 #: Calls per user and minute when the setting is empty or not positive.
 MCP_USER_PER_MIN_DEFAULT = 120
 
@@ -84,13 +86,18 @@ class CloudSettings(models.Model):
 
     @api.model
     def _mcp_resource(self):
-        """Return the canonical URL of this panel's MCP: the agents' audience.
+        """Return the canonical URL of this panel's MCP: the address it gives.
 
-        The configured one (:meth:`_mcp_stored_resource`), except where it
-        is ``…/mcp`` and another installed module answers ``/mcp``
-        (``ir.http._mcp_alias_owners``): then the same origin with
-        ``/cloud/mcp``, which is still this panel's. Nothing is written:
-        once that module is gone, the configured URL is back.
+        The configured one (:meth:`_mcp_stored_resource`), except where its
+        path is ``/mcp``, the address before ``/cloud/mcp``: then the same
+        origin with ``/cloud/mcp``, also this panel's. That is so on every
+        panel whose URL is its own to set, and on one whose URL is set from
+        above (:meth:`_mcp_settings_managed`) only while another installed
+        module declares an alias (``ir.http._mcp_alias_owners``): the panel
+        that sets it issues the agents' tokens for the URL it pushed, so
+        this one gives that URL as it is. Nothing is written: the agents
+        connected to ``…/mcp`` keep their tokens (:meth:`_mcp_audiences`),
+        and a pushed ``…/mcp`` is back once that module is gone.
         """
         resource = self._mcp_stored_resource()
         if not resource:
@@ -98,22 +105,72 @@ class CloudSettings(models.Model):
         parts = urlsplit(resource)
         if parts.path != ALIAS_PATH:
             return resource
-        owner = dict(self.env["ir.http"]._mcp_alias_owners()).get(ALIAS_PATH)
-        if not owner:
-            return resource
-        moved = f"{parts.scheme}://{parts.netloc}{MCP_PATH}"
-        _logger.debug(
-            "[mcp] %s answers %s: this panel's MCP is %s instead of %s",
-            owner,
-            ALIAS_PATH,
-            moved,
-            resource,
-        )
-        return moved
+        if self._mcp_settings_managed():
+            owners = self._mcp_conflicts()
+            if not owners:
+                return resource
+            _logger.debug(
+                "[mcp] %s declares the MCP's aliases: this panel's MCP is %s "
+                "instead of %s",
+                ", ".join(sorted(set(owners.values()))),
+                MCP_PATH,
+                resource,
+            )
+        return f"{parts.scheme}://{parts.netloc}{MCP_PATH}"
+
+    @api.model
+    def _mcp_resource_at(self, path):
+        """Return the URL an agent that called *path* knows this MCP by.
+
+        RFC 9728, §3.3: a client checks that the ``resource`` of the
+        document it is sent to is the URL it called. On ``/mcp`` or
+        ``/cloud/mcp`` of a panel whose MCP is one of them, that is the
+        same origin with the path called; otherwise (no path, or a proxy
+        that maps the MCP from a path of its own) the panel's
+        :meth:`_mcp_resource`.
+
+        :param str path: the path of the request, or ``''``
+        :return: a canonical URL, or ``''`` without a usable one
+        :rtype: str
+        """
+        resource = self._mcp_resource()
+        if not resource:
+            return ""
+        parts = urlsplit(resource)
+        path = (path or "").rstrip("/")
+        if parts.path in _PATHS and path in _PATHS:
+            return f"{parts.scheme}://{parts.netloc}{path}"
+        return resource
+
+    @api.model
+    def _mcp_audiences(self):
+        """Return the audiences an agent's token may carry on this panel.
+
+        Both addresses of the MCP on the origin of :meth:`_mcp_resource`,
+        ``…/cloud/mcp`` and ``…/mcp``, while it is one of them: the agents
+        connected to the address before keep their tokens, and so do those
+        that connected to ``/cloud/mcp`` while another module had ``/mcp``.
+        A URL on a path of its own (a proxy's) is the only one. No other
+        origin, ever.
+
+        :return: canonical URLs; empty without a usable one
+        :rtype: tuple
+        """
+        resource = self._mcp_resource()
+        if not resource:
+            return ()
+        parts = urlsplit(resource)
+        if parts.path not in _PATHS:
+            return (resource,)
+        origin = f"{parts.scheme}://{parts.netloc}"
+        return (origin + MCP_PATH, origin + ALIAS_PATH)
 
     @api.model
     def _mcp_conflicts(self):
-        """Return the aliases another installed module answers, and which.
+        """Return the aliases another installed module declares, and which.
+
+        Any one of them is enough for the MCP to give up all three
+        (``models/ir_http.py``).
 
         :return: ``{alias: module}``, as ``ir.http._mcp_alias_owners``
         :rtype: dict
@@ -145,7 +202,8 @@ class CloudSettings(models.Model):
 
         Runs on every install and update (``data/mcp_defaults.xml``) and
         changes nothing already set: a URL pushed from another panel stays,
-        and so does the ``…/mcp`` of a panel installed before ``/cloud/mcp``.
+        and so does the ``…/mcp`` of a panel installed before ``/cloud/mcp``,
+        which :meth:`_mcp_resource` reads as ``…/cloud/mcp``.
         The routing map is not read here: while a module installs, it is
         not in it yet.
         """
@@ -172,7 +230,10 @@ class CloudSettings(models.Model):
         """Whether the issuer and the resource URL are set from above.
 
         False here; a panel whose settings another panel pushes says True
-        and Settings shows them read-only.
+        and Settings shows them read-only. That panel's URL is then given
+        as pushed, ``…/mcp`` included (:meth:`_mcp_resource`): the panel
+        that pushes it issues the tokens for it, and moves the panel to
+        ``…/cloud/mcp`` by pushing that.
         """
         return False
 

@@ -71,15 +71,16 @@ export class McpSettingsTab extends Component {
         this.settingsSave.register();
     }
 
-    /** Read-only where the platform sets them; the module that answers `/mcp`
-     * instead of the panel, if any (see `settingsView`). */
+    /** Read-only where the platform sets them; the module that declares an
+     * address of the MCP, if any (see `settingsView`). */
     get view() {
         return settingsView({ managed: this.state.managed, conflict: this.state.conflict });
     }
 
-    /** What the tab says when another module answers `/mcp`, or "". */
+    /** What the tab says when another module declares an address of the
+     * MCP, or "". */
     get conflictNotice() {
-        return conflictNotice(this.view.aliasTakenBy);
+        return conflictNotice(this.view.aliasTakenBy, this._loaded?.mcp_resource);
     }
 
     /**

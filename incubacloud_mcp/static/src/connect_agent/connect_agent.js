@@ -78,9 +78,10 @@ export class ConnectAgent extends Component {
         return connectView(this.state.config || {});
     }
 
-    /** What the page says when another module answers `/mcp`, or "". */
+    /** What the page says when another module declares an address of the
+     * MCP, or "". */
     get conflictNotice() {
-        return conflictNotice(this.view.aliasTakenBy);
+        return conflictNotice(this.view.aliasTakenBy, this.view.url);
     }
 
     /** The person's own auto-approval rules that still count. */

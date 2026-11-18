@@ -136,7 +136,7 @@ class McpController(http.Controller):
         except AuthError as error:
             if error.status == 401:
                 self._note_failure(Auth, ip, reliable)
-            return respond(Auth._auth_reply(error))
+            return respond(Auth._auth_reply(error, httprequest.path))
         context = request.env(user=principal.uid)["res.users"].context_get()
         request.update_env(user=principal.uid, context=context)
         try:

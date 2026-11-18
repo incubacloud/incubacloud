@@ -3482,11 +3482,25 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent_format.js:0
 msgid ""
-"Another module in this Odoo, %(module)s, answers /mcp, so this panel's "
-"agents use /cloud/mcp. An agent connected to /mcp before has to be connected"
-" again."
+"Another module in this Odoo, %(module)s, declares /mcp or its OAuth "
+"document, so this panel no longer answers at /mcp, only at /cloud/mcp. "
+"Agents still connected to /mcp have to switch to /cloud/mcp."
 msgstr ""
-"Otro módulo de este Odoo, %(module)s, atiende /mcp, así que los agentes de "
-"este panel usan /cloud/mcp. Un agente que se conectó antes a /mcp tiene que "
-"volver a conectarse."
+"Otro módulo de este Odoo, %(module)s, declara /mcp o su documento OAuth, así "
+"que este panel ya no responde en /mcp, solo en /cloud/mcp. Los agentes que "
+"sigan conectados a /mcp tienen que pasar a /cloud/mcp."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent_format.js:0
+msgid ""
+"Another module in this Odoo, %(module)s, declares /mcp or its OAuth "
+"document, so this panel no longer answers at /mcp, only at /cloud/mcp. If "
+"your proxy forwards this panel's MCP address to /mcp, make it forward to "
+"/cloud/mcp instead."
+msgstr ""
+"Otro módulo de este Odoo, %(module)s, declara /mcp o su documento OAuth, así "
+"que este panel ya no responde en /mcp, solo en /cloud/mcp. Si su proxy "
+"reenvía la dirección MCP de este panel a /mcp, haga que la reenvíe a "
+"/cloud/mcp."
 

@@ -1,8 +1,8 @@
 """Who an agent's credential belongs to.
 
 Two credentials, both in ``Authorization: Bearer``: an OAuth access token
-of the configured issuer (RS256, RFC 9068 ``at+jwt``, audience this
-panel's ``/mcp``), or one of Odoo's own API keys where this panel allows
+of the configured issuer (RS256, RFC 9068 ``at+jwt``, audience one of this
+panel's two MCP URLs, ``…/cloud/mcp`` or ``…/mcp``), or one of Odoo's own API keys where this panel allows
 them. Either resolves to an internal user with a cloud role, and the
 request then runs as that user — never as the superuser.
 """
@@ -60,17 +60,24 @@ class McpAuth(models.AbstractModel):
         )
 
     @api.model
-    def _verify_access_token(self, token, issuer, resource):
+    def _verify_access_token(self, token, issuer, audiences):
         """Return the claims of *token*, or raise.
 
         :param str token: the compact JWT the agent presented
         :param str issuer: the configured issuer
-        :param str resource: this panel's canonical ``/mcp`` URL
+        :param audiences: this panel's canonical MCP URLs
+            (``cloud.settings._mcp_audiences``): the token's ``aud`` must
+            hold one of them
+        :type audiences: tuple[str]
         :rtype: dict
         :raises AuthError: 401 when the token is not one of *issuer*'s
-            access tokens for *resource*; 503 when the issuer's keys
-            cannot be fetched
+            access tokens for one of *audiences*, or there is none; 503 when
+            the issuer's keys cannot be fetched
         """
+        audiences = [audience for audience in audiences if audience]
+        if not audiences:
+            # An empty list would make the registry check no audience at all.
+            raise self._invalid_token()
         try:
             keyset = get_keyset(jwks_uri_for(issuer), kid=unverified_kid(token))
         except (requests.RequestException, ValueError) as exc:
@@ -98,7 +105,7 @@ class McpAuth(models.AbstractModel):
         registry = jwt.JWTClaimsRegistry(
             leeway=_LEEWAY_SECONDS,
             iss={"essential": True, "values": list(issuer_spellings(issuer))},
-            aud={"essential": True, "value": resource},
+            aud={"essential": True, "values": audiences},
             sub={"essential": True},
             exp={"essential": True},
             iat={"essential": True},
@@ -130,7 +137,7 @@ class McpAuth(models.AbstractModel):
             if not issuer:
                 raise self._invalid_token()
             claims = self._verify_access_token(
-                credential, issuer, Settings._mcp_resource()
+                credential, issuer, Settings._mcp_audiences()
             )
             user = self._user_for_claims(issuer, claims)
             label = str(claims["client_id"])
@@ -319,17 +326,25 @@ class McpAuth(models.AbstractModel):
         )
 
     @api.model
-    def _auth_reply(self, error):
+    def _auth_reply(self, error, path=""):
         """Return the HTTP answer to an :class:`AuthError`.
 
         A 401 challenges with ``resource_metadata`` when an issuer is
         configured, with a ``realm`` otherwise (API keys only) — and when
-        this panel has no usable ``/mcp`` URL to point at, which is logged.
+        this panel has no usable MCP URL to point at, which is logged. The
+        document named is that of the URL the agent called
+        (``cloud.settings._mcp_resource_at``): ``/mcp``'s on ``/mcp``, so
+        that an agent connected there before finds the resource it checks.
+
+        :param AuthError error: why the credential was refused
+        :param str path: the path the agent called; ``''`` for the panel's
+            own MCP URL
         """
         headers = {}
         if error.status == 401:
             Settings = self.env["cloud.settings"].sudo()
-            issuer, resource = Settings._mcp_issuer(), Settings._mcp_resource()
+            issuer = Settings._mcp_issuer()
+            resource = Settings._mcp_resource_at(path)
             if issuer and resource:
                 metadata = resource_metadata_url(resource)
                 challenge = f'Bearer resource_metadata="{metadata}"'

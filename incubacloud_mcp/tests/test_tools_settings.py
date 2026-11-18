@@ -57,7 +57,10 @@ class TestSettingsTools(
         self._cloud_user("mcp-set-stakeholder", group="group_cloud_user")
         self.authenticate("mcp-set-stakeholder", "mcp-set-stakeholder")
         config = self._session_rpc("/cloud/mcp/config")["result"]
-        self.assertEqual(config["resource"], self.resource)
+        # The panel stored ``…/mcp`` (``_resource_here``) and gives /cloud/mcp.
+        self.assertEqual(
+            config["resource"], self.resource[: -len("/mcp")] + "/cloud/mcp"
+        )
         self.assertEqual(
             (config["issuer"], config["api_keys"], config["managed"]),
             ("", True, False),

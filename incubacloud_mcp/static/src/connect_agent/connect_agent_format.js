@@ -115,30 +115,49 @@ export function codexConfig(url, { apiKey = false } = {}) {
 }
 
 /**
- * Which module answers `/mcp` in this Odoo instead of the panel, or "".
+ * Which module declares an address of the panel's MCP in this Odoo, or "".
  *
- * Another MCP server module may declare `/mcp`: the panel then leaves it to
- * that module and its agents use `/cloud/mcp`, which is the address shown.
+ * Another MCP server module may declare `/mcp` or its OAuth document (RFC
+ * 9728): the panel then leaves `/mcp` and both documents to it and answers
+ * at `/cloud/mcp` only.
  *
  * @param {Object} [conflict] `{alias: module}`, as the routes answer it
  * @returns {string} the other module's technical name, or ""
  */
 export function aliasTakenBy(conflict) {
-    return (conflict && conflict["/mcp"]) || "";
+    return Object.values(conflict || {}).sort()[0] || "";
 }
 
 /**
- * What Connect an agent and Settings say when another module answers `/mcp`.
+ * What Connect an agent and Settings say when another module declares an
+ * address of the panel's MCP.
+ *
+ * Where the MCP address is `/cloud/mcp`, the agents still on `/mcp` must
+ * move; where it is a path of the user's proxy, the proxy must forward it
+ * to `/cloud/mcp`.
  *
  * @param {string} module that module's technical name
+ * @param {string} [url] the panel's MCP address, as shown
  * @returns {string} the notice, or "" without a module
  */
-export function conflictNotice(module) {
+export function conflictNotice(module, url = "") {
     if (!module) {
         return "";
     }
+    let path = "";
+    try {
+        path = new URL(url).pathname.replace(/\/+$/, "");
+    } catch {
+        // No address, or not one: the notice for /cloud/mcp.
+    }
+    if (path && path !== "/cloud/mcp" && path !== "/mcp") {
+        return _t(
+            "Another module in this Odoo, %(module)s, declares /mcp or its OAuth document, so this panel no longer answers at /mcp, only at /cloud/mcp. If your proxy forwards this panel's MCP address to /mcp, make it forward to /cloud/mcp instead.",
+            { module }
+        );
+    }
     return _t(
-        "Another module in this Odoo, %(module)s, answers /mcp, so this panel's agents use /cloud/mcp. An agent connected to /mcp before has to be connected again.",
+        "Another module in this Odoo, %(module)s, declares /mcp or its OAuth document, so this panel no longer answers at /mcp, only at /cloud/mcp. Agents still connected to /mcp have to switch to /cloud/mcp.",
         { module }
     );
 }
@@ -189,7 +208,7 @@ export function connectView(config = {}) {
 
 /**
  * How Settings shows the issuer and the URL: read-only where set from above,
- * and which module answers `/mcp` instead of the panel, if any.
+ * and which module declares an address of the panel's MCP, if any.
  *
  * @param {{managed?: boolean, conflict?: Object}} [settings] the answer of
  *     `/cloud/mcp/get_settings`

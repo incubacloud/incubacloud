@@ -18,6 +18,9 @@ _OUR_SRC = pathlib.Path(get_module_path("incubacloud_mcp")) / "static" / "src"
 
 #: The panel's MCP address in the browser tests.
 RESOURCE = "https://panel.example.test/mcp"
+#: What the page shows for it: a self-hosted panel that stored the address
+#: before /cloud/mcp gives /cloud/mcp.
+SHOWN = "https://panel.example.test/cloud/mcp"
 
 #: A page is ready when *selector* is there and the panel's start-up
 #: loader, still animating for a second after the panel mounts, is gone:
@@ -223,7 +226,7 @@ class TestTheSpaPages(StandalonePanelMixin, McpUsersMixin, ChromeStartRetry, Htt
         self._open(
             "/cloud/connect-agent",
             ".ic-mcp-connect .ic-mcp-url",
-            _API_KEY_PAGE.format(resource=RESOURCE),
+            _API_KEY_PAGE.format(resource=SHOWN),
             "mcp-spa-user",
         )
 

@@ -61,10 +61,16 @@ class TestMcpSettings(TransactionCase):
         )
 
     def test_a_resource_already_set_is_kept(self):
-        """A URL already set is never overwritten."""
+        """A URL already set is never overwritten: ``…/mcp`` stays stored,
+        and a self-hosted panel gives ``…/cloud/mcp`` for it."""
         self.ICP.set_param(RESOURCE_PARAM, "https://acme.example.test/mcp")
         self.Settings._mcp_install_defaults()
-        self.assertEqual(self.Settings._mcp_resource(), "https://acme.example.test/mcp")
+        self.assertEqual(
+            self.ICP.get_param(RESOURCE_PARAM), "https://acme.example.test/mcp"
+        )
+        self.assertEqual(
+            self.Settings._mcp_resource(), "https://acme.example.test/cloud/mcp"
+        )
 
     def test_the_user_cap_falls_back_to_its_default(self):
         """Zero falls back to 120 calls a minute; a positive value stays."""

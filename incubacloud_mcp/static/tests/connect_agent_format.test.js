@@ -92,7 +92,7 @@ describe("Connect an agent — what it shows", () => {
         expect(settingsView().readonly).toBe(false);
     });
 
-    test("another module that answers /mcp is named, on the page and in Settings", () => {
+    test("another module that declares /mcp is named, on the page and in Settings", () => {
         const conflict = { "/mcp": "other_mcp_server" };
         const view = connectView({
             resource: "https://acme.example.com/cloud/mcp",
@@ -103,20 +103,33 @@ describe("Connect an agent — what it shows", () => {
         expect(view.url).toBe("https://acme.example.com/cloud/mcp");
         expect(view.claudeCode).toInclude("'https://acme.example.com/cloud/mcp'");
         expect(settingsView({ conflict }).aliasTakenBy).toBe("other_mcp_server");
-        const notice = conflictNotice(view.aliasTakenBy);
+        const notice = conflictNotice(view.aliasTakenBy, view.url);
         expect(notice).toInclude("other_mcp_server");
-        expect(notice).toInclude("/cloud/mcp");
+        expect(notice).toInclude("Agents still connected to /mcp have to switch to /cloud/mcp.");
+        expect(notice).not.toInclude("proxy");
+        // Without an address to read, the same notice.
+        expect(conflictNotice("other_mcp_server")).toBe(notice);
     });
 
-    test("without another module on /mcp, no notice", () => {
+    test("only its OAuth document is enough: the panel leaves /mcp too", () => {
+        const conflict = { "/.well-known/oauth-protected-resource": "other_mcp_server" };
+        expect(aliasTakenBy(conflict)).toBe("other_mcp_server");
+        expect(connectView({ resource: URL, conflict }).aliasTakenBy).toBe("other_mcp_server");
+    });
+
+    test("behind a proxy path of its own, the notice says what the proxy must do", () => {
+        const notice = conflictNotice("other_mcp_server", "https://acme.example.com/agents/mcp");
+        expect(notice).toInclude("other_mcp_server");
+        expect(notice).toInclude("make it forward to /cloud/mcp instead");
+        expect(notice).not.toInclude("Agents still connected");
+    });
+
+    test("without another module, no notice", () => {
         expect(connectView({ resource: URL, issuer: "x" }).aliasTakenBy).toBe("");
         expect(connectView({ resource: URL, conflict: {} }).aliasTakenBy).toBe("");
-        // Only /mcp is the agents' business: the root document alone is not.
-        expect(
-            aliasTakenBy({ "/.well-known/oauth-protected-resource": "other_mcp_server" })
-        ).toBe("");
         expect(settingsView().aliasTakenBy).toBe("");
         expect(conflictNotice("")).toBe("");
+        expect(conflictNotice("", URL)).toBe("");
     });
 
     test("where the platform sets the address, its notice sends to support", () => {
