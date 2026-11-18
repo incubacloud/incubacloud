@@ -199,7 +199,12 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
             lines.append(env_line("PURGE_SINCE", since))
         if backend.backend_type == "sftp":
             # The key and the trusted server key travel as files of their
-            # own (``_sftp_files``), mounted where the program reads them.
+            # own (``_sftp_files``), mounted where the program reads them;
+            # a password, as in ``backup.env``, as a line of the file.
+            if backend.sftp_auth_method == "password":
+                lines.append(
+                    env_line("BACKEND_PASSWORD", backend.sftp_password or "")
+                )
             return "\n".join(lines) + "\n"
         if backend.s3_access_key_id:
             lines.append(env_line("AWS_ACCESS_KEY_ID", backend.s3_access_key_id))
@@ -242,7 +247,9 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         and mounted read-only by ``backup_purge_archived.sh``, which
         removes them on its way out. Every prefix is checked first: a
         path off the destination's server, or not one instance's folder,
-        stops the job before the key leaves the panel.
+        stops the job before the key leaves the panel. A destination that
+        logs in with a password sends the server key only: the password
+        is in the environment files (``_env_content``).
 
         :return: ``{remote path: content}``, empty for an S3 destination
         :rtype: dict
@@ -268,17 +275,30 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
                     "%(path)s is not one instance's folder: nothing was deleted.",
                     path=dst,
                 ))
-        if not backend.sftp_known_hosts or not backend.sftp_private_key:
+        password_login = backend.sftp_auth_method == "password"
+        if not backend.sftp_known_hosts or not (
+            password_login or backend.sftp_private_key
+        ):
             raise UserError(_(
                 "Confirm the SFTP server's key on the backup destination "
                 "%(name)s: nothing was deleted.",
                 name=backend.name,
             ))
-        key = backend.sftp_private_key
-        return {
-            self._job_path(SFTP_KEY_NAME): key if key.endswith("\n") else key + "\n",
+        if password_login and not backend.sftp_password:
+            raise UserError(_(
+                "Enter the SFTP password again on the backup destination "
+                "%(name)s: nothing was deleted.",
+                name=backend.name,
+            ))
+        files = {
             self._job_path(SFTP_KNOWN_HOSTS_NAME): backend.sftp_known_hosts.strip() + "\n",
         }
+        if not password_login:
+            key = backend.sftp_private_key
+            files[self._job_path(SFTP_KEY_NAME)] = (
+                key if key.endswith("\n") else key + "\n"
+            )
+        return files
 
     def _refuse_shared_prefix(self):
         """Refuse a prefix whose purge would reach another's copies.

@@ -56,6 +56,16 @@ SSH_CONFIG = (
     "  StrictHostKeyChecking yes\n"
 )
 
+#: ``~/.ssh/config`` of a destination that logs in with a password: no
+#: identity. duplicity's paramiko then offers no key and logs in with
+#: ``BACKEND_PASSWORD`` (``Backend.get_password`` of duplicity 3.0.5.1),
+#: which ``backup.env`` carries; the server key is checked as with a key.
+SSH_CONFIG_PASSWORD = (
+    "Host *\n"
+    "  UserKnownHostsFile /root/.ssh/known_hosts\n"
+    "  StrictHostKeyChecking yes\n"
+)
+
 
 class DstError(ValueError):
     """A DST that is not an ``sftp://`` URL this panel can use."""

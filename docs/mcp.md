@@ -194,7 +194,9 @@ Seventy-four tools with the bridge's three. Security settings of
 `update_settings` (D2): the audit retention, the trusted proxy ranges, every
 rate limit (the agents' included), the agents' issuer and the MCP address,
 and whatever `get_config` hides on that panel (observability, on a panel whose
-settings another panel pushes).
+settings another panel pushes), and how a backup destination logs in to its
+SFTP server (`sftp_auth_method`), since the switch deletes the key pair or
+the password.
 The approval says each value before and after; a value equal to the one held
 once normalised asks nothing. A setting the section does not have is refused
 before anyone is asked.

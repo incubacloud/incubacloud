@@ -239,9 +239,11 @@ class TestSettingsTools(
                 result = self._call_tool(self.key, "update_settings", args)
                 self.assertFalse(result["isError"], result)
 
-    def _approval_text(self, section, values):
+    def _approval_text(self, section, values, backend_id=None):
         """What update_settings asks the manager to approve, or None."""
         params = {"args": {"section": section, "values": values}}
+        if backend_id:
+            params["args"]["backend_id"] = backend_id
         return self._session_rpc("/cloud/mcp_test/approval_text", params)["result"][
             "text"
         ]
@@ -345,6 +347,41 @@ class TestSettingsTools(
         with observability(False):
             text = self._approval_text("general", values)
         self.assertIn("metrics_retention_days", text)
+
+    def test_switching_how_an_sftp_destination_logs_in_asks(self):
+        """The switch deletes the other secret, the key pair or the password;
+        any other change of the destination asks nothing."""
+        sftp = self.env["cloud.backup.backend"].create({
+            "name": "mcp-sftp-login", "backend_type": "sftp",
+            "sftp_host": "backup.example.com", "sftp_user": "u1",
+        })
+        self.authenticate("mcp-set-mgr", "mcp-set-mgr")
+        text = self._approval_text(
+            "backup_backend", {"sftp_auth_method": "password"}, sftp.id
+        )
+        self.assertIn("security settings", text)
+        self.assertIn('"sftp_auth_method": \'key\' → \'password\'', text)
+        for values in ({"sftp_auth_method": "key"}, {"sftp_path": "other"}):
+            with self.subTest(values=values):
+                self.assertIsNone(
+                    self._approval_text("backup_backend", values, sftp.id)
+                )
+
+    def test_a_password_is_not_deleted_without_approval(self):
+        """Back to a key, the password goes: not without the user."""
+        sftp = self.env["cloud.backup.backend"].create({
+            "name": "mcp-sftp-pw", "backend_type": "sftp",
+            "sftp_host": "backup.example.com", "sftp_user": "u1",
+            "sftp_auth_method": "password", "sftp_password": "Correct-horse 9",
+        })
+        result = self._call_tool(self.key, "update_settings", {
+            "section": "backup_backend", "backend_id": sftp.id,
+            "values": {"sftp_auth_method": "key"},
+        })
+        self.assertTrue(result["isError"])
+        sftp.invalidate_recordset()
+        self.assertEqual(sftp.sftp_auth_method, "password")
+        self.assertEqual(sftp.sudo().sftp_password, "Correct-horse 9")
 
     def test_a_sensitive_change_does_not_happen_without_approval(self):
         """Shortening the audit retention waits for an approval, and nothing changes."""

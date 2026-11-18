@@ -44,7 +44,9 @@
 # trusted server key, uploaded beside the first file as ``purge-ssh-key``
 # and ``purge-known_hosts``. They are mounted read-only where the program
 # reads them, with ``--mount``, which fails on a missing file instead of
-# creating a directory in its place, and removed with the rest.
+# creating a directory in its place, and removed with the rest. A
+# destination that logs in with a password sends no key: its environment
+# files carry ``BACKEND_PASSWORD``, and only the server key is mounted.
 #
 # Exit codes are the contract with the executor:
 #
@@ -87,14 +89,18 @@ done
 
 ssh_mounts=()
 if grep -q '^DST=sftp://' "${env_files[@]}"; then
-    for file in "$ssh_key" "$known_hosts"; do
+    ssh_files=("$known_hosts")
+    if ! grep -q '^BACKEND_PASSWORD=' "${env_files[@]}"; then
+        ssh_files+=("$ssh_key")
+        ssh_mounts=(--mount "type=bind,src=$ssh_key,dst=/root/.ssh/id_ed25519,readonly")
+    fi
+    for file in "${ssh_files[@]}"; do
         if [ ! -f "$file" ]; then
             ic_warn "SFTP key file not found: $file"
             exit 20
         fi
     done
-    ssh_mounts=(
-        --mount "type=bind,src=$ssh_key,dst=/root/.ssh/id_ed25519,readonly"
+    ssh_mounts+=(
         --mount "type=bind,src=$known_hosts,dst=/root/.ssh/known_hosts,readonly"
     )
 fi

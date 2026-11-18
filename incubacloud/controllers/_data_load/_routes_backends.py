@@ -44,12 +44,15 @@ class BackendsMixin:
         "quota_gb",
         "alert_threshold_pct",
         "alert_email",
-        # SFTP: where. The key pair and the trusted server key are the
-        # server's to write (``_SFTP_SERVER_FIELDS``), never the SPA's.
+        # SFTP: where, and how to log in. The key pair and the trusted
+        # server key are the server's to write (``_SFTP_SERVER_FIELDS``),
+        # never the SPA's; a password is the person's, as an S3 secret.
         "sftp_host",
         "sftp_port",
         "sftp_user",
         "sftp_path",
+        "sftp_auth_method",
+        "sftp_password",
     }
     # NOTE: ``managed_reservation_id`` and ``archived_until`` are NOT in the
     # allowlist. They are written exclusively by server-side flows
@@ -145,11 +148,14 @@ class BackendsMixin:
             "has_s3_secret_access_key": _has_encrypted(b, "s3_secret_access_key"),
             "has_passphrase": _has_encrypted(b, "passphrase"),
             # SFTP: the public half and the trusted server key's
-            # fingerprint. Never the private key: no route reads it.
+            # fingerprint. Never the private key nor the password: no
+            # route reads them.
             "sftp_host": b.sftp_host or "",
             "sftp_port": b.sftp_port or 22,
             "sftp_user": b.sftp_user or "",
             "sftp_path": b.sftp_path or "",
+            "sftp_auth_method": b.sftp_auth_method or "key",
+            "has_sftp_password": _has_encrypted(b, "sftp_password"),
             "sftp_public_key": b.sftp_public_key or "",
             "sftp_host_key_fingerprint": b.sftp_host_key_fingerprint or "",
             "sftp_host_key_trusted": bool(b.sftp_host_key_fingerprint),
@@ -467,6 +473,13 @@ class BackendsMixin:
                 "The server presents the key %(presented)s, not the trusted "
                 "%(trusted)s. Check it with your provider before trusting it.",
                 presented=presented, trusted=b.sftp_host_key_fingerprint,
+            )}
+        if isinstance(cause, asyncssh.PermissionDenied) and (
+            b.sftp_auth_method == "password"
+        ):
+            return {"ok": False, "error": _(
+                "The server refused the user or the password. Check both "
+                "with your provider and enter the password again."
             )}
         if isinstance(cause, asyncssh.PermissionDenied):
             return {"ok": False, "error": _(

@@ -16,6 +16,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 from odoo.tools import email_normalize
+from odoo.tools.misc import hmac as keyed_hmac
 
 from ..net.hostname import is_host_address
 from ..net.outbound import OutboundError, _resolve_public
@@ -45,6 +46,15 @@ _ALERT_DEBOUNCE_DAYS = 7
 #: The comment of the key pair an SFTP destination generates: what the
 #: line in the server's ``authorized_keys`` is recognised by.
 SFTP_KEY_COMMENT = "incubacloud-backup"
+
+#: The scope of the HMAC that fingerprints an SFTP password in an
+#: instance's configuration snapshot (``CloudBackupBackend._sftp_snapshot``).
+SFTP_PASSWORD_HMAC_SCOPE = "incubacloud.sftp_password_snapshot"
+
+#: The shortest SFTP password accepted: the agents' scrubber masks only
+#: secrets of 8 characters or more (``incubacloud_mcp``'s
+#: ``MIN_SECRET_LEN``), so a shorter one could reach an agent in a log.
+SFTP_PASSWORD_MIN_LEN = 8
 
 #: Fields only the server writes on an SFTP destination: the key pair it
 #: generates and the server key a person confirmed, with its fingerprint.
@@ -124,6 +134,8 @@ class CloudBackupBackend(models.Model):
     # ── SFTP ────────────────────────────────────────────────────────────────
     # The panel generates the key pair; the person adds the public half to
     # the server and confirms the server's own key (``sftp_known_hosts``).
+    # A server that accepts no key logs in with a password instead
+    # (``sftp_auth_method``): the server key is trusted the same way.
 
     sftp_host = fields.Char(string="SFTP Server")
     sftp_port = fields.Integer(string="SFTP Port", default=22)
@@ -133,6 +145,20 @@ class CloudBackupBackend(models.Model):
         default="backups",
         help="Folder under the user's home (e.g. backups). Start with / "
         "for an absolute path.",
+    )
+    sftp_auth_method = fields.Selection(
+        [("key", "Key (recommended)"), ("password", "Password")],
+        string="SFTP Authentication",
+        default="key",
+        required=True,
+        help="How the panel and the backups log in to the SFTP server: "
+        "with a key the panel generates, or with a password for a server "
+        "that accepts no key.",
+    )
+    sftp_password = EncryptedChar(
+        string="SFTP Password",
+        groups="incubacloud.group_cloud_manager",
+        copy=False,
     )
     sftp_private_key = EncryptedText(
         string="SFTP Private Key",
@@ -473,13 +499,16 @@ class CloudBackupBackend(models.Model):
         """Return how the panel logs in to this destination's server.
 
         The destination's own server at the address the network policy
-        checked (``_sftp_address``), its key in memory (never written to
-        disk or to the log), and the trusted server key as the only key
-        accepted: passed as a key, not by host pattern, so dialling a
-        checked address rather than the name changes nothing.
+        checked (``_sftp_address``), its key or its password in memory
+        (never written to disk or to the log), and the trusted server key
+        as the only key accepted: passed as a key, not by host pattern, so
+        dialling a checked address rather than the name changes nothing.
+        With a password ``client_keys`` is None, which turns public key
+        authentication off: an empty list would load ``~/.ssh``'s keys.
 
         :rtype: dict
-        :raise UserError: without a trusted server key or a readable key
+        :raise UserError: without a trusted server key, or a readable key
+            or password
         """
         self.ensure_one()
         bb = self.sudo()
@@ -488,25 +517,55 @@ class CloudBackupBackend(models.Model):
                 "Read and trust the SFTP server's key first."
             ))
         try:
-            client_key = asyncssh.import_private_key(bb.sftp_private_key or "")
             kind, data = bb.sftp_known_hosts.split()[1:3]
             trusted = asyncssh.import_public_key(f"{kind} {data}")
+        except (ValueError, asyncssh.KeyImportError) as exc:
+            raise UserError(_(
+                "Read and trust the SFTP server's key first."
+            )) from exc
+        client_keys, password = self._sftp_credentials()
+        return {
+            "host": self._sftp_address(),
+            "port": self.sftp_port or 22,
+            "username": self.sftp_user,
+            "client_keys": client_keys,
+            "known_hosts": ([trusted], [], []),
+            "agent_path": None,
+            "password": password,
+            "connect_timeout": ssh_host_keys.CONNECT_TIMEOUT,
+            "login_timeout": ssh_host_keys.TOTAL_TIMEOUT,
+        }
+
+    def _sftp_credentials(self):
+        """Return what the panel logs in to this destination's server with.
+
+        :return: ``(client_keys, password)``: the key and None, or None
+            and the password
+        :rtype: tuple
+        :raise UserError: when the key or the password cannot be read
+        """
+        self.ensure_one()
+        bb = self.sudo()
+        if bb.sftp_auth_method == "password":
+            try:
+                password = bb.sftp_password or ""
+            except ValueError:
+                password = ""
+            if not password:
+                raise UserError(_(
+                    "The SFTP password of %(name)s cannot be read: enter it "
+                    "again.",
+                    name=self.name,
+                ))
+            return None, password
+        try:
+            client_key = asyncssh.import_private_key(bb.sftp_private_key or "")
         except (ValueError, asyncssh.KeyImportError) as exc:
             raise UserError(_(
                 "The SFTP key of %(name)s cannot be read: generate a new one.",
                 name=self.name,
             )) from exc
-        return {
-            "host": self._sftp_address(),
-            "port": self.sftp_port or 22,
-            "username": self.sftp_user,
-            "client_keys": [client_key],
-            "known_hosts": ([trusted], [], []),
-            "agent_path": None,
-            "password": None,
-            "connect_timeout": ssh_host_keys.CONNECT_TIMEOUT,
-            "login_timeout": ssh_host_keys.TOTAL_TIMEOUT,
-        }
+        return [client_key], None
 
     @contextlib.asynccontextmanager
     async def _sftp_client(self, kwargs):
@@ -772,6 +831,48 @@ class CloudBackupBackend(models.Model):
                     "choose Nobody."
                 ))
 
+    @api.constrains("backend_type", "sftp_auth_method", "sftp_password")
+    def _check_sftp_password(self):
+        """Require the password of an SFTP destination that logs in with one.
+
+        It reaches the backup container as a line of ``backup.env``
+        (``BACKEND_PASSWORD``), which compose reads: a value that holds
+        what compose reads as more than the value would log in with
+        something else, so it is refused here, as the passphrase is
+        (``compose_env_breaks``).
+
+        It is at least ``SFTP_PASSWORD_MIN_LEN`` characters long, so the
+        agents' scrubber, which masks secrets of that length or more,
+        always masks it in what an agent reads.
+
+        :raises ValidationError: without a password, with a shorter one,
+            or with one compose would not read as written
+        """
+        for rec in self.filtered(
+            lambda r: r.backend_type == "sftp" and r.sftp_auth_method == "password"
+        ):
+            # sudo: the password is a manager's field; the check is not.
+            password = rec.sudo().sftp_password
+            if not password:
+                raise ValidationError(_(
+                    "Enter the password %(name)s logs in to the SFTP server "
+                    "with.",
+                    name=rec.name,
+                ))
+            if len(password) < SFTP_PASSWORD_MIN_LEN:
+                raise ValidationError(_(
+                    "The SFTP password of %(name)s must be at least %(min)s "
+                    "characters long.",
+                    name=rec.name, min=SFTP_PASSWORD_MIN_LEN,
+                ))
+            if compose_env_breaks(password):
+                raise ValidationError(_(
+                    "The SFTP password of %(name)s may not hold quotes, "
+                    "backquotes, $, \\, #, line breaks or control "
+                    "characters, nor start or end with a space.",
+                    name=rec.name,
+                ))
+
     @api.constrains("backend_type", "s3_bucket", "s3_path")
     def _check_backup_dst_shape(self):
         """Keep the bucket and the path to the grammar of a backup path.
@@ -1002,7 +1103,9 @@ class CloudBackupBackend(models.Model):
 
     # ── Password handling ───────────────────────────────────────────────────
 
-    _PASSWORD_FIELDS = ("s3_secret_access_key", "passphrase", "sftp_private_key")
+    _PASSWORD_FIELDS = (
+        "s3_secret_access_key", "passphrase", "sftp_private_key", "sftp_password",
+    )
 
     def _check_server_fields(self, vals):
         """Refuse the fields only the server writes, unless it is writing.
@@ -1099,8 +1202,11 @@ class CloudBackupBackend(models.Model):
         self._check_can_manage_settings()
         self._check_server_fields(vals)
         self._normalize_sftp_vals(vals)
+        # An empty secret from the page means "untouched"; the platform
+        # dropping one it has no use for says so (``_sftp_settle_login``).
+        dropping = self.env.su and self.env.context.get("ic_sftp_drop_secret")
         for field in self._PASSWORD_FIELDS:
-            if field in vals and not vals[field]:
+            if field in vals and not vals[field] and not dropping:
                 del vals[field]
         if vals.get("s3_endpoint_url"):
             vals["s3_endpoint_url"] = normalize_endpoint_url(vals["s3_endpoint_url"])
@@ -1119,7 +1225,13 @@ class CloudBackupBackend(models.Model):
                 f in vals and vals[f] != r[f] for f in ("sftp_host", "sftp_port")
             )
         )
+        login_changed = self.filtered(
+            lambda r: r.backend_type == "sftp" and "sftp_auth_method" in vals
+            and vals["sftp_auth_method"] != r.sftp_auth_method
+        )
+        password_written = bool(vals.get("sftp_password"))
         res = super().write(vals)
+        self._sftp_settle_login(login_changed, password_written)
         if endpoint_moved:
             # Another server, or another port of it: the key confirmed
             # was the old endpoint's, and must be confirmed again.
@@ -1172,10 +1284,13 @@ class CloudBackupBackend(models.Model):
             if isinstance(vals.get("s3_region"), str):
                 vals["s3_region"] = vals["s3_region"].strip()
             private = None
-            if vals.get("backend_type") == "sftp":
-                pair = self._sftp_key_pair()
-                private = pair.pop("sftp_private_key")
-                vals.update(pair)
+            if vals.get("sftp_auth_method", "key") == "key":
+                # A key destination keeps no password, a password one no key.
+                vals.pop("sftp_password", None)
+                if vals.get("backend_type") == "sftp":
+                    pair = self._sftp_key_pair()
+                    private = pair.pop("sftp_private_key")
+                    vals.update(pair)
             private_keys.append(private)
         records = super().create(vals_list)
         # The private half is a field of the platform (``base.group_system``),
@@ -1207,6 +1322,44 @@ class CloudBackupBackend(models.Model):
             "sftp_public_key": f"{kind} {data} {SFTP_KEY_COMMENT}",
         }
 
+    def _sftp_settle_login(self, switched, password_written):
+        """Keep the secret of the way each SFTP destination logs in, only.
+
+        A destination switched to a password loses its key pair, and one
+        switched to a key its password and gets a new pair: the other
+        secret has no use left, and nothing should hold it. The instances
+        get the change on their next build (``_sftp_snapshot``); until
+        then they log in as before. A password written to a destination
+        that logs in with a key is dropped.
+
+        :param switched: the destinations whose ``sftp_auth_method`` this
+            write changed
+        :param bool password_written: whether the write set a password
+        """
+        platform = self.sudo().with_context(ic_sftp_drop_secret=True)
+        for rec in switched:
+            if rec.sftp_auth_method == "password":
+                platform.browse(rec.id).write({
+                    "sftp_private_key": False, "sftp_public_key": False,
+                })
+            else:
+                platform.browse(rec.id).write({
+                    "sftp_password": False, **self._sftp_key_pair(),
+                })
+            self.env["cloud.audit.log"].sudo().create({
+                "action": "SFTP login changed",
+                "details": (
+                    f"backup destination {rec.name} (id {rec.id}): "
+                    f"now with a {rec.sftp_auth_method}"
+                ),
+            })
+        if password_written:
+            keyed = (self - switched).filtered(
+                lambda r: r.backend_type == "sftp" and r.sftp_auth_method == "key"
+            )
+            if keyed:
+                platform.browse(keyed.ids).write({"sftp_password": False})
+
     def _sftp_regenerate_key(self):
         """Replace the key pair; the instances get it on their next build.
 
@@ -1217,6 +1370,11 @@ class CloudBackupBackend(models.Model):
         self.ensure_one()
         if self.backend_type != "sftp":
             raise UserError(_("Only an SFTP destination has a key."))
+        if self.sftp_auth_method == "password":
+            raise UserError(_(
+                "%(name)s logs in with a password: switch it to a key first.",
+                name=self.name,
+            ))
         self.sudo().write(self._sftp_key_pair())
         self.env["cloud.audit.log"].sudo().create({
             "action": "SFTP backup key regenerated",
@@ -1229,18 +1387,39 @@ class CloudBackupBackend(models.Model):
         Fingerprints only, never a key: a new key pair or a newly trusted
         server key leaves the instances on this destination with changes
         to apply, because the files that carry them reach a host on a
-        build only.
+        build only. So does a new password, or a switch between the two,
+        with ``auth`` and the password's fingerprint; a destination on a
+        key has neither, so the instances on one hash as before.
+
+        The snapshot is stored on the instance, which every member of its
+        project reads: the password's fingerprint is an HMAC keyed by the
+        database's ``database.secret`` (``odoo.tools.misc.hmac``), which
+        only the platform reads, so nobody can check a guessed password
+        against it. It is a function of the password itself, not of its
+        encrypted form: Fernet encrypts the same password differently
+        each time, so saving the same one again would leave changes to
+        apply that change nothing on the hosts, and a rotated encryption
+        key would leave them on every instance. Keyed so, it changes
+        exactly when the password does.
 
         :return: ``public`` (SHA-256 of the public key) and ``host_key``
-            (the trusted server key's fingerprint)
+            (the trusted server key's fingerprint); with a password,
+            ``auth`` and ``password`` too
         :rtype: dict
         """
         self.ensure_one()
         public = self.sftp_public_key or ""
-        return {
+        snapshot = {
             "public": hashlib.sha256(public.encode()).hexdigest() if public else "",
             "host_key": self.sftp_host_key_fingerprint or "",
         }
+        if self.sftp_auth_method == "password":
+            fingerprint = keyed_hmac(
+                self.env(su=True), SFTP_PASSWORD_HMAC_SCOPE,
+                (self.id, self.sudo().sftp_password or ""),
+            )
+            snapshot.update({"auth": "password", "password": fingerprint[:16]})
+        return snapshot
 
     # ── Effective alert threshold ──────────────────────────────────────────
 

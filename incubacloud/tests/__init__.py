@@ -330,6 +330,7 @@ from . import test_backup_backend_sftp_host_key
 from . import test_backup_sftp_deploy
 from . import test_backup_backend_sftp_use
 from . import test_purge_archived_sftp
+from . import test_backup_backend_sftp_password
 from . import test_host_reboot
 from . import test_host_reboot_queue
 from . import test_first_steps

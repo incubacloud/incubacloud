@@ -405,6 +405,29 @@ _sftp_env_file() {
     [ ! -f "$(dirname "$env_file")/purge-ssh-key" ]
 }
 
+@test "archived purge of an SFTP copy without its key is 20, nothing runs" {
+    env_file="$(_sftp_env_file)"
+    rm "$(dirname "$env_file")/purge-ssh-key"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag"
+    [ "$status" -eq 20 ]
+    [ ! -s "$DOCKER_CALLS" ]
+}
+
+@test "archived purge of an SFTP copy with a password mounts the trusted key only" {
+    # The password is a line of the environment file; no key file is sent.
+    env_file="$(_sftp_env_file)"
+    dir="$(dirname "$env_file")"
+    rm "$dir/purge-ssh-key"
+    printf 'BACKEND_PASSWORD=Correct-horse 9 battery!\n' >> "$env_file"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag"
+    [ "$status" -eq 0 ]
+    grep -q -- "--mount type=bind,src=$dir/purge-known_hosts,dst=/root/.ssh/known_hosts,readonly" "$DOCKER_CALLS"
+    ! grep -q -- "id_ed25519" "$DOCKER_CALLS"
+    ! grep -q 'Correct-horse' "$DOCKER_CALLS"
+    [ ! -f "$env_file" ]
+    [ ! -f "$dir/purge-known_hosts" ]
+}
+
 @test "archived purge of an S3 copy mounts nothing" {
     env_file="$(_env_file)"
     run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag"

@@ -65,6 +65,11 @@ DO $$ BEGIN
     UPDATE cloud_backup_backend SET sftp_private_key = NULL;
 EXCEPTION WHEN undefined_column THEN NULL;
 END $$;
+-- Its password (1.0.237), for the same reason.
+DO $$ BEGIN
+    UPDATE cloud_backup_backend SET sftp_password = NULL;
+EXCEPTION WHEN undefined_column THEN NULL;
+END $$;
 
 -- 2. Clear known_hosts fingerprints (prod-specific)
 UPDATE cloud_host SET known_hosts_key = NULL;

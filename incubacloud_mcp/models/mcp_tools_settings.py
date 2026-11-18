@@ -71,6 +71,10 @@ SENSITIVE_GENERAL = (
     "trusted_proxy_ranges", "metrics_central_write_access",
     "cron_heartbeat_url",
 )
+#: Backup destination settings that always ask for approval when they change.
+#: Switching how an SFTP destination logs in deletes the other secret: the
+#: key pair, or the password the user typed, which no agent can set back.
+SENSITIVE_BACKUP_BACKEND = ("sftp_auth_method",)
 #: General settings that ask for approval when lowered: with fewer hours the
 #: copies a move froze on their old servers are removed sooner (0: at the
 #: next hourly pass), and what they hold with them.
@@ -400,8 +404,10 @@ class McpToolsSettings(models.AbstractModel):
 
         D2: the audit and host shell retentions, the trusted proxy ranges, every rate
         limit, the agents' issuer and MCP URL, and what ``get_config``
-        hides on this panel (observability, on a managed panel); and the hours a
-        move's frozen copy is kept, when lowered (``LOWERED_ASKS_GENERAL``).
+        hides on this panel (observability, on a managed panel); the hours a
+        move's frozen copy is kept, when lowered (``LOWERED_ASKS_GENERAL``);
+        and how a saved backup destination logs in to its SFTP server
+        (``SENSITIVE_BACKUP_BACKEND``).
         A value equal to the one held once normalised
         (:func:`normalized_setting`) is no change.
         """
@@ -421,6 +427,11 @@ class McpToolsSettings(models.AbstractModel):
         elif section == "mcp":
             current = self._route("/cloud/mcp/get_settings")
             sensitive = set(values)
+        elif section == "backup_backend" and args.get("backend_id"):
+            current = self._route(
+                "/cloud/get_backup_backend", backend_id=args["backend_id"]
+            )
+            sensitive = set(SENSITIVE_BACKUP_BACKEND)
         else:
             return []
         changes = [

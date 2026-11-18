@@ -1416,8 +1416,10 @@ class CloudInstance(models.Model):
             # write ``BACKEND_PASSWORD=example-backup-backend-password``
             # into every backup.env. Empty keeps the line out of the
             # file entirely. Only password-capable duplicity backends
-            # (SFTP) read it; ours are S3/R2, which authenticate with
-            # the AWS keys above.
+            # (SFTP) read it: an SFTP destination that logs in with a
+            # password gets it in backup.env from the deploy
+            # (``DeployInstanceExecutor._backup_env_content``), never
+            # through the answers, which the configuration snapshot keeps.
             "backup_backend_password": "",
             # Egress allow-list — always answered, never left to the
             # template, for the same reason as the line above: its
@@ -2269,9 +2271,13 @@ class CloudInstance(models.Model):
         """Return the files the ``backup`` service logs in to SFTP with.
 
         The key, the trusted server key and ``~/.ssh/config``
-        (``sftp_dst.SSH_DIR``). Refuses the build first when they cannot
-        protect the copies: no confirmed server key, a key that cannot be
-        read, or a backup path that is not on the destination's server.
+        (``sftp_dst.SSH_DIR``); for a destination that logs in with a
+        password, the trusted server key and a config without an identity
+        only, the password travelling in ``backup.env``
+        (``DeployInstanceExecutor._backup_env_content``). Refuses the build
+        first when they cannot protect the copies: no confirmed server key,
+        a key or a password that cannot be read, or a backup path that is
+        not on the destination's server.
         duplicity's paramiko asks about a server it does not know instead
         of refusing it, and only finds the key under the server's name as
         the path writes it: the path and the key must name the same
@@ -2294,16 +2300,30 @@ class CloudInstance(models.Model):
                 "%(name)s: read it, compare it and trust it, then try again.",
                 name=bb.name,
             ))
-        try:
-            key = bb.sftp_private_key or ""
-        except ValueError:
+        if bb.sftp_auth_method == "password":
+            try:
+                password = bb.sftp_password or ""
+            except ValueError:
+                password = ""
+            if not password:
+                raise UserError(_(
+                    "The SFTP password of the backup destination %(name)s "
+                    "cannot be read. Enter it again on the destination and "
+                    "try again.",
+                    name=bb.name,
+                ))
             key = ""
-        if not key:
-            raise UserError(_(
-                "The SFTP key of the backup destination %(name)s cannot be "
-                "read. Generate a new one, add it to the server and try again.",
-                name=bb.name,
-            ))
+        else:
+            try:
+                key = bb.sftp_private_key or ""
+            except ValueError:
+                key = ""
+            if not key:
+                raise UserError(_(
+                    "The SFTP key of the backup destination %(name)s cannot be "
+                    "read. Generate a new one, add it to the server and try again.",
+                    name=bb.name,
+                ))
         dst = self.instance_backup_dst or ""
         try:
             path = sftp_dst.check_dst(
@@ -2323,9 +2343,15 @@ class CloudInstance(models.Model):
                 "folder of its own: it would be shared with other instances.",
                 instance=self.name, path=dst,
             ))
+        known_hosts = bb.sftp_known_hosts.strip() + "\n"
+        if not key:
+            return {
+                sftp_dst.SSH_KNOWN_HOSTS_FILE: known_hosts,
+                sftp_dst.SSH_CONFIG_FILE: sftp_dst.SSH_CONFIG_PASSWORD,
+            }
         return {
             sftp_dst.SSH_KEY_FILE: key if key.endswith("\n") else key + "\n",
-            sftp_dst.SSH_KNOWN_HOSTS_FILE: bb.sftp_known_hosts.strip() + "\n",
+            sftp_dst.SSH_KNOWN_HOSTS_FILE: known_hosts,
             sftp_dst.SSH_CONFIG_FILE: sftp_dst.SSH_CONFIG,
         }
 
