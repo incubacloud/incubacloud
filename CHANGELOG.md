@@ -15,21 +15,20 @@ servers alone, and the central serves no cross-account read. A conflict
 answered before 1.0.220 no longer holds its instance's queue. The GitHub
 App can be created under an organization, chosen on the setup page. A
 database that lost the panel's cron bot updates again. Continuous recovery
-works on S3 destinations that sign for a region of their own. An SFTP backup
-destination can log in with a password. A shell test
-no longer depends on the clock, a short request time limit keeps most of
-its time for the playbook, and the Ansible launcher's CI job installs what
+works on S3 destinations that sign for a region of their own. An SFTP
+backup destination can log in with a password. A shell test no longer
+depends on the clock, a short request time limit keeps most of its time for
+the playbook, and the Ansible launcher's CI job installs what
 `requirements.txt` pins.
 
 The update adds the table `cloud_host_known_key`, empty, the column
 `owner_type` to the GitHub App, empty on an App there is, the column
-`s3_region` to `cloud_backup_backend`, empty, and two more to the
-backup destinations, `sftp_auth_method`, set to `key` on every one, and
-`sftp_password`. Its data
-migration, 1.0.236's `end-stale-holds`, closes the failures a conflict
-answered before 1.0.220 left holding an instance's queue, and cancels what
-waited behind them; the cron bot's end-migration recreates the bot only
-when it is missing.
+`s3_region` to `cloud_backup_backend`, empty, and two more to the backup
+destinations, `sftp_auth_method`, set to `key` on every one, and
+`sftp_password`. Its data migration, 1.0.238's `end-stale-holds`, closes
+the failures a conflict answered before 1.0.220 left holding an instance's
+queue, and cancels what waited behind them; the cron bot's end-migration
+recreates the bot only when it is missing.
 
 ### Added
 
@@ -310,7 +309,7 @@ when it is missing.
 
 ### Migration
 
-- 1.0.236's `end-stale-holds` closes, `auto`, the `job_failed` alerts left
+- 1.0.238's `end-stale-holds` closes, `auto`, the `job_failed` alerts left
   holding an instance's queue after their conflict was closed, and cancels
   what waited behind them; one savepoint per instance, and what fails is
   logged without breaking the update.

@@ -65,7 +65,7 @@ DO $$ BEGIN
     UPDATE cloud_backup_backend SET sftp_private_key = NULL;
 EXCEPTION WHEN undefined_column THEN NULL;
 END $$;
--- Its password (1.0.237), for the same reason.
+-- Its password (1.0.238), for the same reason.
 DO $$ BEGIN
     UPDATE cloud_backup_backend SET sftp_password = NULL;
 EXCEPTION WHEN undefined_column THEN NULL;
