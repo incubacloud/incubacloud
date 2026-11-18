@@ -15,3 +15,5 @@
 {"SYSLOG_IDENTIFIER": "sshd-session", "MESSAGE": "Connection reset by invalid user test 172.31.0.7 port 41006 [preauth]"}
 {"SYSLOG_IDENTIFIER": "sshd-session", "MESSAGE": "Connection reset by 172.31.0.8 port 41008 [preauth]"}
 {"SYSLOG_IDENTIFIER": "sudo", "MESSAGE": "probador : PWD=/home/probador ; USER=root ; COMMAND=/bin/sh -c 'echo BECOME-SUCCESS-zzzzzzzzzzzzzzzz ; true'"}
+{"SYSLOG_IDENTIFIER": "sudo", "_EXE": "/usr/lib/cargo/bin/sudo", "MESSAGE": "pam_unix(sudo:auth): authentication failure; logname=incubacloud uid=1001 euid=0 tty= ruser=probador rhost=  user=probador"}
+{"SYSLOG_IDENTIFIER": "sudo", "_EXE": "/usr/lib/cargo/bin/sudo", "MESSAGE": "probador :  PWD=/home/probador ; USER=root ; COMMAND=/usr/bin/whoami"}

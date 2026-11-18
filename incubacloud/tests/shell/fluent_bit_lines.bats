@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
-# The security lines of F0 (Debian 13, OpenSSH 10) through the real Fluent
-# Bit image, with the configuration host_observability.yml renders, into a
+# The security lines of F0 (Debian 13, OpenSSH 10), and sudo-rs's (Ubuntu
+# 26.04), through the real Fluent Bit image, with the configuration host_observability.yml renders, into a
 # Loki of the central's version.
 #
 # Needs Docker and pulls two images, so it runs only when asked:
@@ -79,7 +79,7 @@ PY
     cat "$here/fixtures/fluent_bit/access.log" >> "$TMP/log/traefik/access.log"
     for _ in $(seq 60); do
         [ "$(loki_count auditd)" = 5 ] && [ "$(loki_count fail2ban)" = 7 ] &&
-            [ "$(loki_count sshd)" = 11 ] && [ "$(loki_count sudo)" = 6 ] &&
+            [ "$(loki_count sshd)" = 11 ] && [ "$(loki_count sudo)" = 8 ] &&
             [ "$(loki_count weblogin)" -ge 16 ] && break
         sleep 1
     done
@@ -124,9 +124,12 @@ counter() {
 @test "a refused sudo is not a command run" {
     [ "$(counter 'ic_sudo_total{kind="panel_user"}')" = 1 ]
     [ "$(counter 'ic_sudo_total{kind="ansible"}')" = 1 ]
-    # Another user's BECOME-SUCCESS is not Ansible's.
-    [ "$(counter 'ic_sudo_total{kind="other"}')" = 2 ]
-    [ "$(counter 'ic_sudo_failed_total')" = 1 ]
+    # Another user's BECOME-SUCCESS is not Ansible's; sudo-rs's command
+    # line is one too.
+    [ "$(counter 'ic_sudo_total{kind="other"}')" = 3 ]
+    # GNU sudo's refusal once, not its PAM line beside it; sudo-rs's by
+    # its PAM line, the only one it writes.
+    [ "$(counter 'ic_sudo_failed_total')" = 2 ]
 }
 
 @test "fail2ban's events by jail, already banned among them" {
@@ -149,7 +152,7 @@ counter() {
 
 @test "every line read is counted, sent or not" {
     [ "$(counter 'ic_security_lines_total{source="sshd"}')" = 11 ]
-    [ "$(counter 'ic_security_lines_total{source="sudo"}')" = 6 ]
+    [ "$(counter 'ic_security_lines_total{source="sudo"}')" = 8 ]
     [ "$(counter 'ic_security_lines_total{source="fail2ban"}')" = 9 ]
     [ "$(counter 'ic_security_lines_total{source="auditd"}')" = 8 ]
 }

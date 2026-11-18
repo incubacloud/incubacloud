@@ -250,6 +250,39 @@ when it is missing.
   bot when it is missing and gives it the crons of the panel's modules
   still owned by uid 1; with the bot there, it does nothing.
 
+## [1.0.237] — unreleased
+
+Harden Host supports Ubuntu 26.04 LTS, and the security logs read its sudo.
+The update changes no table and has no data migration.
+
+### Added
+
+- **Harden Host supports Ubuntu 26.04 LTS.** The preflight refused it
+  (*Hardening only supports Ubuntu 22.04/24.04 and Debian 12+*). The
+  panel's playbooks and Full Setup's scripts were run on a fresh 26.04
+  server (OpenSSH 10.2, sudo-rs, Rust coreutils, systemd 259, nftables
+  1.1.6): the probe, Harden Host with its port rotation, firewall,
+  fail2ban and auditd, Full Setup, the observability agents,
+  maintenance, a reboot and the server's removal.
+  One step differed: OpenSSH 10.2 prints `PermitRootLogin
+  prohibit-password` as written, where 10.0 and before print
+  `without-password`, and the check that no other sshd file outranks
+  ours refused the server; it now takes either. A host already hardened
+  is not asked to harden again: on the systems admitted before, the
+  recipe runs the same steps with the same values. The CI parses the
+  firewall ruleset with 26.04's nft too.
+
+### Fixed
+
+- **The security logs read sudo-rs, Ubuntu 26.04's sudo.** It writes two
+  spaces after the user's colon, and the panel read none of its lines: a
+  command run by another user than the panel's raised no alert and was
+  missing from the server's Security view. It also writes no line of its
+  own for a wrong password, only PAM's, so the agents counted no refused
+  sudo; they now count PAM's line when sudo-rs wrote it (GNU sudo writes
+  both, and is still counted once). sudo-rs logs nothing at all for a
+  user the sudoers leave out, so on 26.04 that refusal is not seen.
+
 ## [1.0.236] — unreleased
 
 Ansible jobs run on a panel on Odoo.sh, a playbook ends before the
