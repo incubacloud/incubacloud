@@ -46,14 +46,12 @@ the hosts and from the panel**.
     | **Bucket** | The bucket's name, nothing else. |
     | **Path** | A prefix inside it, `backups` by default. Each instance writes under `<path>/<project folder>/<instance>/`. |
     | **Endpoint URL** | Empty for AWS S3; the provider's S3 endpoint otherwise (below). |
+    | **Region** | The bucket's region as the provider names it, for instance `eu-west-par`: continuous recovery signs its requests with it. Empty for Cloudflare R2, and for AWS S3 in `us-east-1`. |
     | **Access key ID**, **Secret access key** | The key of step 2. |
     | **Passphrase** | Read [the passphrase](#encryption) first. |
 
 4. **Test Connection**. It names what is wrong: the key (*403*), a bucket that
    is not there (*404*), or an endpoint other than the bucket's (*301*).
-
-There is no region field: the panel and the backup container use the endpoint
-you give.
 
 ### Examples
 

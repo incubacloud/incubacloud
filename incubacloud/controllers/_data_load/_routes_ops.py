@@ -1589,6 +1589,7 @@ class OpsMixin:
                             "AWS_ENDPOINT_URL",
                             "",
                         ),
+                        "s3_region": backup_env.get("AWS_DEFAULT_REGION", ""),
                         "passphrase": backup_env.get("PASSPHRASE", ""),
                         "email_from": copier.get(
                             "backup_email_from",

@@ -29,6 +29,7 @@ class BackendsMixin:
         "s3_bucket",
         "s3_path",
         "s3_endpoint_url",
+        "s3_region",
         "s3_access_key_id",
         "s3_secret_access_key",
         "passphrase",
@@ -139,6 +140,7 @@ class BackendsMixin:
             "s3_bucket": b.s3_bucket or "",
             "s3_path": b.s3_path or "",
             "s3_endpoint_url": b.s3_endpoint_url or "",
+            "s3_region": b.s3_region or "",
             "s3_access_key_id": b.s3_access_key_id or "",
             "has_s3_secret_access_key": _has_encrypted(b, "s3_secret_access_key"),
             "has_passphrase": _has_encrypted(b, "passphrase"),
@@ -388,6 +390,8 @@ class BackendsMixin:
         }
         if b.s3_endpoint_url:
             kwargs["endpoint_url"] = b.s3_endpoint_url
+        if b.s3_region:
+            kwargs["region_name"] = b.s3_region
 
         try:
             client = boto3.client("s3", **kwargs)

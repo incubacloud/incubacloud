@@ -215,8 +215,11 @@ machine that has them (they are never printed):
 
 ```
 $ export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…
-$ rclone purge ":s3,provider=Other,env_auth=true,endpoint='<endpoint>':<bucket>/<path>"
+$ rclone purge ":s3,provider=Other,env_auth=true,endpoint='<endpoint>',region='<region>':<bucket>/<path>"
 ```
+
+`<region>` is the destination's Region; without one, `auto` behind an
+endpoint (Cloudflare R2) and `us-east-1` without.
 
 Check first that `<path>` ends in `<name>-pitr` and names the deleted
 instance: a purge of the bucket, or of the folder, takes every instance on

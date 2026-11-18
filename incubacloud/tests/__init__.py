@@ -332,3 +332,4 @@ from . import test_host_reboot_queue
 from . import test_first_steps
 from . import test_login_show_password
 from . import test_local_path
+from . import test_backup_backend_region

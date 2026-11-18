@@ -197,6 +197,7 @@ class TestThePurge(_SwitchedOffCase):
         )
         self.assertIn("AWS_SECRET_ACCESS_KEY=pitr-off-secret\n", content)
         self.assertIn("AWS_ENDPOINT_URL=https://r2.example.com\n", content)
+        self.assertNotIn("AWS_DEFAULT_REGION", content)
         upload = AsyncMock()
         with patch.object(ex.PitrPurgeExecutor, "_upload_private_files", upload):
             asyncio.run(executor.before_execute(object()))
@@ -211,6 +212,13 @@ class TestThePurge(_SwitchedOffCase):
         self.assertEqual(forget[0], ex.PURGE_FORGET_LABEL)
         self.assertIn(f"cd {self.inst.get_remote_dir()} ", forget[1])
         self.assertIn(f"rm -f {ENV_FILE}", forget[1])
+
+    def test_the_destination_s_region_signs_the_purge(self):
+        """boto3 reads it from ``AWS_DEFAULT_REGION``, as the backup container."""
+        before = self._switched_off(15)
+        self.backend.s3_region = "eu-west-par"
+        content = self._purge(before)._env_content()
+        self.assertTrue(content.endswith("AWS_DEFAULT_REGION=eu-west-par\n"))
 
     def test_done_it_forgets_the_archive_and_the_host_gets_no_credentials(self):
         before = self._switched_off(15)

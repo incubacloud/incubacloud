@@ -447,6 +447,8 @@ class BackupListExecutor(AbstractSSHExecutor):
         }
         if backend.s3_endpoint_url:
             client_kwargs['endpoint_url'] = backend.s3_endpoint_url
+        if backend.s3_region:
+            client_kwargs['region_name'] = backend.s3_region
 
         sizes_by_iso = {}
         try:

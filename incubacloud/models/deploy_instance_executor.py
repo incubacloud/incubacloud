@@ -938,6 +938,9 @@ class DeployInstanceExecutor(
                 )
             if bb.s3_endpoint_url:
                 lines.append(compose_env_line("AWS_ENDPOINT_URL", bb.s3_endpoint_url))
+            # boto3's own variable; empty, it resolves the region itself.
+            if bb.s3_region:
+                lines.append(compose_env_line("AWS_DEFAULT_REGION", bb.s3_region))
         lines.append(compose_env_line("PASSPHRASE", bb.passphrase or ""))
         # What applies is the override's (``_backup_deletion_job``): the
         # template's own ``JOB_800_WHAT`` sits in the service's

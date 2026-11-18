@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.237] — unreleased
+
+Continuous recovery works on S3 destinations that sign for a region of
+their own. The update adds one column to `cloud_backup_backend` and has no
+data migration.
+
+### Fixed
+
+- **Continuous recovery signs with the destination's region.** wal-g and
+  rclone signed every request with `auto` behind an endpoint and with
+  `us-east-1` without one, and providers such as OVH, Scaleway, or AWS
+  outside `us-east-1` refused them (*400 AuthorizationHeaderMalformed*):
+  continuous recovery could not archive there, while the nightly backups,
+  through boto3, worked. An S3 destination now has a **Region**, in its
+  Storage tab, that `pitr.env` gives wal-g (`AWS_REGION`) and rclone, and
+  that `backup.env`, the purges' environments (`AWS_DEFAULT_REGION`), the
+  connection test, the usage measures and the backup listing's sizes sign
+  with. Empty, everything signs as before, so Cloudflare R2 keeps `auto`.
+  An instance imported from a server takes the region of its
+  `backup.env`.
+
 ## [1.0.236] — unreleased
 
 Ansible jobs run on a panel on Odoo.sh, a playbook ends before the
