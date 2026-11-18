@@ -138,6 +138,15 @@ class TestRealLines(BaseCase):
             "program": "/usr/bin/true", "become": False, "ambiguous": False,
         })
 
+    def test_sudo_rs(self):
+        """sudo-rs's command line, two spaces after the colon; PAM's line is none."""
+        command, pam = _fixture("sudo_rs.txt")
+        self.assertEqual(logs.parse_sudo(command), {
+            "kind": "command", "user": "incubacloud", "run_as": "root",
+            "program": "/usr/bin/true", "become": False, "ambiguous": False,
+        })
+        self.assertIsNone(logs.parse_sudo(pam))
+
     def test_fail2ban(self):
         """A failure found, its ban and its lift."""
         found, ban, unban = _fixture("fail2ban.txt")
