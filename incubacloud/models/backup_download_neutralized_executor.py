@@ -5,7 +5,11 @@ from datetime import datetime
 from pathlib import Path
 
 from ._odoo_versions import script_env
-from .abstract_executor import AbstractSSHExecutor, validate_dup_time
+from .abstract_executor import (
+    STAGING_JOB_DIR_PREFIX,
+    AbstractSSHExecutor,
+    validate_dup_time,
+)
 
 
 class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
@@ -30,6 +34,12 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
     """
 
     _job_type = "backup_download_neutralized"
+
+    #: The source dump and the neutralized archive, the size of the
+    #: database and its files: on the disk of
+    #: ``restore_space.STAGING_ROOT``, not in a ``/tmp`` that may be a
+    #: small tmpfs (18-nov-2026).
+    _job_dir_prefix = STAGING_JOB_DIR_PREFIX
 
     #: The closing hooks fetch the archive through the panel: an attempt
     #: that ran long leaves that fetch to a fresh one

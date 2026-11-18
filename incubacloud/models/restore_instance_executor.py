@@ -29,6 +29,7 @@ from ._concurrency import is_concurrency_error
 from ._odoo_versions import headless_flag, script_env
 from .abstract_executor import (
     COMPOSE_OP_EXIT_UNCHECKED,
+    STAGING_JOB_DIR_PREFIX,
     UPDATE_RESTORED_MODULES_LABEL,
     AbstractSSHExecutor,
     JobRefused,
@@ -252,7 +253,7 @@ class RestoreInstanceExecutor(
     #: the disk of :data:`restore_space.STAGING_ROOT` rather than in
     #: ``/tmp``: the archive the size of the database and its files,
     #: copied out of an upload door on the same disk.
-    _job_dir_prefix = f"{STAGING_ROOT}/.incubacloud-job-"
+    _job_dir_prefix = STAGING_JOB_DIR_PREFIX
 
     #: Set by ``before_execute`` when the instance takes the keys of the
     #: one whose data it receives; ``get_commands`` then writes them.

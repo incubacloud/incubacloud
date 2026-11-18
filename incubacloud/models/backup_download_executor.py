@@ -4,8 +4,10 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from ..restore_space import RESERVE_BYTES
 from ._odoo_versions import script_env
 from .abstract_executor import (
+    STAGING_JOB_DIR_PREFIX,
     AbstractSSHExecutor,
     handoff_dir,
     handoff_sweep,
@@ -44,6 +46,17 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
     """
 
     _job_type = "backup_download"
+
+    #: The dump, what the backup store gives back and the archive made of
+    #: them, the size of the database and its files: on the disk of
+    #: ``restore_space.STAGING_ROOT``, not in a ``/tmp`` that may be a
+    #: small tmpfs (18-nov-2026), as the handoff it becomes
+    #: (``HANDOFF_PREFIX``).
+    _job_dir_prefix = STAGING_JOB_DIR_PREFIX
+
+    #: What every step that writes the archive is told to leave free
+    #: (``backup_download.sh``, ``restore_space.RESERVE_BYTES``).
+    _ROOM_ENV = {"IC_RESERVE_BYTES": RESERVE_BYTES}
 
     def _inst(self):
         return self.job.instance_id
@@ -192,7 +205,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                             "live-dump", d, dbname, archive,
                             "all" if mode == 'all' else "db",
                         ],
-                        env=script_env(inst.odoo_version),
+                        env=script_env(inst.odoo_version) | self._ROOM_ENV,
                     ),
                     {"stop_on_failure": True, "detached": True},
                 ),
@@ -217,6 +230,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                     self.run_script(
                         "backup_download.sh",
                         ["package-sql", d, dbname, tmp_dir, archive],
+                        env=self._ROOM_ENV,
                     ),
                     {"detached": True},
                 ),
@@ -237,6 +251,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                 self.run_script(
                     "backup_download.sh",
                     ["package-full", d, dbname, tmp_dir, archive],
+                    env=self._ROOM_ENV,
                 ),
                 {"detached": True},
             ),

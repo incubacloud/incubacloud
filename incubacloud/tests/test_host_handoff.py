@@ -209,7 +209,8 @@ class TestBackupDownloadHandoff(_RestoreExecutorMixin, TransactionCase):
             secret.encode(), b"handoff:1234", hashlib.sha256,
         ).hexdigest()[:16]
         self.assertEqual(
-            handoff_dir(self.env, 1234), f"/tmp/.incubacloud-handoff-{expected}",
+            handoff_dir(self.env, 1234),
+            f"/var/tmp/.incubacloud-handoff-{expected}",
         )
         self.assertEqual(
             handoff_archive_path(self.env, 1234),
@@ -255,6 +256,35 @@ class TestBackupDownloadHandoff(_RestoreExecutorMixin, TransactionCase):
         self.assertEqual(ex._tmp_archive(), ex._job_path("backup.zip"))
         self.assertIn(ex._tmp_archive(), shlex.split(cmds[1][1]))
         self._handover(cmds, ex)
+
+    def test_a_download_stages_on_the_disk_of_the_instances(self):
+        """Not in /tmp, a tmpfs of half the memory on Debian 13 and Ubuntu
+        since 24.10: a clone, a refresh and a move dump production there
+        and hand it over there (18-nov-2026). Every step that writes the
+        archive is told the reserve to leave free, and refuses without
+        it (``backup_download.sh``)."""
+        from odoo.addons.incubacloud.restore_space import RESERVE_BYTES
+
+        for payload, steps in (
+            ({"time": "live", "download_type": "all", "handoff": "host"},
+             ("Create live backup",)),
+            ({"time": "latest", "download_type": "all", "handoff": "host"},
+             ("Extract and package",)),
+            ({"time": "latest", "download_type": "dump"},
+             ("Extract and package",)),
+        ):
+            with self.subTest(payload=payload):
+                ex = self._download(payload)
+                self.assertTrue(ex._job_dir().startswith("/var/tmp/.incubacloud-job-"))
+                commands = {label: command for label, command, *_ in ex.get_commands()}
+                for label in steps:
+                    self.assertTrue(commands[label].startswith(
+                        f"IC_RESERVE_BYTES={RESERVE_BYTES} ",
+                    ) or f" IC_RESERVE_BYTES={RESERVE_BYTES} " in commands[label])
+        self.assertTrue(handoff_dir(self.env, 1234).startswith("/var/tmp/"))
+        # The handoffs releases before 1.0.238 left in /tmp are swept too.
+        self.assertIn("find /var/tmp -maxdepth 1", HANDOFF_SWEEP)
+        self.assertIn("find /tmp -maxdepth 1", HANDOFF_SWEEP)
 
     def test_no_handoff_no_handover(self):
         cmds = self._download(
@@ -768,7 +798,7 @@ class TestAHandoffNobodyWaitsFor(_HandoffBase):
                 os.utime(Path(tmp, each), (old, old))
             done = subprocess.run(
                 ["sh", "-c", abstract_executor.handoff_sweep(
-                    self.env, self.host_a, root=tmp,
+                    self.env, self.host_a, roots=(tmp,),
                 )],
                 check=False,
             )

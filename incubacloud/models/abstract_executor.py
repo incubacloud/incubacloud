@@ -29,6 +29,7 @@ from odoo.tools import config, file_path
 
 from odoo.addons.queue_job.exception import RetryableJobError
 
+from ..restore_space import STAGING_ROOT
 from ._concurrency import read_committed_cursor
 from ._job_server_limits import ATTEMPT_BUDGET_FACTOR, attempt_budget_seconds
 from ._repo_requirements import has_pip_conflicts
@@ -230,6 +231,14 @@ MAX_CHUNKS_PER_JOB = 20_000
 # path in /tmp was all three.
 JOB_DIR_PREFIX = "/tmp/.incubacloud-job-"
 
+#: Where a job that stages an archive the size of an instance's data
+#: names its working directory instead (``_job_dir_prefix``): a restore,
+#: a backup download and an export. On the disk of
+#: ``restore_space.STAGING_ROOT``, not in a ``/tmp`` that may be a small
+#: tmpfs (18-nov-2026). Same name, so the day's sweep of job directories
+#: takes what a dead worker left there too (``job_dir_sweep``).
+STAGING_JOB_DIR_PREFIX = f"{STAGING_ROOT}/{JOB_DIR_PREFIX[5:]}"
+
 # How long a durable write waits for a row lock before giving up. The one
 # holder that keeps a lock that long is the job's own transaction, and
 # then waiting is a deadlock: the job cannot commit until the executor
@@ -247,9 +256,35 @@ def _redact_tokens(text):
     return _TOKEN_RE.sub(r'\1', text)
 
 
+#: The name a handoff's directory starts with (:data:`HANDOFF_PREFIX`).
+_HANDOFF_NAME = ".incubacloud-handoff-"
+
 #: Prefix of the directory a ``backup_download`` with ``handoff='host'``
-#: hands its archive over in (:func:`handoff_dir`).
-HANDOFF_PREFIX = "/tmp/.incubacloud-handoff-"
+#: hands its archive over in (:func:`handoff_dir`): next to the download's
+#: own directory, on the disk of ``restore_space.STAGING_ROOT``, so the
+#: handover is a rename and a production's archive never lands in a
+#: ``/tmp`` that may be a small tmpfs (18-nov-2026).
+HANDOFF_PREFIX = f"{STAGING_ROOT}/{_HANDOFF_NAME}"
+
+#: Where handoffs are swept: their directory, and ``/tmp``, where
+#: releases before 1.0.238 handed them over (one release more).
+HANDOFF_ROOTS = (STAGING_ROOT, "/tmp")
+
+
+def _handoff_find(roots, names=""):
+    """Return the ``find`` of this account's handoffs a day old in *roots*.
+
+    :param roots: the directories swept
+    :param str names: ``! -name`` clauses of handoffs spared
+    :rtype: str
+    """
+    return "; ".join(
+        f"find {shlex.quote(root)} -maxdepth 1 -type d"
+        f" -name '{_HANDOFF_NAME}*'{names}"
+        ' -user "$(id -u)" -mmin +1440 -exec rm -rf {} +'
+        for root in roots
+    )
+
 
 #: Remove this account's handoffs older than a day: the archive of a
 #: chain whose restore never came for it (a production database). Run
@@ -257,10 +292,7 @@ HANDOFF_PREFIX = "/tmp/.incubacloud-handoff-"
 #: job's host, and by the day's prune, best effort, sparing what a
 #: restore still waits for (:func:`handoff_sweep`). Only directories,
 #: only this account's.
-HANDOFF_SWEEP = (
-    f"find /tmp -maxdepth 1 -type d -name '{HANDOFF_PREFIX[5:]}*'"
-    ' -user "$(id -u)" -mmin +1440 -exec rm -rf {} +'
-)
+HANDOFF_SWEEP = _handoff_find(HANDOFF_ROOTS)
 
 
 def handoff_dir(env, job_id):
@@ -318,7 +350,7 @@ def same_chain(job, source):
     return bool(key) and source.sudo().queue_chain_key == key
 
 
-def handoff_sweep(env, host, root="/tmp"):
+def handoff_sweep(env, host, roots=HANDOFF_ROOTS):
     """Return :data:`HANDOFF_SWEEP` for *host*, sparing awaited handoffs.
 
     A handoff a day old is a chain whose restore never came — unless the
@@ -330,7 +362,8 @@ def handoff_sweep(env, host, root="/tmp"):
 
     :param env: an environment to read the jobs with
     :param host: the ``cloud.host`` the sweep runs on
-    :param str root: the directory swept, ``/tmp`` but in tests
+    :param roots: the directories swept, :data:`HANDOFF_ROOTS` but in
+        tests
     :rtype: str
     """
     Job = env["cloud.job"].sudo()
@@ -348,11 +381,7 @@ def handoff_sweep(env, host, root="/tmp"):
                 and same_chain(restore, source):
             spared.add(handoff_dir(env, source.id).rsplit("/", 1)[1])
     names = "".join(f" ! -name {shlex.quote(name)}" for name in sorted(spared))
-    return (
-        f"find {shlex.quote(root)} -maxdepth 1 -type d"
-        f" -name '{HANDOFF_PREFIX[5:]}*'{names}"
-        ' -user "$(id -u)" -mmin +1440 -exec rm -rf {} +'
-    )
+    return _handoff_find(roots, names)
 
 
 #: Prefix of the directory a step marked ``detached`` runs in on its
@@ -3831,8 +3860,9 @@ class AbstractExecutor(ABC):
         return self._job_path("scripts")
 
     #: Where this type of job names its working directory on its host
-    #: (``JOB_DIR_PREFIX``): a restore's is on the disk its archive lands
-    #: on (``RestoreInstanceExecutor``).
+    #: (``JOB_DIR_PREFIX``): one that stages an archive the size of an
+    #: instance's data has it on the disk that archive lands on
+    #: (``STAGING_JOB_DIR_PREFIX``).
     _job_dir_prefix = JOB_DIR_PREFIX
 
     #: This job's working directory on its host, once named (class

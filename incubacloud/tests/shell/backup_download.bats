@@ -41,6 +41,12 @@ if [ "$1" = "compose" ] && [ "$2" = "run" ]; then
         prev="$arg"
     done
 fi
+if [ "$1" = "info" ]; then
+    printf '%s\n' "$DOCKER_ROOT"
+fi
+if [ "$1" = "compose" ] && [ "$2" = "exec" ] && [[ "$*" == *"du -sk"* ]]; then
+    printf '%s\t/tmp/bkdl\n' "$DU_KB"
+fi
 if [ "$1" = "inspect" ]; then
     # The ids ``compose ps -q`` printed are the service names themselves.
     shift 3
@@ -58,6 +64,10 @@ STUB
     printf 'odoo\ndb\nsmtp\n' > "$SERVICES"
     export CONFIG_FAIL="$TMP/config_fail"
     export INNER="$TMP/inner"
+    # ``docker info`` names Docker's disk; ``du -sk`` in the backup
+    # container answers DU_KB.
+    export DOCKER_ROOT="$TMP"
+    export DU_KB=1
     export PATH="$TMP/bin:$PATH"
 }
 
@@ -387,4 +397,114 @@ teardown() {
     run bash "$SCRIPT" handover "$DIR" "$TMP/job/out/backup.zip" "$TMP/handoff-secretname"
     [ "$status" -ne 0 ]
     [[ "$output" != *secretname* ]]
+}
+
+# ── room: nothing is written that would not leave the reserve free ────
+
+@test "a package that leaves the reserve free goes ahead" {
+    IC_RESERVE_BYTES=0 run bash "$SCRIPT" package-sql "$DIR" prod "$TMPDIR_ARG" /tmp/out.zip
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"docker compose exec -T backup du -sk /tmp/bkdl"* ]]
+    [[ "$(cat "$CALLS")" == *"zip -r /tmp/out.zip dump.sql"* ]]
+}
+
+@test "a package the free disk cannot take is refused before any copy" {
+    # 18-nov-2026: a download wrote the archive and its copies wherever
+    # they landed, however little was free there.
+    DU_KB=$(( 64 * 1024 * 1024 )) IC_RESERVE_BYTES=$(( 1 << 60 )) \
+        run bash "$SCRIPT" package-full "$DIR" prod "$TMPDIR_ARG" /tmp/out.zip
+    [ "$status" -eq 26 ]
+    [[ "$output" == *"ERROR: Not enough free disk on the server for the backup of prod: it takes about 64.0 GiB"* ]]
+    [[ "$output" == *"Nothing was downloaded"* ]]
+    [[ "$(cat "$CALLS")" != *"docker compose cp"* ]]
+    [[ "$(cat "$CALLS")" != *"zip "* ]]
+}
+
+@test "a package asked for no reserve measures nothing, as before" {
+    run bash "$SCRIPT" package-sql "$DIR" prod "$TMPDIR_ARG" /tmp/out.zip
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" != *"du -sk"* ]]
+    [[ "$(cat "$CALLS")" != *"docker info"* ]]
+}
+
+@test "a reserve that is not a number runs nothing" {
+    IC_RESERVE_BYTES=5G run bash "$SCRIPT" package-sql "$DIR" prod "$TMPDIR_ARG" /tmp/out.zip
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"IC_RESERVE_BYTES is not a number of bytes"* ]]
+    [[ "$(cat "$CALLS")" != *"docker compose cp"* ]]
+}
+
+@test "package-full moves the filestore rather than copying it" {
+    mkdir -p "$TMPDIR_ARG/odoo/filestore/prod/ab"
+    : > "$TMPDIR_ARG/prod.sql"
+    printf 'x' > "$TMPDIR_ARG/odoo/filestore/prod/ab/file"
+    run bash -x "$SCRIPT" package-full "$DIR" prod "$TMPDIR_ARG" /tmp/out.zip
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"mv odoo/filestore/prod filestore"* ]]
+    [[ "$output" != *"cp -R"* ]]
+}
+
+# Stub, in $TMP/ctr, what the room check runs in the dump's container:
+# ``psql`` prints $1 as the database's size.
+room_stubs() {
+    mkdir -p "$TMP/ctr"
+    printf '#!/usr/bin/env bash\necho %s\n' "$1" > "$TMP/ctr/psql"
+    chmod +x "$TMP/ctr/psql"
+}
+
+@test "a live dump measures the database in its container, after the wait" {
+    mkdir -p "$TMP/job"
+    IC_RESERVE_BYTES=0 run bash "$SCRIPT" live-dump "$DIR" prod "$TMP/job/out.zip" all
+    [ "$status" -eq 0 ]
+    # The wait's program runs the room check's, which runs the dump.
+    [[ "$(cat "$CALLS")" == *" live-dump bash -c "* ]]
+    [[ "$(cat "$CALLS")" == *" room prod all "*" 0 click-odoo-backupdb --filestore prod /host-tmp/out.zip"* ]]
+    grep -q 'pg_database_size(current_database())' "$INNER"
+}
+
+@test "a live dump the free disk cannot take is refused in its container" {
+    mkdir -p "$TMP/job"
+    IC_RESERVE_BYTES=0 run bash "$SCRIPT" live-dump "$DIR" prod "$TMP/job/out.zip" db
+    [ "$status" -eq 0 ]
+    disks="$(stat -c %d "$TMP/job") $(df -B1 --output=avail "$TMP/job" | tail -n 1 | tr -d ' ')"
+    room_stubs $(( 1 << 40 ))
+    run env PATH="$TMP/ctr:$PATH" bash -c "$(cat "$INNER")" room prod db $disks $disks 0 echo dumped
+    [ "$status" -eq 26 ]
+    [[ "$output" == *"Not enough free disk on the server for the backup of prod: it takes about 1024.0 GiB"* ]]
+    [[ "$output" != *"dumped"* ]]
+    room_stubs 1024
+    run env PATH="$TMP/ctr:$PATH" bash -c "$(cat "$INNER")" room prod db $disks $disks 0 echo dumped
+    [ "$status" -eq 0 ]
+    [ "$output" = "dumped" ]
+}
+
+@test "a live dump whose database cannot be measured dumps nothing" {
+    IC_RESERVE_BYTES=0 run bash "$SCRIPT" live-dump "$DIR" prod "$TMP/out.zip" db
+    room_stubs ""
+    run env PATH="$TMP/ctr:$PATH" bash -c "$(cat "$INNER")" room prod db 1 1 1 1 0 echo DUMP-RAN
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"could not measure the database prod"* ]]
+    [[ "$output" != *"DUMP-RAN"* ]]
+}
+
+@test "on two disks each keeps the reserve" {
+    source_fns() {
+        eval "$(sed -n '/^gib() {/,/^}/p;/^bkdl_fits() {/,/^}/p' "$SCRIPT")"
+    }
+    source_fns
+    # The archive's disk short of its reserve.
+    run bkdl_fits 1 $(( 6 << 30 )) 2 $(( 100 << 30 )) $(( 5 << 30 )) 2 0 $(( 1 << 30 )) "x"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"needs 7.0 GiB free"* ]]
+    run bkdl_fits 1 $(( 7 << 30 )) 2 $(( 100 << 30 )) $(( 5 << 30 )) 2 0 $(( 1 << 30 )) "x"
+    [ "$status" -eq 0 ]
+    # Docker's disk short of its own.
+    run bkdl_fits 1 $(( 100 << 30 )) 2 $(( 5 << 30 )) $(( 5 << 30 )) 1 1 $(( 1 << 30 )) "x"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"for x, on the disk of the instances"* ]]
+    # One disk: both copies and the reserve there.
+    run bkdl_fits 1 $(( 7 << 30 )) 1 $(( 7 << 30 )) $(( 5 << 30 )) 1 1 $(( 1 << 30 )) "x"
+    [ "$status" -eq 0 ]
+    run bkdl_fits 1 $(( 7 << 30 )) 1 $(( 6 << 30 )) $(( 5 << 30 )) 1 1 $(( 1 << 30 )) "x"
+    [ "$status" -eq 1 ]
 }

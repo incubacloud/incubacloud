@@ -4,7 +4,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from ._odoo_versions import script_env
-from .abstract_executor import AbstractSSHExecutor
+from .abstract_executor import STAGING_JOB_DIR_PREFIX, AbstractSSHExecutor
 
 
 class ExportInstanceExecutor(AbstractSSHExecutor):
@@ -27,6 +27,11 @@ class ExportInstanceExecutor(AbstractSSHExecutor):
     """
 
     _job_type = "export_instance"
+
+    #: The project's copy and its tarball, the size of the instance's
+    #: files: on the disk of ``restore_space.STAGING_ROOT``, not in a
+    #: ``/tmp`` that may be a small tmpfs (18-nov-2026).
+    _job_dir_prefix = STAGING_JOB_DIR_PREFIX
     _attachment_id = None
     #: Read by the end hooks: a job that resumes from its checkpoint takes
     #: it from the attempt that set it.
