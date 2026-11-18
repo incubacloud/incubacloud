@@ -100,6 +100,8 @@ HOOK_HELPERS = {
     "_report_boot_test": "warns that a rebuild's image went into service untested",
     "_adopt_moved_ssh_port": "the port a failed hardening left sshd on, "
                              "which the job's rollback must not take back",
+    "_forget_received": "clears what an earlier check of an upload door "
+                        "recorded, and says why",
 }
 
 #: Calls named like a write that do not touch the database, keyed by

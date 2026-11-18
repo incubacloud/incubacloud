@@ -25,7 +25,6 @@ from ..restore_space import (
     room_refusal,
     room_shortfall,
 )
-from ._concurrency import read_committed_cursor
 from .abstract_executor import AbstractSSHExecutor
 from .cloud_restore_upload_grant import (
     DOOR_COMMAND,
@@ -343,7 +342,13 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
             return
         speaks = grant._in_lang()
         host_id = grant.host_id.id
-        with read_committed_cursor(self.env.registry) as cr:
+        # The lock is held, and the other doors read, on a durable cursor
+        # of its own (READ COMMITTED): a door another job recorded a
+        # moment ago is not in this job's snapshot. It writes nothing, so
+        # ``_persist`` below, which commits the limit on a cursor of its
+        # own while the lock is still held, contends for no row with it.
+        with self._durable_env() as env:
+            cr = env.cr
             if not await self._lock_host_doors(cr, host_id):
                 self._refuse(
                     "Another upload door of this server was being opened "
@@ -357,12 +362,11 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
                     ),
                 )
                 return
-            # Read on this cursor: a door another job recorded a moment
-            # ago is not in this job's snapshot. A door closed in the
-            # panel whose key may still take an upload counts as open
-            # until the job that removes the key has done so
-            # (``key_removed``; the review of 18-nov-2026, M1): until
-            # its deadline at most, when OpenSSH stops accepting the key.
+            # A door closed in the panel whose key may still take an
+            # upload counts as open until the job that removes the key
+            # has done so (``key_removed``; the review of 18-nov-2026,
+            # M1): until its deadline at most, when OpenSSH stops
+            # accepting the key.
             cr.execute(
                 "SELECT token, upload_limit_bytes"
                 " FROM cloud_restore_upload_grant"
@@ -770,7 +774,7 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
                 count=unusable,
             )
         if not rows:
-            self._forget(grant, unusable_note)
+            self._forget_received(grant, unusable_note)
             self._sys("Nothing that can be restored has arrived yet.")
             return
         size, digest, name = rows[-1]
@@ -785,7 +789,7 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
                 "arrived cannot be restored. Free space on the server and "
                 "open another door, or restore a smaller archive."
             )
-            self._forget(grant, speaks._(
+            self._forget_received(grant, speaks._(
                 "%(name)s stopped at %(size)s, the most this door takes "
                 "(%(limit)s, its share of the server's free disk when it "
                 "opened): the archive is larger, and what arrived cannot be "
@@ -808,7 +812,7 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
                 "server could not be measured: it cannot be restored. Check "
                 "again."
             )
-            self._forget(grant, speaks._(
+            self._forget_received(grant, speaks._(
                 "%(name)s arrived (%(size)s bytes), but the free disk on the "
                 "server could not be measured: it cannot be restored. Check "
                 "again.",
@@ -818,7 +822,7 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
         short = room_shortfall(disks, int(size), 1)
         if short:
             self._sys("⚠ " + room_refusal(disks, int(size), 1, what))
-            self._forget(grant, room_notice(speaks, short, what))
+            self._forget_received(grant, room_notice(speaks, short, what))
             return
         grant.sudo().write({
             "received_filename": name,
@@ -828,8 +832,11 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
         })
         self._sys(f"✓ Received {name} — {size} bytes, SHA-256 {digest}")
 
-    def _forget(self, grant, note):
+    def _forget_received(self, grant, note):
         """Forget what an earlier check recorded, and keep why for the dialog.
+
+        Called from ``on_success`` only, so it writes on the hook's durable
+        cursor (``executor_write_rules.HOOK_HELPERS``).
 
         :param grant: the ``cloud.restore.upload.grant`` checked
         :param str note: why nothing it holds can be restored, or ``''``

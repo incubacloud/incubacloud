@@ -1737,8 +1737,8 @@ class TestADoorWritesNoMoreThanTheDisksTake(RestoreFixture, TransactionCase):
         """Measure the fixture's door on a host that prints *stdout*.
 
         The other doors are read on the test's own cursor: the job reads
-        them on a fresh one, which sees what their jobs committed, and a
-        test commits nothing.
+        them on its durable one, which sees what their jobs committed, and
+        a test commits nothing.
         """
         executor = GrantRestoreUploadKeyExecutor(
             self._job("grant_restore_upload_key", payload={"grant_id": self.grant.id}),
@@ -1749,13 +1749,11 @@ class TestADoorWritesNoMoreThanTheDisksTake(RestoreFixture, TransactionCase):
         transport.run.return_value = CommandResult(stdout, 0)
 
         @contextlib.contextmanager
-        def this_cursor(_registry):
-            """Yield the test's cursor."""
-            yield self.env.cr
+        def this_env(_executor):
+            """Yield the test's environment, on the test's cursor."""
+            yield self.env
 
-        with patch.object(
-            restore_upload_key_executors, "read_committed_cursor", this_cursor,
-        ):
+        with patch.object(GrantRestoreUploadKeyExecutor, "_durable_env", this_env):
             asyncio.run(executor.before_execute(transport))
         return executor, transport.run.await_args.args[0]
 

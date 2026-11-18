@@ -21,6 +21,8 @@ import asyncssh
 
 from odoo.tests.common import BaseCase, tagged
 
+from odoo.addons.incubacloud.restore_space import RESERVE_BYTES
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1189,10 +1191,14 @@ class TestBackupDownloadGetCommands(BaseCase):
 
     def test_the_live_dump_is_told_the_series_tool(self):
         """The dump runs inside the instance's image, whose tool the
-        series' card names; the store's restores run no Odoo tool."""
+        series' card names, and leaves the reserve free as every step that
+        writes the archive does; the store's restores run no Odoo tool."""
         live = self._make_executor("staging", mode="all").get_commands()[0]
         self.assertEqual(
-            self._env(live), {"IC_DB_TOOL": "click-odoo", "IC_NEUTRALIZE": "odoo"},
+            self._env(live), {
+                "IC_DB_TOOL": "click-odoo", "IC_NEUTRALIZE": "odoo",
+                "IC_RESERVE_BYTES": str(RESERVE_BYTES),
+            },
         )
         stored = self._make_executor("production", mode="dump").get_commands()[0]
         self.assertEqual(self._env(stored), {})
