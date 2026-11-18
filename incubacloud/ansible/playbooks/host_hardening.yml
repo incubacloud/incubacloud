@@ -34,7 +34,7 @@
     ssh_put_back_unit: incubacloud-ssh-put-back
     # OS support matrix. Kept as a var so the gate below and any future
     # caller read the same list.
-    supported_ubuntu: ["22.04", "24.04"]
+    supported_ubuntu: ["22.04", "24.04", "26.04"]
     debian_min_major: 12
 
   # ── Phase 0: preflight ────────────────────────────────────────────────
@@ -330,9 +330,10 @@
         # wrote: another file read earlier wins silently. ``sshd -T``
         # prints the values sshd will actually use. Checked before
         # anything is restarted, so a host where our settings lose keeps
-        # its current sshd untouched. ``without-password`` is how OpenSSH
-        # prints ``prohibit-password`` (measured on 8.9, 9.2, 9.6 and 10.0
-        # -- every supported OS).
+        # its current sshd untouched. OpenSSH up to 10.0 prints
+        # ``prohibit-password`` as ``without-password`` (measured on 8.9,
+        # 9.2, 9.6 and 10.0); 10.2 (Ubuntu 26.04) prints it as written,
+        # and the check refused a server whose settings had all won.
         - name: Read the settings sshd will actually use
           ansible.builtin.command: sshd -T
           register: ic_sshd_effective
@@ -342,7 +343,9 @@
           ansible.builtin.assert:
             that:
               - "'passwordauthentication no' in ic_sshd_effective.stdout_lines"
-              - "'permitrootlogin without-password' in ic_sshd_effective.stdout_lines"
+              - >-
+                'permitrootlogin without-password' in ic_sshd_effective.stdout_lines
+                or 'permitrootlogin prohibit-password' in ic_sshd_effective.stdout_lines
               - "('port ' ~ ssh_port) in ic_sshd_effective.stdout_lines"
             fail_msg: >-
               sshd would not use the hardening settings: another file under

@@ -535,21 +535,24 @@ class TestHardeningCurrent(PostureCase):
 
     def test_an_equivalent_older_recipe_raises_nothing(self):
         """Adding root's keys to the operator user instead of copying them
-        over it (16-nov-2026) leaves every host hardened before as the new
-        recipe would: the fleet is not asked to harden again."""
+        over it (16-nov-2026), and admitting Ubuntu 26.04 (18-nov-2026),
+        leave every host hardened before as the new recipe would: the fleet
+        is not asked to harden again."""
         from odoo.addons.incubacloud.models.host_hardening_executor import (
             _EQUIVALENT_RECIPES,
             _recipe_is_current,
         )
 
         self.assertEqual(
-            self.recipe, "0b5a14aa18f2",
+            self.recipe, "261515794a0b",
             "the recipe changed: decide whether _EQUIVALENT_RECIPES keeps an "
             "entry for it, and update this test",
         )
-        self.assertIn("3ab1139825de", _EQUIVALENT_RECIPES[self.recipe])
-        self.host.hardening_recipe = "3ab1139825de"
-        self.assertFalse(self._run())
+        for earlier in ("0b5a14aa18f2", "3ab1139825de"):
+            with self.subTest(earlier=earlier):
+                self.assertIn(earlier, _EQUIVALENT_RECIPES[self.recipe])
+                self.host.hardening_recipe = earlier
+                self.assertFalse(self._run())
         # Only towards the recipe it names: a later one asks again.
         self.assertFalse(_recipe_is_current("3ab1139825de", "fedcba987654"))
         self.assertFalse(_recipe_is_current(False, self.recipe))

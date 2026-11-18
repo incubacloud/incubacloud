@@ -6,6 +6,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.237] — unreleased
+
+Harden Host supports Ubuntu 26.04 LTS.
+The update changes no table and has no data migration.
+
+### Added
+
+- **Harden Host supports Ubuntu 26.04 LTS.** The preflight refused it
+  (*Hardening only supports Ubuntu 22.04/24.04 and Debian 12+*). The
+  panel's playbooks and Full Setup's scripts were run on a fresh 26.04
+  server (OpenSSH 10.2, sudo-rs, Rust coreutils, systemd 259, nftables
+  1.1.6): the probe, Harden Host with its port rotation, firewall,
+  fail2ban and auditd, Full Setup, the observability agents,
+  maintenance, a reboot and the server's removal.
+  One step differed: OpenSSH 10.2 prints `PermitRootLogin
+  prohibit-password` as written, where 10.0 and before print
+  `without-password`, and the check that no other sshd file outranks
+  ours refused the server; it now takes either. A host already hardened
+  is not asked to harden again: on the systems admitted before, the
+  recipe runs the same steps with the same values. The CI parses the
+  firewall ruleset with 26.04's nft too.
+
 ## [1.0.236] — unreleased
 
 Ansible jobs run on a panel on Odoo.sh, a playbook ends before the

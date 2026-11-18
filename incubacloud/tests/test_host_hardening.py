@@ -125,7 +125,9 @@ class TestHardeningPreflight(TransactionCase):
         self.assertIn("ansible_distribution", blob)
         self.assertIn("Ubuntu", blob)
         self.assertIn("Debian", blob)
-        self.assertEqual(play["vars"]["supported_ubuntu"], ["22.04", "24.04"])
+        self.assertEqual(
+            play["vars"]["supported_ubuntu"], ["22.04", "24.04", "26.04"],
+        )
         self.assertEqual(play["vars"]["debian_min_major"], 12)
 
     def test_root_s_keys_are_added_to_the_operator_s_never_copied_over(self):
@@ -662,7 +664,9 @@ class TestHardeningPreflight(TransactionCase):
         that = " ".join(check["ansible.builtin.assert"]["that"])
         for needle in (
             "'passwordauthentication no'",
+            # OpenSSH up to 10.0 prints it so, 10.2 (Ubuntu 26.04) as written.
             "'permitrootlogin without-password'",
+            "'permitrootlogin prohibit-password'",
             "'port ' ~ ssh_port",
         ):
             self.assertIn(needle, that)
