@@ -390,9 +390,13 @@ class TestTheDailySweepOfTmp(TransactionCase):
         self.assertTrue(sweep.startswith(HANDOFF_SWEEP + "; "))
         legacy = docker_prune_executor.legacy_tmp_sweep()
         jobs = docker_prune_executor.job_dir_sweep()
+        restore_jobs = docker_prune_executor.job_dir_sweep("/var/tmp")
         uploads = docker_prune_executor.upload_dir_sweep()
-        self.assertTrue(sweep.endswith(f"{legacy}; {jobs}; {uploads}"))
-        for part in (HANDOFF_SWEEP, legacy, jobs, uploads):
+        old_uploads = docker_prune_executor.upload_dir_sweep("/tmp/incubacloud-restore")
+        self.assertTrue(sweep.endswith(
+            f"{legacy}; {jobs}; {restore_jobs}; {uploads}; {old_uploads}"
+        ))
+        for part in (HANDOFF_SWEEP, legacy, jobs, restore_jobs, uploads, old_uploads):
             self.assertIn('-user "$(id -u)"', part)
             self.assertIn("-mmin +", part)
             self.assertNotIn(" -L ", part)
@@ -530,14 +534,33 @@ class TestTheDailySweepOfTmp(TransactionCase):
         over: the panel revokes the grant three days on, directory and
         all; this is for the host where that job never ran. This
         account's grant directories only, under a root of its own."""
-        uploads = docker_prune_executor.upload_dir_sweep()
-        self.assertIn("find /tmp/incubacloud-restore -mindepth 1 -maxdepth 1"
-                      " -type d", uploads)
-        self.assertIn(f"-name '{'[0-9a-f]' * 16}'", uploads)
-        self.assertIn("-mmin +4320", uploads)
-        self.assertIn('[ ! -h /tmp/incubacloud-restore ]', uploads)
-        self.assertIn('[ -O /tmp/incubacloud-restore ]', uploads)
-        self.assertNotIn("sudo", uploads)
+        for root in ("/var/tmp/incubacloud-restore", "/tmp/incubacloud-restore"):
+            uploads = docker_prune_executor.upload_dir_sweep(root)
+            with self.subTest(root=root):
+                self.assertIn(uploads, docker_prune_executor.TMP_SWEEP)
+                self.assertIn(f"find {root} -mindepth 1 -maxdepth 1"
+                              " -type d", uploads)
+                self.assertIn(f"-name '{'[0-9a-f]' * 16}'", uploads)
+                self.assertIn("-mmin +4320", uploads)
+                self.assertIn(f'[ ! -h {root} ]', uploads)
+                self.assertIn(f'[ -O {root} ]', uploads)
+                self.assertNotIn("sudo", uploads)
+        self.assertEqual(
+            docker_prune_executor.upload_dir_sweep(),
+            docker_prune_executor.upload_dir_sweep("/var/tmp/incubacloud-restore"),
+        )
+
+    def test_a_restore_s_directory_a_dead_worker_left_goes_too(self):
+        """A restore works in /var/tmp (``restore_space.STAGING_ROOT``),
+        on disk: a server's reboot no longer takes what its dead worker
+        left there, the day's sweep does, three days on."""
+        jobs = docker_prune_executor.job_dir_sweep("/var/tmp")
+        self.assertIn(jobs, docker_prune_executor.TMP_SWEEP)
+        self.assertIn(
+            "find /var/tmp -mindepth 1 -maxdepth 1 -type d"
+            " -name '.incubacloud-job-*'", jobs,
+        )
+        self.assertIn("-mmin +4320", jobs)
 
     def test_lab_only_this_account_s_old_uploads_go(self):
         """Real directories: a grant's three days old goes, links in it

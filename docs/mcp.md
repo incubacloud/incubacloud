@@ -340,10 +340,10 @@ archive is the Import's zip: `dump.sql` and `filestore/` at its root.
   `AWSAccessKeyId`, `OSSAccessKeyId`) and, on a path-style storage or a link
   a storage signed, the bucket; signatures and tokens stay cut. The download
   is no larger than the server's disks leave (`incubacloud/restore_space.py`):
-  `/tmp`, where it lands, and the disk Docker keeps the instances on, where
-  it is unpacked, are measured each.
+  `/var/tmp`, where it lands, and the disk Docker keeps the instances on,
+  where it is unpacked, are measured each.
 - `restore_from_host_file` calls `restore_db` in `rsync` mode: the one path
-  `/tmp/incubacloud-restore-<instance id>.zip`, never one the agent names, and
+  `/var/tmp/incubacloud-restore-<instance id>.zip`, never one the agent names, and
   only a regular file of the panel's SSH account.
 - `grant_restore_upload` opens the one-use door with the agent's own
   `ssh-ed25519` public key (`grant_restore_upload(public_key=…)`): the panel
@@ -356,7 +356,8 @@ archive is the Import's zip: `dump.sql` and `filestore/` at its root.
   key's forced command), and every five minutes a watch measures the open
   doors (`watch_restore_uploads`): it closes one whose directory holds more
   than that, or every one once the instances' disk is down to its reserve. `check_restore_upload` queues the check, which offers nothing the
-  server's free disk cannot restore; `restore_from_upload` restores what it
+  server's free disk cannot restore, nor a file cut at the door's limit, and
+  answers that limit (`largest_archive_bytes`) once the key's job measured it; `restore_from_upload` restores what it
   found, `ssh_upload` mode, its approval naming the file and its SHA-256, the
   call bound to it. `revoke_restore_upload` closes a door, without approval:
   it only takes access away, and a door whose key may have leaked must not

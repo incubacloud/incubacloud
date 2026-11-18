@@ -2,7 +2,7 @@ import contextlib
 import re
 import shlex
 
-from ..restore_space import GIB, RESERVE_BYTES, in_gib
+from ..restore_space import GIB, RESERVE_BYTES, STAGING_ROOT, in_gib
 from .abstract_executor import (
     DETACHED_GIVE_UP_AFTER_CAP_S,
     DETACHED_PREFIX,
@@ -12,7 +12,11 @@ from .abstract_executor import (
     handoff_sweep,
 )
 from .ansible_executor import AnsibleExecutor
-from .cloud_restore_upload_grant import UPLOAD_ROOT, USED_GRANT_DAYS
+from .cloud_restore_upload_grant import (
+    LEGACY_UPLOAD_ROOT,
+    UPLOAD_ROOT,
+    USED_GRANT_DAYS,
+)
 from .host_probe_executor import MIN_DISK_GB
 
 # Docker label that opts a resource out of the prune. Stamped by
@@ -484,7 +488,8 @@ def job_dir_sweep(root="/tmp"):
     """Return the command that removes the job directories a dead worker
     left in *root*: this account's, three days old (``JOB_DIR_PREFIX``).
 
-    :param str root: the directory to sweep, ``/tmp`` but in tests
+    :param str root: the directory to sweep: ``/tmp``, or
+        ``restore_space.STAGING_ROOT`` where a restore's is
     :rtype: str
     """
     return (
@@ -506,7 +511,8 @@ def upload_dir_sweep(root=UPLOAD_ROOT):
     between the search and the removal. ``find`` follows no link, and
     ``rm -rf`` none inside a directory either.
 
-    :param str root: the grants' root, ``UPLOAD_ROOT`` but in tests
+    :param str root: the grants' root: ``UPLOAD_ROOT``, or
+        ``LEGACY_UPLOAD_ROOT`` for what releases before 1.0.238 left
     :rtype: str
     """
     quoted = shlex.quote(root)
@@ -564,32 +570,37 @@ def detached_dir_sweep(env, root="/tmp"):
     )
 
 
+#: What every sweep of /tmp and /var/tmp runs after the handoffs.
+_STAGING_SWEEPS = (
+    f"{legacy_tmp_sweep()}; {job_dir_sweep()}; {job_dir_sweep(STAGING_ROOT)};"
+    f" {upload_dir_sweep()}; {upload_dir_sweep(LEGACY_UPLOAD_ROOT)}"
+)
+
+
 def tmp_sweep(env, host):
-    """Return the day's sweep of /tmp for *host*.
+    """Return the day's sweep of /tmp and /var/tmp for *host*.
 
     Its handoffs a day old but those a restore still waits for
     (``handoff_sweep``), older releases' leftovers, the directories of
-    jobs whose worker died, what upload keys left three days ago
+    jobs whose worker died, in /tmp and in /var/tmp, where a restore's
+    is (``restore_space.STAGING_ROOT``), what upload keys left three days
+    ago, there and where releases before 1.0.238 put them
     (``upload_dir_sweep``), and the step directories no open checkpoint
-    holds (``detached_dir_sweep``).
+    holds (``detached_dir_sweep``). On disk, /var/tmp keeps what a
+    server's reboot used to take from a /tmp in memory: this is what
+    takes it.
 
     :param env: an environment to read the jobs with
     :param host: the ``cloud.host`` it runs on
     :rtype: str
     """
-    return (
-        f"{handoff_sweep(env, host)}; {legacy_tmp_sweep()}; {job_dir_sweep()};"
-        f" {upload_dir_sweep()}; {detached_dir_sweep(env)}"
-    )
+    return f"{handoff_sweep(env, host)}; {_STAGING_SWEEPS}; {detached_dir_sweep(env)}"
 
 
 #: The day's sweep of /tmp as a playbook run alone has it: with no panel
 #: to ask, it spares no handoff and leaves every step directory, which only
 #: the panel can tell from one a job will come back for (``tmp_sweep``).
-TMP_SWEEP = (
-    f"{HANDOFF_SWEEP}; {legacy_tmp_sweep()}; {job_dir_sweep()};"
-    f" {upload_dir_sweep()}"
-)
+TMP_SWEEP = f"{HANDOFF_SWEEP}; {_STAGING_SWEEPS}"
 
 def boot_test_sweep(root="/tmp"):
     """Return the command that removes the copies boot tests left behind.

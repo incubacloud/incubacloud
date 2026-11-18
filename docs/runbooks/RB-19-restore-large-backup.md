@@ -45,8 +45,25 @@ pair, installs the public half on the host and shows the private half
 once. The line added to the host's `authorized_keys` is:
 
 ```
-command="/usr/bin/rrsync -wo -munge -no-del /tmp/incubacloud-restore/<token>",restrict,expiry-time="<stamp>" ssh-ed25519 AAAA… ic-restore-<token>
+command="exec /bin/bash -c 'ulimit -f <KiB> && exec /usr/bin/rrsync -wo -munge -no-del /var/tmp/incubacloud-restore/<token>'",restrict,expiry-time="<stamp>" ssh-ed25519 AAAA… ic-restore-<token>
 ```
+
+The directory is in `/var/tmp`, not `/tmp`: Debian 13 and Ubuntu 26.04
+(Ubuntu since 24.10) mount `/tmp` as a tmpfs of half the memory, 1.9 GiB
+on a server of 4 GB, and before 1.0.238 no archive larger than about half
+of that could be sent, whatever the instances' disk had free. `/var/tmp`
+is on disk, and on the usual server the same disk Docker keeps the
+instances on. Every restore lands its archive there: the doors, the path
+`restore_from_host_file` reads, and the restore's own working directory
+(`restore_space.STAGING_ROOT`).
+
+The job that installs the key measures that disk and Docker's, and sets
+`<KiB>` to the largest archive they can restore with the copy the
+restore makes of it (`restore_space.largest_archive`). The Import dialog
+shows it once that job has run, and so does `check_restore_upload`. A
+larger file stops at that size (rsync says *File too large*), and
+*Check what arrived* says the archive is larger than the door takes
+instead of offering what arrived.
 
 Every part is load-bearing:
 
@@ -92,7 +109,7 @@ share their blocks (`cp --reflink=auto`).
 
 Where the panel connects as root (the platform's hosts), what the key
 receives may keep device-node or setuid bits. Two things keep that
-harmless: the grants' root, `/tmp/incubacloud-restore`, is 0700 and the
+harmless: the grants' root, `/var/tmp/incubacloud-restore`, is 0700 and the
 panel's account's own (checked each time a key is installed), so no
 other account reaches inside it; and the restore takes only a regular
 file, with a plain `cp`, which keeps no setuid bit.
@@ -109,9 +126,13 @@ Three things revoke a grant, and all are idempotent:
   the directory and whatever is left in it;
 - the operator, from the panel.
 
-On a host where that removal never ran, the daily sweep of `/tmp`
-(`docker_prune`) removes the grant directories three days old: only the
-panel's account's own, and only under a root that is its own.
+On a host where that removal never ran, the daily sweep of `/tmp` and
+`/var/tmp` (`docker_prune`) removes the grant directories three days old,
+and a restore's working directory its worker left: only the panel's
+account's own, and only under a root that is its own. `/var/tmp` survives
+a reboot, where a tmpfs `/tmp` did not: the sweep is what empties it. It
+also sweeps `/tmp/incubacloud-restore`, where releases before 1.0.238 put
+the doors.
 
 To check what is outstanding:
 

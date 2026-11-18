@@ -40,8 +40,13 @@ from odoo.tests.common import BaseCase, TransactionCase, new_test_user, tagged
 from odoo.tools import mute_logger
 
 from odoo.addons.incubacloud.models import cloud_restore_upload_grant
+from odoo.addons.incubacloud.models.abstract_executor import JOB_DIR_PREFIX
+from odoo.addons.incubacloud.models.deploy_instance_executor import (
+    DeployInstanceExecutor,
+)
 from odoo.addons.incubacloud.models.restore_instance_executor import (
     RestoreInstanceExecutor,
+    rsync_path,
 )
 from odoo.addons.incubacloud.models.restore_upload_key_executors import (
     GrantRestoreUploadKeyExecutor,
@@ -61,8 +66,11 @@ from odoo.addons.incubacloud.net.restore_source import (
 from odoo.addons.incubacloud.restore_space import (
     GIB,
     RESERVE_BYTES,
+    STAGING_ROOT,
     UNPACK_FACTOR,
     Disks,
+    disks_command,
+    in_gib,
     largest_archive,
     largest_download,
     parse_disks,
@@ -720,6 +728,33 @@ class TestARestoreTakesNoMoreDiskThanIsFree(RestoreFixture, TransactionCase):
             self.env["cloud.job"].browse(job_id), self.host,
         )
 
+    def test_a_restore_lands_its_archive_on_the_disk_of_the_instances(self):
+        """Its working directory, where every archive it restores is put,
+        what it measures there, and the path a file is copied to: in
+        /var/tmp, not in a /tmp that may be a tmpfs of half the memory.
+        Other jobs keep theirs in /tmp."""
+        self.assertRegex(
+            self.executor._job_dir(), r"^/var/tmp/\.incubacloud-job-[0-9a-f]{16}$",
+        )
+        self.assertEqual(
+            self.executor._remote_path(), f"{self.executor._job_dir()}/restore.zip",
+        )
+        self.assertEqual(
+            rsync_path(self.instance.id),
+            f"/var/tmp/incubacloud-restore-{self.instance.id}.zip",
+        )
+        self.assertTrue(JOB_DIR_PREFIX.startswith("/tmp/"))
+        self.assertEqual(DeployInstanceExecutor._job_dir_prefix, JOB_DIR_PREFIX)
+        transport = _transport(free=int(57.6 * GIB))
+        with _resolving_to():
+            asyncio.run(self.executor.before_execute(transport))
+        commands = [c.args[0] for c in transport.run.await_args_list]
+        self.assertIn(f"mkdir -m 700 {self.executor._job_dir()}", commands)
+        self.assertIn(disks_command(self.executor._job_dir()), commands)
+        self.assertEqual(
+            self.executor._download_limit, (int(57.6 * GIB) - RESERVE_BYTES) // 3,
+        )
+
     def test_the_thresholds_say_what_a_restore_needs(self):
         """The reserve stays free; the archive shares the rest with its
         unpacking."""
@@ -731,17 +766,17 @@ class TestARestoreTakesNoMoreDiskThanIsFree(RestoreFixture, TransactionCase):
         self.assertEqual(room_needed(GIB, copies=1), RESERVE_BYTES + 3 * GIB)
 
     def test_two_disks_are_measured_each_for_what_it_takes(self):
-        """The archive lands in /tmp; it is unpacked and loaded on Docker's
-        disk. A small tmpfs beside a large Docker disk restores what fits
-        in /tmp; a large /tmp beside a nearly full Docker disk restores
-        what Docker's leaves, its reserve kept."""
+        """The archive lands in /var/tmp; it is unpacked and loaded on
+        Docker's disk. A small disk there beside a large Docker disk
+        restores what fits in it; a large one beside a nearly full Docker
+        disk restores what Docker's leaves, its reserve kept."""
         tmpfs = Disks(job=2 * GIB, docker=500 * GIB, shared=False)
         # Measured as one disk, the 2 GiB of /tmp were less than the reserve.
         self.assertEqual(largest_download(tmpfs.job), 0)
         self.assertEqual(largest_archive(tmpfs, on_job_disk=1), 2 * GIB)
         self.assertEqual(largest_archive(tmpfs, on_job_disk=2), GIB)
         self.assertEqual(room_refusal(tmpfs, 3 * GIB, 0, "it"), "")
-        self.assertIn("in /tmp", room_refusal(tmpfs, 3 * GIB, 1, "it"))
+        self.assertIn("in /var/tmp", room_refusal(tmpfs, 3 * GIB, 1, "it"))
         full = Disks(job=500 * GIB, docker=RESERVE_BYTES + GIB, shared=False)
         self.assertEqual(largest_archive(full, on_job_disk=1), GIB // UNPACK_FACTOR)
         self.assertIn("instances are kept on", room_refusal(full, GIB, 1, "it"))
@@ -939,11 +974,37 @@ class TestACheckOffersNothingTheDiskCannotRestore(TransactionCase):
 
     def test_an_upload_the_disk_can_restore_is_offered(self):
         size = 4 * GIB
+        self.grant.sudo().notice = "an earlier check's"
         self._report(size, room_needed(size, copies=1))
         self.assertEqual(
             (self.grant.received_filename, self.grant.received_sha256),
             ("restore.zip", SHA),
         )
+        self.assertFalse(self.grant.notice)
+
+    def test_why_an_upload_is_not_offered_is_kept_for_the_dialog(self):
+        """The Import dialog shows it (``notice``): the job's log alone
+        left the person with a command that did nothing."""
+        size = 4 * GIB
+        self._report(size, room_needed(size, copies=1) - 1)
+        self.assertIn("Not enough free disk", self.grant.notice)
+        self._report(size, None)
+        self.assertIn("could not be measured", self.grant.notice)
+
+    def test_an_upload_cut_at_the_door_s_limit_is_not_offered(self):
+        """``rsync`` stops with *File too large* where the key's ``ulimit
+        -f`` (KiB) stops it, and leaves the start of the archive under its
+        name: not offered, and the dialog says the archive is larger than
+        the door takes. A file below the limit is offered."""
+        limit = 3 * GIB + 512
+        self.grant.sudo().upload_limit_bytes = limit
+        self._report(3 * GIB, 100 * GIB)
+        self.assertFalse(self.grant.received_sha256)
+        self.assertIn("stopped at 3.0 GiB, the most this door takes", self.grant.notice)
+        self.assertIn("the archive is larger", self.grant.notice)
+        self._report(3 * GIB - 1024, 100 * GIB)
+        self.assertEqual(self.grant.received_sha256, SHA)
+        self.assertFalse(self.grant.notice)
 
     def test_an_upload_past_2_gib_is_offered_with_its_size(self):
         """An archive of 3 or 5 GiB is kept with its size. The column was
@@ -1480,8 +1541,60 @@ class TestADoorWritesNoMoreThanTheDisksTake(RestoreFixture, TransactionCase):
                     {"Measure free disk": {"exit_status": 1}}, ["refused"],
                 ))
                 self.assertEqual(self.grant.sudo().state, "revoked")
+                # What the Import dialog shows, rather than a command
+                # whose upload would stop part way.
+                self.assertIn(
+                    "Not enough free disk" if free else "could not be measured",
+                    self.grant.sudo().notice,
+                )
         with self.assertRaisesRegex(ValueError, "no size limit"):
             self.grant._authorized_keys_line()
+
+    def test_the_door_lands_on_the_disk_of_the_instances(self):
+        """Not /tmp, which Debian 13 and Ubuntu 26.04 mount as a tmpfs of
+        half the memory: on a server of 4 GB its 1.9 GiB held a door to
+        0.9 GiB however free the instances' disk was, and a 2.7 GiB
+        archive could be restored by no path (18-nov-2026). The door's
+        directory, what it measures and its key's command are on
+        /var/tmp, the disk of the instances on such a server."""
+        self.assertEqual(STAGING_ROOT, "/var/tmp")
+        self.assertEqual(
+            self.grant._directory(),
+            f"/var/tmp/incubacloud-restore/{self.grant.token}",
+        )
+        transport = _transport(free=int(57.6 * GIB))
+        executor = GrantRestoreUploadKeyExecutor(
+            self._job("grant_restore_upload_key", payload={"grant_id": self.grant.id}),
+            self.host,
+        )
+        asyncio.run(executor.before_execute(transport))
+        self.assertEqual(
+            transport.run.await_args_list[0].args[0], disks_command("/var/tmp"),
+        )
+        # One disk of 57.6 GiB: the reserve, the upload, its copy and
+        # twice it to unpack.
+        self.assertEqual(
+            self.grant.upload_limit_bytes, (int(57.6 * GIB) - RESERVE_BYTES) // 4,
+        )
+        self.assertGreater(self.grant.upload_limit_bytes, int(2.69 * GIB))
+        line = self.grant._authorized_keys_line()
+        self.assertIn(
+            f"-no-del /var/tmp/incubacloud-restore/{self.grant.token}'", line,
+        )
+        logged = "".join(text for text, _src in executor._log_buffer)
+        self.assertIn(
+            f"may be at most {in_gib(self.grant.upload_limit_bytes)} "
+            "(57.6 GiB free)", logged,
+        )
+
+    def test_an_installed_door_has_nothing_to_tell(self):
+        """A door that opened forgets why an earlier one did not."""
+        self.grant.sudo().notice = "Not enough free disk"
+        executor, _commands = self._install(free=25 * GIB)
+        asyncio.run(executor.on_success({
+            "Resolve the restricted rsync wrapper": {"stdout": "/usr/bin/rrsync\n"},
+        }))
+        self.assertFalse(self.grant.sudo().notice)
 
     def _lab_upload(self, shell, limit):
         """Run the key's forced command under *shell*, a writer standing in

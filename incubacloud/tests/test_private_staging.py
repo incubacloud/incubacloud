@@ -90,8 +90,8 @@ from ._transport import take_the_tar, uploaded_scripts
 _BACKUP_ENV = "AWS_SECRET_ACCESS_KEY=not-for-other-accounts\n"
 _STORE = '{"le": {"Certificates": []}}'
 _JOB_DIR = re.compile(re.escape(JOB_DIR_PREFIX) + r"[0-9a-f]{16}")
-#: Every path a command names under /tmp.
-_TMP_PATHS = re.compile(r"/tmp/[^\s'\";]+")
+#: Every path a command names under /tmp, or /var/tmp (a restore's).
+_TMP_PATHS = re.compile(r"(?:/var)?/tmp/[^\s'\";]+")
 
 
 #: What the lab's host, which has no Docker, says Docker keeps its data
@@ -766,12 +766,13 @@ class TestTheArchivesAndTheirCredentialsStayInIt(_StagingCase):
         )
 
     def test_an_archive_placed_before_the_job_is_taken_into_it(self):
-        """``rsync`` names a path agreed before the job existed, in /tmp,
-        that any account could have created: only a regular file of this
-        account's is taken from there, into the job's directory, and it
-        is checked again there before anything hands it to ``sudo``."""
+        """``rsync`` names a path agreed before the job existed, in
+        /var/tmp, that any account could have created: only a regular file
+        of this account's is taken from there, into the job's directory,
+        and it is checked again there before anything hands it to
+        ``sudo``."""
         executor = self._rsync_restore()
-        agreed = shlex.quote(f"/tmp/incubacloud-restore-{self.inst.id}.zip")
+        agreed = shlex.quote(f"/var/tmp/incubacloud-restore-{self.inst.id}.zip")
         local = executor._job_path("restore.zip")
         self.assertEqual(executor._remote_path(), local)
         transport = self._transport()
@@ -1497,6 +1498,25 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
                 self.assertFalse(self.grant.received_sha256)
                 logged = "".join(line for line, _src in executor._log_buffer)
                 self.assertIn("Nothing that can be restored has arrived", logged)
+
+    def test_lab_an_upload_the_door_s_limit_cut_is_not_offered(self):
+        """Real files: what ``rsync`` left when the key's file size limit
+        stopped it is the size of the limit, a KiB multiple; it is not
+        offered, and why is kept for the dialog."""
+        with self._lab():
+            self.grant.write({"upload_limit_bytes": 8 * 1024 + 100})
+            granted = Path(self.grant._remote_path("restore.zip"))
+            granted.write_bytes(b"P" * 8 * 1024)
+            self._inspect(self._verify())
+            self.assertFalse(self.grant.received_sha256)
+            self.assertIn("the most this door takes", self.grant.notice)
+            granted.write_bytes(b"P" * 1024)
+            self._inspect(self._verify())
+            self.assertEqual(
+                self.grant.received_sha256,
+                hashlib.sha256(b"P" * 1024).hexdigest(),
+            )
+            self.assertFalse(self.grant.notice)
 
     def test_the_upload_check_reports_no_link(self):
         """A link is not a file that arrived."""

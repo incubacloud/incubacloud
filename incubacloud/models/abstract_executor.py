@@ -3830,6 +3830,11 @@ class AbstractExecutor(ABC):
         """Return the remote directory this job uploads its scripts to."""
         return self._job_path("scripts")
 
+    #: Where this type of job names its working directory on its host
+    #: (``JOB_DIR_PREFIX``): a restore's is on the disk its archive lands
+    #: on (``RestoreInstanceExecutor``).
+    _job_dir_prefix = JOB_DIR_PREFIX
+
     #: This job's working directory on its host, once named (class
     #: defaults, so an executor built without ``__init__`` has them).
     _job_dir_path = None
@@ -3846,7 +3851,7 @@ class AbstractExecutor(ABC):
         :rtype: str
         """
         if self._job_dir_path is None:
-            self._job_dir_path = JOB_DIR_PREFIX + secrets.token_hex(8)
+            self._job_dir_path = self._job_dir_prefix + secrets.token_hex(8)
         return self._job_dir_path
 
     def _job_path(self, name):
@@ -3876,7 +3881,7 @@ class AbstractExecutor(ABC):
             raise RuntimeError(
                 f"Could not create this job's working directory {directory} "
                 f"on the host (exit {result.exit_status}): something is "
-                "already at that path, or /tmp cannot be written."
+                "already at that path, or its directory cannot be written."
             )
         self._job_dir_created = True
 

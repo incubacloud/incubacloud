@@ -29391,3 +29391,46 @@ msgstr "Cuando lo cree, confirme aquí la clave del servidor."
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "Save to generate the key, then add it to the server."
 msgstr "Guarde para generar la clave y luego añádala al servidor."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
+msgid ""
+"The upload door did not open: the log of the job that installs its key says"
+" why."
+msgstr ""
+"La puerta de subida no se abrió: el registro del trabajo que instala su "
+"clave dice por qué."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
+msgid ""
+"This door takes an archive of at most %(size)s GiB: the most the server's "
+"free disk can restore now. A larger file stops at that size."
+msgstr ""
+"Esta puerta acepta un archivo de %(size)s GiB como máximo: lo más que el "
+"disco libre del servidor puede restaurar ahora. Un archivo mayor se detiene "
+"en ese tamaño."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
+msgid "Nothing that can be restored has arrived yet."
+msgstr "Todavía no ha llegado nada que se pueda restaurar."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__notice
+msgid "Notice"
+msgstr "Aviso"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_restore_upload_grant__notice
+msgid ""
+"Why the door did not open, or why what arrived through it cannot be "
+"restored, as the last job on it said: what the Import dialog shows. Empty "
+"when there is nothing to say."
+msgstr ""
+"Por qué no se abrió la puerta, o por qué lo que llegó por ella no se puede "
+"restaurar, según el último trabajo sobre ella: lo que muestra el diálogo "
+"Importar. Vacío cuando no hay nada que decir."

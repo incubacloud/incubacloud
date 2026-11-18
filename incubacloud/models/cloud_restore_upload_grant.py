@@ -48,13 +48,19 @@ from datetime import timedelta
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
+from ..restore_space import STAGING_ROOT
 from ._concurrency import read_committed_cursor
 from .big_integer import BigInteger
 
 _logger = logging.getLogger(__name__)
 
-#: Directory on the host below which every grant gets its own subdirectory.
-UPLOAD_ROOT = "/tmp/incubacloud-restore"
+#: Directory on the host below which every grant gets its own subdirectory:
+#: on the disk a restore lands its archive on (``restore_space``).
+UPLOAD_ROOT = f"{STAGING_ROOT}/incubacloud-restore"
+
+#: Where releases before 1.0.238 put it, in ``/tmp``: only swept now, for
+#: what a door of theirs left (``upload_dir_sweep``).
+LEGACY_UPLOAD_ROOT = "/tmp/incubacloud-restore"
 
 #: The names an uploaded archive may be restored under: one path
 #: component, starting with a letter or a digit — never ``.``, ``..``,
@@ -84,7 +90,7 @@ GRANT_HOURS = 12
 #: archive a failed restore gave back for its retry, or what else was
 #: sent. Three days lets a restore that failed on a Friday be retried on
 #: the Monday; then the daily sweep revokes the grant again, directory
-#: and all (``_gc_grants``), and the host's own sweep of /tmp takes a
+#: and all (``_gc_grants``), and the host's own daily sweep takes a
 #: directory that job never reached (``upload_dir_sweep``).
 USED_GRANT_DAYS = 3
 
@@ -105,7 +111,7 @@ def forced_command(directory, limit_bytes, wrapper=RRSYNC):
     the limit, never more. Past it the kernel stops the write
     (``SIGXFSZ``). No character of the line needs quoting but the two
     single quotes around what bash runs: the directory is the panel's
-    own, ``/tmp/incubacloud-restore/<16 hex digits>``.
+    own, ``/var/tmp/incubacloud-restore/<16 hex digits>``.
 
     :param str directory: the door's directory
     :param int limit_bytes: the largest file it may write
@@ -229,6 +235,12 @@ class CloudRestoreUploadGrant(models.Model):
     # An archive past 2 GiB is common: 64 bits (``BigInteger``).
     received_bytes = BigInteger(readonly=True)
     received_sha256 = fields.Char(readonly=True)
+    notice = fields.Char(
+        readonly=True,
+        help="Why the door did not open, or why what arrived through it "
+             "cannot be restored, as the last job on it said: what the "
+             "Import dialog shows. Empty when there is nothing to say.",
+    )
     user_id = fields.Many2one(
         comodel_name="res.users",
         default=lambda self: self.env.user.id,

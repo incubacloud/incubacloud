@@ -132,6 +132,35 @@ def authorized_keys_path():
     return "$HOME/.ssh/authorized_keys"
 
 
+def door_limit_message(limit, disks):
+    """Return what the log of the job that opens a door says of its limit.
+
+    :param int limit: the largest file the door takes, in bytes
+    :param restore_space.Disks disks: what the host had free
+    :rtype: str
+    """
+    return (
+        f"An upload through this door may be at most {in_gib(limit)} "
+        f"({described(disks)}): the largest archive the server's free disk "
+        "can restore now. A larger file stops at that size."
+    )
+
+
+def cut_at_limit(size, limit):
+    """Whether a file of *size* bytes stopped at a door's limit of *limit*.
+
+    The key's ``ulimit -f`` counts in KiB (``forced_command``): a write
+    past it fails, and ``rsync --inplace`` leaves the file at exactly the
+    limit, rounded down to a KiB. A file that size is taken for one cut
+    there: one that is it by chance would be a byte short of not fitting.
+
+    :param int size: the file's size
+    :param int limit: the door's ``upload_limit_bytes``, 0 when unknown
+    :rtype: bool
+    """
+    return bool(limit) and int(size) >= int(limit) // 1024 * 1024
+
+
 class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
     """Install the grant's public key, restricted to its own directory."""
 
@@ -184,10 +213,7 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
             )
             return
         grant.sudo().upload_limit_bytes = limit
-        self._sys(
-            f"An upload through this door may be at most {in_gib(limit)} "
-            f"({described(disks)})."
-        )
+        self._sys(door_limit_message(limit, disks))
 
     def get_commands(self):
         grant = self._grant()
@@ -283,6 +309,7 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
                 "key cannot be installed. Install the 'rsync' package's "
                 "scripts and try again."
             )
+        grant.sudo().notice = False
         self._sys(
             f"✓ Upload key installed, valid until {grant.expires_at} UTC."
         )
@@ -300,7 +327,13 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
             self._sys(f"✗ {err}")
         grant = self._grant()
         if grant.exists() and "Install the one-use key" not in results:
-            grant.sudo().state = "revoked"
+            grant.sudo().write({
+                "state": "revoked",
+                "notice": self._refusal or (
+                    "The upload door did not open: the log of the job that "
+                    "installs its key says why."
+                ),
+            })
 
 
 class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
@@ -372,22 +405,34 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
                 rows.append(listed.groups())
             else:
                 unusable += 1
+        unusable_note = ""
         if unusable:
-            self._sys(
-                f"⚠ {unusable} file(s) arrived with a name that cannot be "
+            unusable_note = (
+                f"{unusable} file(s) arrived with a name that cannot be "
                 "restored: only letters, digits, dots, dashes and "
                 "underscores, starting with a letter or a digit. Send the "
                 "archive again as restore.zip."
             )
+            self._sys("⚠ " + unusable_note)
         if not rows:
-            grant.sudo().write({
-                "received_filename": False,
-                "received_bytes": 0,
-                "received_sha256": False,
-            })
+            self._forget(grant, unusable_note)
             self._sys("Nothing that can be restored has arrived yet.")
             return
         size, digest, name = rows[-1]
+        limit = int(grant.upload_limit_bytes or 0)
+        if cut_at_limit(size, limit):
+            # The key's file size limit stopped it (``forced_command``):
+            # what arrived is the start of a larger archive.
+            note = (
+                f"{name} stopped at {in_gib(int(size))}, the most this door "
+                f"takes ({in_gib(limit)}, what the server's free disk could "
+                "restore when it opened): the archive is larger, and what "
+                "arrived cannot be restored. Free space on the server and "
+                "open another door, or restore a smaller archive."
+            )
+            self._forget(grant, note)
+            self._sys("⚠ " + note)
+            return
         # Not offered for a restore the disk cannot take: the restore
         # copies it out of the door, then unpacks it (``restore_space``).
         # Forgotten as when nothing arrived, and said, not raised: a
@@ -399,26 +444,35 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
             disks, int(size), 1, f"{name} ({in_gib(int(size))})",
         )
         if disks is None or refusal:
-            grant.sudo().write({
-                "received_filename": False,
-                "received_bytes": 0,
-                "received_sha256": False,
-            })
             if disks is None:
-                self._sys(
-                    f"⚠ {name} arrived ({size} bytes), but the free disk on "
+                refusal = (
+                    f"{name} arrived ({size} bytes), but the free disk on "
                     "the server could not be measured: it cannot be "
                     "restored. Check again."
                 )
-            else:
-                self._sys("⚠ " + refusal)
+            self._forget(grant, refusal)
+            self._sys("⚠ " + refusal)
             return
         grant.sudo().write({
             "received_filename": name,
             "received_bytes": int(size),
             "received_sha256": digest,
+            "notice": False,
         })
         self._sys(f"✓ Received {name} — {size} bytes, SHA-256 {digest}")
+
+    def _forget(self, grant, note):
+        """Forget what an earlier check recorded, and keep why for the dialog.
+
+        :param grant: the ``cloud.restore.upload.grant`` checked
+        :param str note: why nothing it holds can be restored, or ``''``
+        """
+        grant.sudo().write({
+            "received_filename": False,
+            "received_bytes": 0,
+            "received_sha256": False,
+            "notice": note or False,
+        })
 
 
 def _revoke_commands(grant, keep_directory=False, label=""):

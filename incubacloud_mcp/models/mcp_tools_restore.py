@@ -32,6 +32,7 @@ from odoo.exceptions import UserError
 from odoo.addons.incubacloud.models.cloud_restore_upload_grant import GRANT_HOURS
 from odoo.addons.incubacloud.models.restore_instance_executor import rsync_path
 from odoo.addons.incubacloud.net.restore_source import shown_link, told_link
+from odoo.addons.incubacloud.restore_space import in_gib
 
 from ..protocol.tool_spec import ToolSpec, boolean, obj, record_id, string
 from .mcp_tools import quoted
@@ -73,6 +74,21 @@ _ANSWER = (
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
+def door_limit(grant):
+    """Return what an answer says of the largest archive *grant* takes.
+
+    Measured by the job that installed its key: nothing before it ran.
+
+    :param grant: the ``cloud.restore.upload.grant``
+    :return: ``largest_archive_bytes`` and ``largest_archive``, or ``{}``
+    :rtype: dict
+    """
+    limit = int(grant.upload_limit_bytes or 0)
+    if not limit:
+        return {}
+    return {"largest_archive_bytes": limit, "largest_archive": in_gib(limit)}
+
+
 def _restore(name, description, schema, required, **kwargs):
     """Return the spec of a restore tool: destructive, always approved."""
     return ToolSpec(
@@ -101,7 +117,7 @@ TOOLS = (
     _restore(
         "restore_from_host_file",
         "Replace an instance's database and files with an archive already on its "
-        "server, at /tmp/incubacloud-restore-<instance_id>.zip: a regular file of "
+        "server, at /var/tmp/incubacloud-restore-<instance_id>.zip: a regular file of "
         "the account the panel connects as (copy it there with run_host_command, "
         "for instance). No other path is read; the file is taken by the restore, "
         "and put back if the restore fails.",
@@ -134,7 +150,9 @@ TOOLS = (
         "rsync into one directory only, write only, until it expires (12 hours) "
         "or a restore takes what arrived. Never give the private key. Answers the "
         "upload command, and the job that installs the key: the command works once "
-        "that job has started.",
+        "that job has started. That job measures the largest archive the "
+        "server's free disk can restore through the door; its log (get_job) and "
+        "check_restore_upload say it, and a larger file stops at that size.",
         _DEVELOPER,
         obj(
             {
@@ -171,7 +189,8 @@ TOOLS = (
         "check_restore_upload",
         "Check what arrived through an upload door: a job computes, on the "
         "server, the name, size and SHA-256 of the file sent; its log (get_job) "
-        "ends with them. Then restore_from_upload restores that file.",
+        "ends with them, or with why it cannot be restored. Answers the largest "
+        "archive the door takes. Then restore_from_upload restores that file.",
         _DEVELOPER,
         obj(
             {"instance_id": record_id("The instance."), "grant_id": _GRANT},
@@ -507,7 +526,9 @@ class McpToolsRestore(models.AbstractModel):
         """Ask the server what arrived: ``verify_restore_upload``."""
         grant = self._grant(args)
         job_id = grant.instance_id.verify_restore_upload(grant.id)
-        return self._with_job_state({"ok": True, "job_id": job_id})
+        return self._with_job_state(
+            {"ok": True, "job_id": job_id} | door_limit(grant)
+        )
 
     @api.model
     def _prepare_restore_from_upload(self, args):

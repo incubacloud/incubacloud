@@ -36,6 +36,9 @@ export const RestoreUploadMixin = (Base) =>
         grant: null,
         privateKey: "",
         keyQueued: false,
+        // The largest archive the door takes, in bytes: measured by the
+        // job that installs its key, read once that job has ended.
+        limitBytes: 0,
         received: null,
         // The check of what arrived is a job, which may wait in the
         // queue: until it ends there is nothing to show or to restore.
@@ -99,11 +102,64 @@ export const RestoreUploadMixin = (Base) =>
         // on the instance: the dialog says so until then.
         const answer = await announceJob(this.env.toast, grant.job_id);
         d.keyQueued = answer?.state === "queued";
+        // Not awaited: the job may wait in the queue a while, and the
+        // command is shown meanwhile.
+        this._readDoorLimit(d, grant.job_id);
       } catch (e) {
         d.error = e.data?.message || e.message || _t("Could not prepare the upload.");
       } finally {
         d.granting = false;
       }
+    }
+
+    /**
+     * Show the largest archive the door takes once its key's job ended.
+     *
+     * That job measures the server's free disk and sets the door's
+     * limit. A door the disk leaves no room for is closed by it: the
+     * dialog then says why and offers another key, instead of a command
+     * whose upload would stop part way.
+     *
+     * @param {object} d the restore dialog that asked
+     * @param {number} jobId the job that installs the key
+     * @returns {Promise<void>}
+     */
+    async _readDoorLimit(d, jobId) {
+      try {
+        const ended = await this._untilJobEnds(jobId, d);
+        if (!ended || !d.grant) return;
+        const [grant] = await this.orm.call(
+          "cloud.restore.upload.grant", "read",
+          [[d.grant.grant_id], ["state", "upload_limit_bytes", "notice"]]
+        );
+        if (this.state.restoreDialog !== d) return;
+        d.keyQueued = false;
+        if (grant?.state === "granted" && grant.upload_limit_bytes) {
+          d.limitBytes = grant.upload_limit_bytes;
+          return;
+        }
+        d.grant = null;
+        d.privateKey = "";
+        d.error =
+          grant?.notice ||
+          _t("The upload door did not open: the log of the job that installs its key says why.");
+      } catch {
+        // The command stays; checking what arrived says the rest.
+      }
+    }
+
+    /**
+     * Return what the dialog says of the door's limit.
+     *
+     * @returns {string} the sentence, or "" before the limit is known
+     */
+    doorLimitText() {
+      const bytes = this.state.restoreDialog?.limitBytes;
+      if (!bytes) return "";
+      return _t(
+        "This door takes an archive of at most %(size)s GiB: the most the server's free disk can restore now. A larger file stops at that size.",
+        { size: (bytes / 1024 ** 3).toFixed(1) }
+      );
     }
 
     /**
@@ -137,10 +193,11 @@ export const RestoreUploadMixin = (Base) =>
         }
         const [grant] = await this.orm.call(
           "cloud.restore.upload.grant", "read",
-          [[d.grant.grant_id], ["received_filename", "received_bytes", "received_sha256"]]
+          [[d.grant.grant_id], ["received_filename", "received_bytes", "received_sha256", "notice"]]
         );
         // A check that found nothing usable forgets the last one: the
-        // dialog must not keep showing it.
+        // dialog must not keep showing it, and says why — a file cut at
+        // the door's limit among the reasons.
         d.received = grant?.received_filename
           ? {
               filename: grant.received_filename,
@@ -148,6 +205,9 @@ export const RestoreUploadMixin = (Base) =>
               sha256: grant.received_sha256,
             }
           : null;
+        if (!d.received) {
+          d.error = grant?.notice || _t("Nothing that can be restored has arrived yet.");
+        }
       } catch (e) {
         d.error = e.data?.message || e.message || _t("Could not check the upload.");
       } finally {

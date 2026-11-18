@@ -15,6 +15,7 @@ from ..net.restore_source import (
 )
 from ..net.restore_source import validate as validate_restore_url
 from ..restore_space import (
+    STAGING_ROOT,
     described,
     disks_command,
     in_gib,
@@ -123,12 +124,15 @@ def rsync_path(instance_id):
 
     One path per instance, fixed before any job exists, and never one the
     caller names: whoever asks for the restore copies the archive there
-    as the host's SSH account, and the restore reads no other file.
+    as the host's SSH account, and the restore reads no other file. On
+    the disk every restore lands its archive on
+    (``restore_space.STAGING_ROOT``), not in a ``/tmp`` that may be a
+    small tmpfs.
 
     :param int instance_id: the instance restored
     :rtype: str
     """
-    return f"/tmp/incubacloud-restore-{int(instance_id)}.zip"
+    return f"{STAGING_ROOT}/incubacloud-restore-{int(instance_id)}.zip"
 
 
 def _where_its_name_says(path):
@@ -196,7 +200,7 @@ class RestoreInstanceExecutor(
             a handoff or a restore from one starts. ``from_job`` (the
             attachment relay) stays for operator-facing flows and old
             queued jobs.
-            ``rsync`` takes ``/tmp/incubacloud-restore-<instance id>.zip``:
+            ``rsync`` takes ``/var/tmp/incubacloud-restore-<instance id>.zip``:
             a path agreed before the job exists, where whoever runs the
             restore copied the archive themselves as the host's SSH
             account. Any account could have created that path first, so
@@ -243,6 +247,12 @@ class RestoreInstanceExecutor(
     """
 
     _job_type = "restore_instance"
+
+    #: Its working directory, where every archive it restores is put, on
+    #: the disk of :data:`restore_space.STAGING_ROOT` rather than in
+    #: ``/tmp``: the archive the size of the database and its files,
+    #: copied out of an upload door on the same disk.
+    _job_dir_prefix = f"{STAGING_ROOT}/.incubacloud-job-"
 
     #: Set by ``before_execute`` when the instance takes the keys of the
     #: one whose data it receives; ``get_commands`` then writes them.
@@ -434,7 +444,8 @@ class RestoreInstanceExecutor(
     def _rsync_path(self):
         """Return where an ``rsync`` restore expects its archive copied.
 
-        Agreed before the job exists, so in /tmp under a name anybody
+        Agreed before the job exists, so in a directory open to every
+        account (``restore_space.STAGING_ROOT``) under a name anybody
         can tell: read only to take a regular file of this account's
         from it (``before_execute``) and to give it back
         (``_discard_staging``).
@@ -742,8 +753,8 @@ class RestoreInstanceExecutor(
 
         The disk of this job's directory, where the archive lands, and
         the one Docker keeps the instances on, where it is unpacked and
-        loaded (``restore_space.Disks``): ``/tmp`` may be a small tmpfs
-        on a host whose Docker disk is large, or the other way round.
+        loaded (``restore_space.Disks``): one disk on most servers, two
+        where Docker keeps its data on a disk of its own.
 
         :param transport: the job's open transport, its directory made
         :rtype: restore_space.Disks
@@ -908,7 +919,7 @@ class RestoreInstanceExecutor(
         elif mode == 'rsync':
             agreed = self._rsync_path()
             self._sys(f"Using the archive copied to {agreed}…")
-            # Anybody can create a path in /tmp first: only a regular
+            # Anybody can create a path in that directory first: only a regular
             # file of this account's is taken, into the job's directory,
             # before ``verify-file`` hands it to ``sudo``.
             await self._ensure_job_dir(transport)

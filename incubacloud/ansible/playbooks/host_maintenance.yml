@@ -22,9 +22,11 @@
     # 1.0.200 left at fixed names (root's and the odoo container's too:
     # uid 1000, the live dumps; a pass through ``sudo -n`` only when a
     # search finds something), the directories of jobs
-    # whose worker died, three days old, and the grant directories of
-    # upload keys under /tmp/incubacloud-restore, three days old too, in
-    # a root of this account's (``upload_dir_sweep``). DockerPruneExecutor passes the
+    # whose worker died, three days old, in /tmp and in /var/tmp (a
+    # restore's), and the grant directories of upload keys under
+    # /var/tmp/incubacloud-restore, and under /tmp/incubacloud-restore
+    # where releases before 1.0.238 put them, three days old too, in a
+    # root of this account's (``upload_dir_sweep``). DockerPruneExecutor passes the
     # same command (``TMP_SWEEP``), sparing the handoffs a restore still
     # waits for (``tmp_sweep``).
     ic_tmp_sweep: >-
@@ -84,9 +86,16 @@
       -name '.incubacloud-scripts-*' -o -name '.icfree-*' -o -name '.ic-modules-*'
       -o -name '.ic-sablier*' \) -exec rm -rf {} +; fi 2>/dev/null || true; find
       /tmp -mindepth 1 -maxdepth 1 -type d -name '.incubacloud-job-*' -user "$(id
-      -u)" -mmin +4320 -exec rm -rf {} +; { [ -d /tmp/incubacloud-restore ] && [ !
-      -h /tmp/incubacloud-restore ] && [ -O /tmp/incubacloud-restore ] && find
-      /tmp/incubacloud-restore -mindepth 1 -maxdepth 1 -type d -name
+      -u)" -mmin +4320 -exec rm -rf {} +; find /var/tmp -mindepth 1 -maxdepth 1
+      -type d -name '.incubacloud-job-*' -user "$(id -u)" -mmin +4320 -exec rm
+      -rf {} +; { [ -d /var/tmp/incubacloud-restore ] && [ ! -h
+      /var/tmp/incubacloud-restore ] && [ -O /var/tmp/incubacloud-restore ] &&
+      find /var/tmp/incubacloud-restore -mindepth 1 -maxdepth 1 -type d -name
+      '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+      -user "$(id -u)" -mmin +4320 -exec rm -rf {} +; } || true; { [ -d
+      /tmp/incubacloud-restore ] && [ ! -h /tmp/incubacloud-restore ] && [ -O
+      /tmp/incubacloud-restore ] && find /tmp/incubacloud-restore -mindepth 1
+      -maxdepth 1 -type d -name
       '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
       -user "$(id -u)" -mmin +4320 -exec rm -rf {} +; } || true
 
@@ -135,7 +144,7 @@
     # sweep that cannot remove everything leaves the rest for the next
     # day: it never fails the play. A shell: the command needs ``$(id -u)``
     # and two ``find`` in a row, which the linter cannot see in a variable.
-    - name: Sweep this account's leftovers in /tmp  # noqa: command-instead-of-shell
+    - name: Sweep this account's leftovers in /tmp and /var/tmp  # noqa: command-instead-of-shell
       ansible.builtin.shell:
         cmd: "{{ ic_tmp_sweep }}"
       changed_when: false

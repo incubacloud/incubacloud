@@ -535,7 +535,7 @@ class TestRestoreTools(
         message = self._message(
             self.dev, "restore_from_host_file", {"instance_id": self.staging.id}
         )
-        self.assertIn(f'"/tmp/incubacloud-restore-{self.staging.id}.zip"', message)
+        self.assertIn(f'"/var/tmp/incubacloud-restore-{self.staging.id}.zip"', message)
         self.assertIn('"mcp-host"', message)
 
     def test_a_host_file_restore_is_restore_db_in_rsync_mode(self):
@@ -551,7 +551,7 @@ class TestRestoreTools(
             )
         self.assertEqual(answer["job_id"], 92)
         self.assertEqual(
-            answer["path"], f"/tmp/incubacloud-restore-{self.staging.id}.zip"
+            answer["path"], f"/var/tmp/incubacloud-restore-{self.staging.id}.zip"
         )
         called, payload = restore.call_args.args
         self.assertEqual((called, called.env.uid), (self.staging, self.dev.id))
@@ -661,12 +661,28 @@ class TestRestoreTools(
         )
         job = self.env["cloud.job"].sudo().browse(answer["job_id"])
         self.assertEqual(job.job_type_id.code, "verify_restore_upload")
+        # Before the job that installs the key measured it: no limit said.
+        self.assertNotIn("largest_archive", answer)
         with self.assertRaisesRegex(UserError, "does not exist"):
             self._run(
                 self.dev,
                 "check_restore_upload",
                 {"instance_id": self.production.id, "grant_id": grant.id},
             )
+
+    def test_a_check_answers_the_largest_archive_the_door_takes(self):
+        """What the job that installed the key measured: an agent learns it
+        here as the dialog shows it, not only from that job's log."""
+        grant = self._checked_grant()
+        grant.write({"upload_limit_bytes": 13 * 1024**3})
+        answer = self._run(
+            self.dev,
+            "check_restore_upload",
+            {"instance_id": self.staging.id, "grant_id": grant.id},
+        )
+        self.assertEqual(answer["largest_archive_bytes"], 13 * 1024**3)
+        self.assertEqual(answer["largest_archive"], "13.0 GiB")
+        self.assertIn("largest archive", self._spec("grant_restore_upload").description)
 
     def test_nothing_checked_is_not_restored(self):
         """A door nothing was found through is refused before anyone is asked."""

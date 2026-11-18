@@ -517,6 +517,8 @@ describe("job queue — every button that enqueues says what became of its job",
         25: { ok: true, job_id: 25, state: "queued", job_type: "Grant Restore Upload Key", queued_behind: "Rebuild Instance" },
         26: { ok: true, job_id: 26, state: "pending", job_type: "Grant Restore Upload Key", queued_behind: false },
         27: { ok: true, job_id: 27, state: "pending", job_type: "Restore Instance", queued_behind: false },
+        28: { ok: true, job_id: 28, state: "done", job_type: "Grant Restore Upload Key", queued_behind: false },
+        29: { ok: true, job_id: 29, state: "failed", job_type: "Grant Restore Upload Key", queued_behind: false },
     };
 
     /** ``/cloud/get_job_state`` as the server answers it here. */
@@ -614,18 +616,30 @@ describe("job queue — every button that enqueues says what became of its job",
      * key is installed by job *jobId*.
      *
      * @param {number} jobId the job ``grant_restore_upload`` answers
-     * @returns {object} the stand-in, with ``toast``
+     * @param {object} door what a read of the grant answers once that job
+     *     ended
+     * @returns {object} the stand-in, with ``toast`` and ``ticks`` (the
+     *     polls waiting to run)
      */
-    function uploading(jobId) {
+    function uploading(jobId, door = { state: "granted", upload_limit_bytes: 0 }) {
         const comp = Object.create(InstanceDetail.prototype);
         comp.toast = toastService();
         comp.env = { toast: comp.toast };
         comp.props = { instance_id: 3 };
+        comp.ticks = [];
+        comp._safePoll = { alive: true, schedule: (fn) => comp.ticks.push(fn) };
         comp.orm = {
-            call: () => Promise.resolve({ grant_id: 4, job_id: jobId, private_key: "KEY" }),
+            call: (model, method) => Promise.resolve(
+                method === "read"
+                    ? [door]
+                    : { grant_id: 4, job_id: jobId, private_key: "KEY" }
+            ),
         };
         comp.state = {
-            restoreDialog: { granting: false, grant: null, privateKey: "", keyQueued: false },
+            restoreDialog: {
+                granting: false, grant: null, privateKey: "", keyQueued: false,
+                limitBytes: 0, error: null,
+            },
         };
         return comp;
     }
@@ -643,6 +657,31 @@ describe("job queue — every button that enqueues says what became of its job",
         await comp.requestUploadKey();
         expect(comp.toast.shown()).toEqual([["info", "Started: Grant Restore Upload Key"]]);
         expect(comp.state.restoreDialog.keyQueued).toBe(false);
+        expect(comp.state.restoreDialog.limitBytes).toBe(0);
+    });
+
+    test("the dialog says the largest archive the door takes once its job ran", async () => {
+        const comp = uploading(28, { state: "granted", upload_limit_bytes: 13 * 1024 ** 3 });
+        await comp.requestUploadKey();
+        await settle();
+        const dialog = comp.state.restoreDialog;
+        expect(dialog.limitBytes).toBe(13 * 1024 ** 3);
+        expect(dialog.grant.grant_id).toBe(4);
+        expect(comp.doorLimitText()).toBe(
+            "This door takes an archive of at most 13.0 GiB: the most the server's free disk can restore now. A larger file stops at that size."
+        );
+    });
+
+    test("a door the disk leaves no room for says why, and offers another key", async () => {
+        const notice = "Not enough free disk on the server for an upload in /var/tmp";
+        const comp = uploading(29, { state: "revoked", upload_limit_bytes: 0, notice });
+        await comp.requestUploadKey();
+        await settle();
+        const dialog = comp.state.restoreDialog;
+        expect(dialog.grant).toBe(null);
+        expect(dialog.privateKey).toBe("");
+        expect(dialog.error).toBe(notice);
+        expect(dialog.limitBytes).toBe(0);
     });
 
     /**
@@ -712,6 +751,15 @@ describe("job queue — every button that enqueues says what became of its job",
         expect(comp.reads).toBe(1);
         expect(dialog.received).toBe(null);
         expect(dialog.checking).toBe(false);
+    });
+
+    test("a check that found nothing restorable says why", async () => {
+        const notice = "restore.zip stopped at 0.9 GiB, the most this door takes";
+        const host = { jobState: "done", grant: { received_filename: false, notice } };
+        const comp = checking(host);
+        await comp.checkUpload();
+        expect(comp.state.restoreDialog.received).toBe(null);
+        expect(comp.state.restoreDialog.error).toBe(notice);
     });
 
     test("what the finished check found is what the dialog shows", async () => {

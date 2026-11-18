@@ -1051,6 +1051,7 @@
                                 <p t-if="state.restoreDialog.keyQueued" class="ic-restore-rsync-hint">
                                     The job that installs the key is waiting in this instance's queue: the command works once it has started.
                                 </p>
+                                <p t-if="state.restoreDialog.limitBytes" class="ic-restore-rsync-hint" t-esc="doorLimitText()"/>
                                 <div class="ic-restore-rsync-wrap">
                                     <div class="ic-restore-rsync-cmd">
                                         <code t-esc="uploadCommand()"/>
