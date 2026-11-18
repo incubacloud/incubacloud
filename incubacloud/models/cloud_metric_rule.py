@@ -566,6 +566,11 @@ class CloudMetricRule(models.Model):
             if self.scope == "instance" and target._metric_alerts_suppressed():
                 Alert.resolve_alert(self.code, **scope)
                 continue
+            # The panel restarts the server: silent, or measured as it
+            # goes down and comes back, for a cut it asked for. Left as
+            # it was, neither raised nor resolved (``_reboot_recent``).
+            if self.scope != "instance" and target._reboot_recent():
+                continue
             if not self._breached(value):
                 Alert.resolve_alert(self.code, **scope)
                 continue

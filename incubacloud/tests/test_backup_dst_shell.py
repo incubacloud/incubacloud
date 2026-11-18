@@ -34,7 +34,12 @@ from odoo.tools import SQL
 from odoo.addons.incubacloud.controllers._data_load import _routes_ops
 from odoo.addons.incubacloud.controllers.data_load import CloudDataLoadController
 from odoo.addons.incubacloud.models.abstract_executor import JobRefused
-from odoo.addons.incubacloud.models._backup_dst import compose_env_breaks
+from odoo.addons.incubacloud.models._backup_dst import (
+    compose_env_breaks,
+    dst_covers,
+    dst_is_valid,
+    dst_key,
+)
 from odoo.addons.incubacloud.models.backup_list_executor import BackupListExecutor
 from odoo.addons.incubacloud.models.delete_instance_executor import (
     PURGE_ALERT_BY_EXIT,
@@ -76,10 +81,10 @@ _ROOT = "boto3+s3://bd-bucket"
 
 _MIGRATION = (
     Path(__file__).resolve().parent.parent
-    / "migrations" / "1.0.229" / "post-migrate.py"
+    / "migrations" / "1.0.232" / "post-migrate.py"
 )
 #: The name the migration is loaded under, which its log takes.
-_MIGRATION_LOGGER = "ic_1_0_229_post"
+_MIGRATION_LOGGER = "ic_1_0_232_post"
 
 
 @contextlib.contextmanager
@@ -274,6 +279,46 @@ class TestTheBackupPathHasAGrammar(_BackupDstCase):
                 self.instance.sudo().write({"custom_backup_dst": dst})
                 self.assertEqual(self.instance.custom_backup_dst, dst)
 
+    def test_an_sftp_path_an_sftp_destination_writes_is_accepted(self):
+        """The grammar takes ``sftp://`` as ``sftp_dst.build`` writes it."""
+        for dst in (
+            "sftp://u123@backup.example.net/backups/bd-proj/bd-inst",
+            "sftp://u123-sub1@backup.example.net:23//srv/backups/bd-proj/bd-inst",
+            "sftp://u@10.0.0.5/bd-proj/bd-inst",
+        ):
+            with self.subTest(dst=dst):
+                self.assertTrue(dst_is_valid(dst))
+                self.instance.sudo().write({"custom_backup_dst": dst})
+                self.assertEqual(self.instance.custom_backup_dst, dst)
+
+    def test_an_sftp_path_a_shell_or_a_file_would_read_as_more_is_refused(self):
+        for dst in (
+            "sftp://backup.example.net/bd-proj/bd-inst",
+            "sftp://u:pw@backup.example.net/bd-proj/bd-inst",
+            "sftp://u@backup.example.net;touch/bd-proj/bd-inst",
+            "sftp://u@backup.example.net/bd-proj/$(touch x)",
+            "sftp://u@backup.example.net/bd-proj/../other",
+            "sftp://u@backup.example.net:0/bd-proj/bd-inst",
+            "sftp://u@backup.example.net/bd-proj/bd-inst?x=1",
+            "sftp://u@[::1]/bd-proj/bd-inst",
+            "sftp://u@backup.example.net/bd-proj/bd-inst\nDST=x",
+        ):
+            with self.subTest(dst=dst):
+                self.assertFalse(dst_is_valid(dst))
+                with self.assertRaises(ValidationError):
+                    self.instance.sudo().write({"custom_backup_dst": dst})
+
+    def test_an_sftp_path_is_compared_on_its_server_as_duplicity_reads_it(self):
+        """A relative path is under the home: never the absolute one of the same name."""
+        root = dst_key("sftp://u@Backup.example.net/backups")
+        self.assertEqual(root, ("sftp://u@backup.example.net:22", ("backups",)))
+        inst = dst_key("sftp://u@backup.example.net:22/backups/p/i")
+        self.assertTrue(dst_covers(root, inst))
+        self.assertFalse(dst_covers(root, dst_key("sftp://u@backup.example.net//backups/p/i")))
+        self.assertFalse(dst_covers(root, dst_key("sftp://u@backup.example.net:23/backups/p/i")))
+        self.assertFalse(dst_covers(root, dst_key("sftp://v@backup.example.net/backups/p/i")))
+        self.assertIsNone(dst_key("sftp://backup.example.net/backups"))
+
     def test_a_path_saved_before_goes_on_as_it_is(self):
         """Only a write of the path is checked: the rest of the record saves."""
         legacy = "boto3+s3://bd-bucket/backups/with space"
@@ -347,8 +392,13 @@ class TestTheBackupListingQuotesThePath(_BackupDstCase):
 
     def _assert_one_literal_argument(self, command, dst):
         """*dst* is the command's last argument, and a shell reads it back as is."""
-        self.assertEqual(shlex.split(command)[-2:], ["collection-status", dst])
-        quoted = command.split(" dup collection-status ", 1)[1]
+        self.assertEqual(
+            shlex.split(command)[-4:],
+            ["collection-status", dst, "</dev/null", "2>&1"],
+        )
+        quoted = command.split(" dup collection-status ", 1)[1].removesuffix(
+            " </dev/null 2>&1",
+        )
         echoed = subprocess.run(
             ["bash", "-c", f"printf %s {quoted}"],
             capture_output=True, check=True,
@@ -465,7 +515,7 @@ class TestTheComposeFileGetsNoPathThatBreaksIt(_BackupDstCase):
 class TestTheUpdateNamesThePathsSavedBefore(_BackupDstCase):
 
     def _migrate(self):
-        """Run 1.0.229's post-migrate on this cursor, from 1.0.228."""
+        """Run 1.0.232's post-migrate on this cursor, from 1.0.228."""
         spec = importlib.util.spec_from_file_location(_MIGRATION_LOGGER, _MIGRATION)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -1604,6 +1654,25 @@ class TestASuccessorGetsABackupPathOfItsOwn(_BackupDstCase):
         self.assertEqual(
             own.instance_backup_dst, f"{self.archived_path}-{own.id}",
         )
+
+    def test_emptying_the_path_of_a_suffixed_one_keeps_its_own(self):
+        """Archived and revived, its path written is its own computed one.
+
+        With nobody left at the path without the suffix (the archived one
+        purged), a claim would take that path, away from its chain.
+        """
+        successor = self._create()
+        path = successor.instance_backup_dst
+        successor.sudo().custom_backup_dst = path
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET custom_backup_dst = %s WHERE id = %s",
+            ("boto3+s3://bd-bucket/elsewhere/bd-inst", self.instance.id),
+        )
+        self.env.invalidate_all()
+        successor.write({"custom_backup_dst": False})
+        self.assertEqual(successor.backup_path_suffix, f"-{successor.id}")
+        self.assertEqual(successor.instance_backup_dst, path)
 
     def test_moving_the_project_s_folder_claims_its_instances_paths(self):
         moved = self.env["cloud.project"].create({

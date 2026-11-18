@@ -141,7 +141,7 @@ through.
 
 ### `backup_path_shared`: two records keep their copies under one path
 
-Raised once per path by 1.0.229's post-migrate, for records that
+Raised once per path by 1.0.232's post-migrate, for records that
 already shared a backup path before an instance that takes the name of
 another got a path of its own; the log of that update lists each path's
 records, live or archived. Their copies are told apart by dates alone:
@@ -167,8 +167,9 @@ continued the archived chain stops the archived one's delete with
    wanted.
 3. Any other pair (two live ones, or two that lived at the same time):
    give each live one but one a path of its own (`custom_backup_dst`),
-   for example the shared path with `-<id>` after it. Its next backup is
-   a full there; what it stored under the shared path stays there.
+   for example the shared path with `-<id>` after it, and rebuild it:
+   until then its server keeps copying to the shared path. Its next
+   backup is a full there; what it stored under the shared path stays there.
 
 The alert resolves itself at the next daily check of archived copies
 (`Verify archived instance copies`) once one record holds the path, or

@@ -11,7 +11,7 @@ class FirstSteps(http.Controller):
     """``/cloud/first_steps`` and closing or opening the card again."""
 
     @http.route(
-        "/cloud/first_steps", type="jsonrpc", auth="user", methods=["POST"],
+        "/cloud/first_steps", type="json", auth="user", methods=["POST"],
     )
     def cloud_first_steps(self):
         """Return what the first steps card shows the signed-in user.
@@ -23,7 +23,7 @@ class FirstSteps(http.Controller):
         return request.env["cloud.first.steps"]._state(request.env.user)
 
     @http.route(
-        "/cloud/first_steps/set_hidden", type="jsonrpc", auth="user",
+        "/cloud/first_steps/set_hidden", type="json", auth="user",
         methods=["POST"],
     )
     def cloud_first_steps_set_hidden(self, hidden):

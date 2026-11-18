@@ -992,7 +992,8 @@ class CloudInstance(models.Model):
 
         Called when the computed path moves anyway: on creation, when
         the name, the project or the project's folder changes, and when a
-        path written by hand is emptied. Not for an instance with a path
+        path written by hand is emptied on an instance without a suffix
+        (one with a suffix already has a path of its own). Not for an instance with a path
         of its own written (``custom_backup_dst``), which the field's
         check holds to the same rule. Of several claimed together, the
         first keeps the path and the later ones take suffixes.
@@ -1846,7 +1847,9 @@ class CloudInstance(models.Model):
         ))
         # A form sends the name back on every save: only a change moves
         # the computed backup path. So does emptying a path written by
-        # hand: the instance goes back to the computed one.
+        # hand: the instance goes back to the computed one. Not one with a
+        # suffix: its path is already its own, and a claim that found the
+        # path without it free would move it there, away from its chain.
         path_moved = self.filtered(lambda inst: (
             "name" in vals and inst.name != vals["name"]
         ) or (
@@ -1855,6 +1858,7 @@ class CloudInstance(models.Model):
         ) or (
             "custom_backup_dst" in vals and inst.custom_backup_dst
             and not vals["custom_backup_dst"]
+            and not inst.backup_path_suffix
         ))
         result = super().write(vals)
         relay_moved._forget_relay_state()
@@ -4677,7 +4681,7 @@ class CloudInstance(models.Model):
     def _resolve_unshared_backup_paths(self):
         """Resolve each ``backup_path_shared`` whose path one record holds now.
 
-        1.0.229's post-migrate raises it once per path that two records or
+        1.0.232's post-migrate raises it once per path that two records or
         more hold, keyed by the path. Once fewer than two hold it (one of
         them purged, or given a path of its own) the alert has nothing
         left to say. Run with the daily check of archived copies, which
@@ -6086,8 +6090,8 @@ class CloudInstance(models.Model):
         The path reaches the host as an argument of a command, as a line
         of an environment file and inside the compose file: an S3 URL
         (``boto3+s3://`` or ``s3://``) whose bucket and path hold letters,
-        digits, dots, hyphens and underscores only
-        (``_backup_dst.dst_is_valid``). Checked when the path is written,
+        digits, dots, hyphens and underscores only, or an ``sftp://`` URL
+        of a user, a server and such a path (``_backup_dst.dst_is_valid``). Checked when the path is written,
         an import's included; a path saved before goes on as it is, as
         does the one an archive freezes as it was computed
         (``_freeze_backup_dst``).
@@ -6107,10 +6111,11 @@ class CloudInstance(models.Model):
                 raise ValidationError(
                     _(
                         "Custom backup path '%(path)s' is invalid. Use "
-                        "boto3+s3://bucket/path or s3://bucket/path, with only "
-                        "letters, digits, dots, hyphens and underscores in the "
-                        "bucket and in each part of the path. No '..', spaces "
-                        "or shell metacharacters.",
+                        "boto3+s3://bucket/path, s3://bucket/path or "
+                        "sftp://user@server/path, with only letters, digits, "
+                        "dots, hyphens and underscores in the bucket and in "
+                        "each part of the path. No '..', spaces or shell "
+                        "metacharacters.",
                         path=v,
                     )
                 )

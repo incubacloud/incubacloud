@@ -4,8 +4,12 @@ import re
 import shlex
 from datetime import datetime, timedelta
 
-from odoo import fields
+import asyncssh
 
+from odoo import fields
+from odoo.exceptions import UserError
+
+from . import sftp_dst
 from ._backup_dst import dst_key
 from .abstract_executor import AbstractSSHExecutor
 from .cloud_backup_backend import _SFTP_OPERATION_TIMEOUT, SftpUnreachable

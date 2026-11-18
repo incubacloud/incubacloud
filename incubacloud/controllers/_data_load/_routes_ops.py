@@ -400,7 +400,7 @@ class OpsMixin:
             began, lambda: instance._metrics_board(range_key, start, end),
         )
 
-    @http.route(["/cloud/instance/metrics_summary"], type="jsonrpc",
+    @http.route(["/cloud/instance/metrics_summary"], type="json",
                 auth="user")
     def cloud_instance_metrics_summary(self, instance_id, hours=24, end=None):
         """Return this instance's metrics by the hour, with their peaks.

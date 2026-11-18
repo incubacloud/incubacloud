@@ -1,6 +1,6 @@
 """The server's restart for its updates: when it happens, and what it holds.
 
-Until 1.0.229 a hardened host with ``auto_security_updates`` restarted by
+Until 1.0.232 a hardened host with ``auto_security_updates`` restarted by
 itself at 04:00 whenever an update asked for it (unattended-upgrades'
 ``Automatic-Reboot``), and cut whatever the panel was running there: a
 rebuild, a backup, a step run apart. Now the server only installs its

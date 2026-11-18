@@ -1,4 +1,4 @@
-# RB-43 — The server's restart for its updates
+# RB-44 — The server's restart for its updates
 
 **Severity:** critical · warning · **When:** a `host_reboot_failed`,
 `host_reboot_incomplete` or `host_reboot_pending` alert, a job that says «Waiting for the restart of the
@@ -130,7 +130,7 @@ cat /var/lib/incubacloud/reboot/panel-seen
 A server whose Auto Security Updates is off is marked so: the timer does
 nothing there.
 
-## A server hardened before 1.0.229
+## A server hardened before 1.0.232
 
 Its policy still says `Automatic-Reboot "true"` until its first check, in
 the 30 minutes after the update: the check turns it off, with no new

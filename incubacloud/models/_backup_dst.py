@@ -3,9 +3,11 @@
 The destination reaches the hosts in three ways: as an argument of a
 command (``backup_list``), as the ``DST`` line of an environment file
 (the purges), and as an answer the template renders into a compose
-file (deploy, rebuild, revive). The panel accepts it in one grammar,
-the one its own destinations are computed in: an S3 URL whose bucket
-and path hold letters, digits, dots, hyphens and underscores only.
+file (deploy, rebuild, revive). The panel accepts it in the grammar
+its own destinations are computed in: an S3 URL whose bucket and path
+hold letters, digits, dots, hyphens and underscores only, or an
+``sftp://`` URL of a user, a server and such a path, read as
+``sftp_dst`` reads it.
 
 Two readers of environment files: ``docker run --env-file`` (the
 purges' files) takes the rest of a line as the value, as it is;
@@ -16,6 +18,9 @@ import re
 import unicodedata
 from urllib.parse import urlparse
 
+from ..net.hostname import is_host_address
+from . import sftp_dst
+
 #: ``boto3+s3://`` or ``s3://``, a bucket (with a port, for an endpoint
 #: host spelled there), then path segments separated by one ``/``.
 _DST_RE = re.compile(
@@ -23,6 +28,16 @@ _DST_RE = re.compile(
     r"[A-Za-z0-9][A-Za-z0-9._-]{0,254}"
     r"(?::[0-9]{1,5})?"
     r"(?:/[A-Za-z0-9._-]+)*/?$"
+)
+
+#: ``sftp://user@server[:port]``, then the path relative to the user's
+#: home (``/``) or absolute (``//``), as ``sftp_dst.build`` writes it.
+#: The server is a host name or an IPv4 address: what an SFTP
+#: destination accepts.
+_SFTP_DST_RE = re.compile(
+    r"^sftp://[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}@[A-Za-z0-9.-]{1,253}"
+    r"(?::[0-9]{1,5})?"
+    r"(?:/{1,2}[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*)?/?$"
 )
 
 
@@ -88,11 +103,14 @@ def dst_is_valid(value):
     """Whether *value* is a backup destination the panel accepts.
 
     :param str value: a duplicity DST, such as
-        ``boto3+s3://bucket/path/project/instance``
+        ``boto3+s3://bucket/path/project/instance`` or
+        ``sftp://user@server/path/project/instance``
     :return: True when it matches the grammar, has no ``.`` or ``..``
         segment and its port, if any, is at most 65535
     :rtype: bool
     """
+    if value and value.startswith(f"{sftp_dst.SCHEME}://"):
+        return _sftp_dst_is_valid(value)
     if not value or not _DST_RE.fullmatch(value):
         return False
     bucket, *segments = value.split("://", 1)[1].split("/")
@@ -102,18 +120,47 @@ def dst_is_valid(value):
     return _port_in_range(port or None)
 
 
+def _sftp_dst_is_valid(value):
+    """Whether *value* is an ``sftp://`` DST of the grammar.
+
+    :param str value: such as ``sftp://u123@backup.example.net:23/b/p/i``
+    :return: True when it matches ``_SFTP_DST_RE``, ``sftp_dst.parse``
+        reads it and its server is a host name or an IPv4 address
+    :rtype: bool
+    """
+    if not _SFTP_DST_RE.fullmatch(value):
+        return False
+    try:
+        _user, host, _port, _path = sftp_dst.parse(value)
+    except sftp_dst.DstError:
+        return False
+    return is_host_address(host)
+
+
 def dst_key(value):
     """Return the bucket and the key parts a purge of *value* reads.
 
     The deletion program's own reading (``lib/purge_prefix.sh``): the
     scheme's ``boto3+`` dropped, the first part is the bucket and the
-    rest, empty parts left out, is the prefix it empties.
+    rest, empty parts left out, is the prefix it empties. An ``sftp://``
+    DST is read as ``sftp_dst.parse`` reads it: its server (user, host
+    and port) stands for the bucket, and an absolute path starts with a
+    ``/`` part, so it never reads as the same folder under the home.
 
     :param str value: a duplicity or wal-g destination
-        (``boto3+s3://…`` or ``s3://…``)
+        (``boto3+s3://…``, ``s3://…`` or ``sftp://…``)
     :return: ``(bucket, parts)``, or None for a value with no bucket
     :rtype: tuple
     """
+    if value and value.startswith(f"{sftp_dst.SCHEME}://"):
+        try:
+            user, host, port, path = sftp_dst.parse(value)
+        except sftp_dst.DstError:
+            return None
+        parts = tuple(p for p in path.split("/") if p)
+        if path.startswith("/"):
+            parts = ("/", *parts)
+        return f"{sftp_dst.SCHEME}://{user}@{host.lower()}:{port}", parts
     parsed = urlparse((value or "").replace("boto3+s3://", "s3://", 1))
     if not parsed.netloc:
         return None

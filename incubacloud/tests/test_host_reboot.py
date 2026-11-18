@@ -1,4 +1,4 @@
-"""The server's restart for its updates (``cloud_host_reboot``, 1.0.229).
+"""The server's restart for its updates (``cloud_host_reboot``, 1.0.232).
 
 The server no longer restarts by itself; the panel checks it, restarts it
 inside its window once nothing of the panel runs there, holds every queue

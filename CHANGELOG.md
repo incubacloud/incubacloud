@@ -344,6 +344,25 @@ gestionado de copias* on a running panel too.
   was running when its step died is answered *Outcome unknown* instead of
   *Not run*. The panel keeps the state the bus delivered while Stop was on
   its way, instead of replacing it with the older answer.
+- **A move's cut, measured by part.** The source's stop uploads its
+  scripts before it stamps the start of the cut, so the cut no longer
+  counts the seconds the instance was still serving. Each job of the cut
+  notes when it started, connected, prepared and uploaded, when it ended
+  and what each step took (a step's result carries `seconds`), and the
+  cutover keeps `move_last_cut_breakdown`: drain, dns, fingerprint, dump,
+  relay, restore, start, health, overhead, queue and other, with the
+  total, and `incomplete` when a part is missing. A note that cannot be
+  written is logged and the job goes on.
+- **Scripts reach the server in one exchange.** A job hands its scripts
+  to the server as one tar on the input of `mkdir … && tar -x` instead of
+  an SFTP round trip per file, 2-3 s less per job between regions. When
+  the tar fails on the server, or the transport cannot feed a command's
+  input (`run_with_stdin`, new and not abstract), the job uploads them file
+  by file as before. The files unpack 0600 in 0700 directories.
+- **The cutover's health check every half second.** It finds the Odoo
+  container once and probes it with `docker exec` every 0.5 s, `curl`
+  allowed 2 s, up to 120 s in all; a container recreated meanwhile is found
+  again. It probed every 3 s through `docker compose exec`.
 - **The automatic placement asks for 14 GB free, not 10.** The first build
   of an instance on a server that does not have the Doodba base image yet
   writes up to 8.5 GiB in containerd's image store, the default of a new
@@ -358,6 +377,26 @@ gestionado de copias* on a running panel too.
   the Check's 10 GB.
 
 ### Fixed
+
+- **Deleting a server whose proxy was never deployed takes the panel's
+  access off it.** `/cloud/delete_host` archived such a host at once, with
+  no teardown, so a server hardened before a Full Setup that failed kept
+  the operator user, its sudo grant and the panel's key. The teardown now
+  runs on any server the panel has logged in to and can log in to again
+  (`cloud.host._teardown_reaches_server`: a trusted server key, the
+  credentials of its login type, and `sshpass` for a password); a host the
+  panel never reached is archived or removed at once, as before. When that
+  teardown fails, a host with no proxy is archived all the same, so a
+  server that is gone does not keep it in the panel, and the job's log
+  says what to remove by hand; a teardown a person stops keeps the host.
+  The host page's confirmation says the panel's access will be taken off
+  such a server.
+- **The show password button of the sign-in page has a name and a
+  focus.** A screen reader announced it as a button with no name, and
+  tabbing to it drew nothing. It is now named Show password (translated),
+  reports whether the password is shown (`aria-pressed`) and draws an
+  outline when focused from the keyboard. The sign-in and its OAuth
+  buttons are unchanged.
 
 - **A step that fails on a full disk says so.** A build that ran out of
   disk on its server was reported as «neither ended nor runs on the
@@ -864,18 +903,6 @@ columns: Odoo keeps what each holds as its English text.
   before were not affected. The directories are created first, and a test
   fails when a play writes into one of its directories before creating it.
 
-### Security
-
-- **The SSH library no longer writes the commands the panel runs to its
-  log.** asyncssh's logger is kept at WARNING whatever level the
-  deployment sets, so a command's text stays out of the server's log.
-- **A secret a command needs goes in a file, not on its command line.**
-  Executors queue it as an owner-only file of the job's directory
-  (`_queue_private_file`), uploaded before the first step and removed with
-  the directory; the reading of a staging's last login takes its database
-  password that way, and hands it to the container through the
-  environment.
-
 ### Documentation
 
 - The user guide gains *Security logs* (what leaves a server, the failed
@@ -993,16 +1020,12 @@ empty it says so with an alert. Switching continuous recovery off keeps
 the archive for the backup window, then empties it.
 A new instance is created on one page.
 
-The update adds six columns on instances, `backup_path_suffix`,
-`pitr_archived_prefix`, `pitr_off_at`, `pitr_purge_at`,
-`pitr_rendered_prefix` and `pitr_rendered_backend_id` (`incubacloud_pitr`
-1.0.16 comes with the last five).
+The update adds five columns on instances, `pitr_archived_prefix`,
+`pitr_off_at`, `pitr_purge_at`, `pitr_rendered_prefix` and
+`pitr_rendered_backend_id` (`incubacloud_pitr` 1.0.16 comes with them).
 Its data migrations: 1.0.229's post-migrate deletes the Telegram bot
 tokens saved without a chat ID and the webhook secrets left without a
-URL and names in the log the backup paths outside their new grammar,
-the backup destinations' values and instances' backup paths that
-their new checks refuse, and the backup paths two records share
-(raising `backup_path_shared` for each), keeping them, and `incubacloud_pitr` 1.0.16's end-migrate records where each
+URL, and `incubacloud_pitr` 1.0.16's end-migrate records where each
 instance archives and dates the purge of the archives switched off
 before it from the update, so each gets the whole backup window from
 then. The rest is the panel's assets and the Spanish catalogue.
@@ -1219,63 +1242,6 @@ then. The rest is the panel's assets and the Spanish catalogue.
 
 ### Fixed
 
-- **A server no longer restarts by itself for its updates: the panel
-  restarts it.** A hardened host with Auto Security Updates restarted at
-  04:00 UTC whenever an update asked for it (unattended-upgrades'
-  `Automatic-Reboot`), and cut whatever the panel ran there: a rebuild, a
-  backup, a step run apart. Hardening now writes `Automatic-Reboot
-  "false"`, through the playbook's line as it was (the recipe's
-  fingerprint does not change), and a new hidden check
-  (`host_reboot_check`, every 30 minutes, `scripts/host_reboot.sh`) reads
-  whether the server waits for a restart, records it on the host
-  (`reboot_required_since`, `reboot_required_pkgs`) and turns the server's
-  own restart off on the hosts hardened before, with no new hardening run.
-  Inside the host's restart window (`reboot_window_start` 04:00,
-  `reboot_window_hours` 3, `reboot_tz` UTC, per host) and once nothing of
-  the panel runs on the server or on its instances, it queues Restart
-  Server (`host_reboot`). The restart holds the server: no job of it or of
-  its instances is dispatched or starts until it ends
-  (`cloud.host.reboot`, under an advisory lock the dispatcher shares), and
-  its end serves every queue it held. It asks the server for its veto (a
-  step run apart, a copy or a load, an image build, or an executable of
-  `/etc/incubacloud/reboot-guard.d`), gives `shutdown -r +1` as its point
-  of no return, and waits for a new `boot_id`. A veto or a busy server
-  ends the job done with the reason, and the next pass tries again. On
-  the panel's own server the hold is of every queue. A server that does
-  not come back within 15 minutes, or comes back with the same boot,
-  fails the job with `host_reboot_failed` (critical). Before the order it
-  counts what runs inside each instance where a layer can
-  (`cloud.instance._move_quiet_sql`), keeps the names of the containers
-  running and runs a `CHECKPOINT` in each database; once back, it waits
-  up to 5 minutes for those containers, raises `host_reboot_incomplete`
-  (warning) naming the ones missing, says in its log which database
-  started after a stop that was not clean, and queues the health probe of
-  each instance. A restart pending for 7 days raises `host_reboot_pending`
-  (warning), on a host the panel restarts or not. The health probes
-  of the host's instances skip their pass while it runs. New table
-  `cloud_host_reboot` and seven columns on hosts; no data migration.
-  `docs/architecture.md` («Host maintenance window») and RB-43.
-  One restart per host and per opening of its window: a server whose
-  update still asks for a restart once it is back waits for the next
-  night. Inside the window the check asks the server's veto itself and
-  queues no restart the server would refuse, and the restart it queued
-  reads the window, the policy and the pending restart again as it
-  starts, after its wait in the queue. Only the containers whose restart
-  policy brings them back after a boot (`always`, `unless-stopped`) are
-  waited for. A connection lost as the order is given leaves the hold to
-  the server's boot, and an order that answered badly is called off
-  (`shutdown -c`) before the hold goes. `host_reboot_failed` closes once
-  the server answers with another boot, and `host_reboot_incomplete` once
-  Docker and the containers named run, whoever brought them back; neither
-  `host_unreachable` nor a host's metric rule alerts during the 15 minutes
-  after the order. A server the panel has not checked for 24 hours (a
-  panel that sleeps through the window, or one that is gone) restarts by
-  itself again, inside the same window, once per opening and with the
-  same veto, no SSH session open and nothing running inside its
-  instances: every check leaves the panel's mark on the server and
-  installs the timer `incubacloud-reboot-when-away`; once the panel checks
-  it again, the panel decides (owner's decision, 15-nov-2026).
-
 - **A backup destination's, a project's and a host's pages after the form
   standard's review (#123).** On a backup destination, saving confirms the
   retention owner at once: «Unconfirmed…» goes and Advanced, no longer
@@ -1455,94 +1421,6 @@ then. The rest is the panel's assets and the Spanish catalogue.
   when an instance is created or renamed (existing ones keep working),
   and `incubacloud_pitr` refuses to switch continuous recovery on for `x`
   while an `x-pitr`, active or archived, is in the same folder.
-
-### Security
-
-- **An instance's backup path is held to the grammar of the panel's
-  destinations.** `custom_backup_dst` (written by an Administrator, by
-  an import and by archiving) is accepted only as `boto3+s3://` or
-  `s3://`, with letters, digits, dots, hyphens and underscores in the
-  bucket and in each part of the path, no `.` or `..` part and a port of
-  at most 65535, and a destination's bucket and path only where the path
-  they compute is too. Where a backup path reaches a server it is quoted
-  in the command, and an environment or compose file refuses one that
-  would break its line, before the host is reached. Paths saved before
-  stay as they are: 1.0.229's post-migrate names in the log those outside
-  the grammar, for an Administrator to correct. Spanish translation
-  included.
-- **The rest of a backup destination reaches the servers as data too.**
-  Its endpoint must be an `http://` or `https://` URL of a host (the
-  scheme is stored in lower case, and a host name may hold `_` or end in
-  a `.`), its keys letters, digits and `/ + = . _ -` only, its
-  passphrase no quote, backquote, `$`, `\`, `#`, line break or space at
-  either end (the one the panel generates holds none), its image version
-  a docker tag, its time zone one `pytz` knows and each notification
-  address one address, checked when they are written, an import's
-  included. Every line of the environment files the panel writes is
-  checked as the backup path is, and in the files compose reads, for
-  what compose would read as more than the value; the time zone and the
-  addresses are escaped where the template quotes them, and a deploy or
-  a purge stops before the host is reached on a value saved before that
-  would not fit. 1.0.229's post-migrate names in the log the
-  destinations that hold one, without the value of a secret, and keeps
-  them. Spanish translation included.
-- **A purge empties only its own instance's copies.** The deletion of an
-  archived instance and the purge of a switched-off recovery archive
-  refuse a prefix that is a backup destination's path or above it, or
-  that is or holds another instance's path (archived instances
-  included; a successor of the same name is left to the purge's
-  bounds): the job fails before anything is deleted, raises its purge
-  alert and keeps the record. Deleting a live instance refuses such a
-  prefix the same way, for its backup path and its recovery archive,
-  before its first step: the instance stays as it was. Deleting the
-  successor of an archived instance of the same name, which shares its
-  backup path and recovery archive, empties only what the successor
-  stored since it was created: the archived instance keeps its copies.
-  Two instances of the same name in one path are taken for a successor
-  and its archived predecessor only when the dates prove it: one
-  archived, and the other created at least a minute after the archive.
-  Two live ones, two that lived at the same time, or an archive without
-  its date are refused as another's copies, by every purge. The purge of
-  the archived one, and of a recovery archive switched off, ends at the
-  successor's creation when that is earlier than the delete's cutoff, so
-  a delete decided after the successor's first copy, or retried weeks
-  later, no longer takes what the successor stored until then. Should
-  the successor have continued the archived chain (its first backup an
-  incremental on the archived full), the purge deletes nothing, exits 23
-  and raises `archived_purge_chain_continued`; the record stays (RB-05).
-  A successor archived in turn, or whose recovery archive is switched
-  off, has the purge of that copy start at its own creation
-  (`PURGE_SINCE`), as its delete does: the predecessor's copy in the
-  same path stays for the predecessor's purge.
-  A backup path an Administrator or an
-  import writes is held to the same check, naming the instance it would
-  overlap; 1.0.229's post-migrate names those saved before. A layer that
-  shares one bucket between panels must give each panel credentials
-  limited to its own prefix (`docs/architecture.md`, security model).
-- **An instance that takes the name of another gets a backup path of its
-  own.** When another record already holds the path an instance would
-  compute (an archived instance of the same name whose project's folder
-  the new one took, or two instances of a name without a project), the
-  new one's path ends in `-<id>` (`backup_path_suffix`, set by the panel
-  on creation, when the name, the project or the project's folder
-  changes, and when a backup path written by hand is emptied), and so does its
-  continuous recovery prefix: its first copy is a full of its own and no
-  purge of the other reaches it. Without such a record the path is the
-  one the destination computes, as before. A backup path written by hand
-  may no longer be the path of an instance of the same name, archived
-  included. 1.0.229's post-migrate names in the log the records that
-  already share a path and raises one `backup_path_shared` alert per
-  path; their paths are kept, and their purges go by the dates above.
-  The alert resolves itself at the daily check of archived copies once
-  one record holds the path (RB-05). The backup listing's sizes are read
-  from the instance's own path, its suffix included, and the alerts of a
-  recovery archive left behind name the prefix with it.
-  Spanish translation included.
-- **An import with a backup value the panel refuses goes on without it.**
-  A backup path or destination from the host's files that the checks
-  above refuse is left out and the import says why, instead of «An
-  internal error occurred»; any other value refused is named the same
-  way.
 
 ### Tests
 

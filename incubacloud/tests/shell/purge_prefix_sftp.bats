@@ -16,7 +16,7 @@ setup() {
     printf 'backup.example.com ssh-ed25519 AAAA\n' > "$HOME/.ssh/known_hosts"
     : > "$HOME/.ssh/id_ed25519"
     export DST="sftp://u1@backup.example.com/backups/proj/inst"
-    unset PURGE_BEFORE
+    unset PURGE_BEFORE PURGE_SINCE
 
     mkdir -p "$TMP/pylib/paramiko"
     cat > "$TMP/pylib/paramiko/__init__.py" <<'FAKE'
@@ -243,6 +243,28 @@ _run_program() {
     [[ "$(_state files)" != *"backups/proj/inst/old"* ]]
 }
 
+@test "sftp: with a since the archived instance's files survive" {
+    # The delete of a successor: the archived instance of the same name
+    # keeps, in the same folder, what it stored before the successor.
+    now=$(date +%s)
+    _seed ok 0 "backups/proj/inst/archived=1000" "backups/proj/inst/successor=$((now - 10))"
+    export PURGE_SINCE="$(date -u -d "@$((now - 3600))" +%Y-%m-%dT%H:%M:%S)"
+    run _run_program
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"removed 1 file(s) stored since"* ]]
+    [[ "$(_state files)" == *"backups/proj/inst/archived"* ]]
+    [[ "$(_state files)" != *"backups/proj/inst/successor"* ]]
+}
+
+@test "sftp: with a since the server's clock is checked too" {
+    _seed ok 600 "backups/proj/inst/successor=1000"
+    export PURGE_SINCE="2026-01-01T00:00:00"
+    run _run_program
+    [ "$status" -eq 22 ]
+    [[ "$output" == *"clock"* ]]
+    [[ "$(_state files)" == *"backups/proj/inst/successor"* ]]
+}
+
 @test "sftp: a server clock off by more than 120 s stops the purge" {
     _seed ok 600 "backups/proj/inst/old=1000"
     export PURGE_BEFORE="2026-01-01T00:00:00"
@@ -273,6 +295,36 @@ _run_program() {
     [[ "$output" == *"removed 1 file(s) stored before"* ]]
     [[ "$(_state files)" == *"backups/proj/inst/timeless"* ]]
     [[ "$(_state files)" != *"backups/proj/inst/old"* ]]
+}
+
+@test "sftp: an incremental kept that builds on a set it would delete stops the purge whole" {
+    # The successor continued the archived chain: its first backup, after
+    # the cutoff, is an incremental whose set starts before it.
+    now=$(date +%s)
+    old=$(date -u -d "@$((now - 7200))" +%Y%m%dT%H%M%SZ)
+    new=$(date -u -d "@$((now - 10))" +%Y%m%dT%H%M%SZ)
+    _seed ok 0 "backups/proj/inst/duplicity-full.$old.vol1.difftar.gpg=$((now - 7200))" \
+        "backups/proj/inst/duplicity-inc.$old.to.$new.vol1.difftar.gpg=$((now - 10))"
+    export PURGE_BEFORE="$(date -u -d "@$((now - 3600))" +%Y-%m-%dT%H:%M:%S)"
+    run _run_program
+    [ "$status" -eq 23 ]
+    [[ "$output" == *"IC_PURGE_DEPENDS 1 object(s)"* ]]
+    # Only the clock probe went.
+    [[ "$(_state removed)" != *duplicity* ]]
+    [[ "$(_state files)" == *"duplicity-full.$old"* ]]
+}
+
+@test "sftp: an incremental the server gives no time for counts as kept and newer" {
+    now=$(date +%s)
+    old=$(date -u -d "@$((now - 7200))" +%Y%m%dT%H%M%SZ)
+    _seed ok 0 "backups/proj/inst/duplicity-full.$old.vol1.difftar.gpg=$((now - 7200))" \
+        "backups/proj/inst/duplicity-inc.$old.to.20991231T000000Z.vol1.difftar.gpg=none"
+    export PURGE_BEFORE="$(date -u -d "@$((now - 3600))" +%Y-%m-%dT%H:%M:%S)"
+    run _run_program
+    [ "$status" -eq 23 ]
+    # Only the clock probe went.
+    [[ "$(_state removed)" != *duplicity* ]]
+    [[ "$(_state files)" == *"duplicity-full.$old"* ]]
 }
 
 @test "sftp: a link is removed, never followed" {
