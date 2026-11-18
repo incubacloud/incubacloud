@@ -338,3 +338,4 @@ from . import test_login_show_password
 from . import test_local_path
 from . import test_cloud_app_access
 from . import test_backup_backend_region
+from . import test_cron_schedule_update

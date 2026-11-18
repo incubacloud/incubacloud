@@ -626,6 +626,9 @@ class TestSshReadyCronsAsCronBot(TransactionCase):
         self.assertFalse(job_env.su)
 
     def test_prune_cron_queues_the_ready_hosts(self):
+        (self.key_host | self.password_host | self.keyless_host).write(
+            {"traefik_deployed": True},
+        )
         enqueue = self._run_cron(
             "incubacloud.cron_docker_prune", "cron_docker_prune",
         )
@@ -636,6 +639,20 @@ class TestSshReadyCronsAsCronBot(TransactionCase):
         self.assertEqual(
             enqueue.call_args_list[0].args[0].env.uid, self.bot.id,
         )
+
+    def test_prune_cron_skips_a_server_full_setup_has_not_set_up(self):
+        """A server added but not set up has no Docker: nothing to prune.
+
+        Its prune failed on the missing ``docker`` every night and raised
+        an alert (18-nov-2026); it is left out until Full Setup ends.
+        """
+        self.key_host.traefik_deployed = True
+        enqueue = self._run_cron(
+            "incubacloud.cron_docker_prune", "cron_docker_prune",
+        )
+        queued = self._queued_host_ids(enqueue)
+        self.assertIn(self.key_host.id, queued)
+        self.assertNotIn(self.password_host.id, queued)
 
 
 class TestSshConnectKwargsTimeouts(TransactionCase):

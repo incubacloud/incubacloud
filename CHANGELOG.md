@@ -256,6 +256,20 @@ recreates the bot only when it is missing.
   state what it does not cover: a signal handler that raises while a lock
   is taken can lose its byte (the playbook's time limit bounds it), and a
   module run on the panel itself starts in an interpreter it does not patch.
+- **An update of the module no longer runs the nightly Docker prune.** Its
+  scheduled action declared its first run, 1 January 2025 at 03:00, and
+  every update wrote that date again: being past, the prune was queued on
+  every server within the minute after each update. The date is now
+  written only when the module is installed (`noupdate`), and so is the
+  first run of the daily notification digest, which an update moved to the
+  next day's 07:00, skipping that day's digest when it came before 07:00.
+  A change to either scheduled action now reaches existing databases by a
+  migration.
+- **The nightly Docker prune skips a server that Full Setup has not set
+  up.** A server added but not set up yet has no Docker: its prune failed
+  on the missing `docker` and raised an alert every night. The prune is
+  queued only on the servers whose Full Setup ended, as the monitoring
+  agents are.
 
 ### Security
 

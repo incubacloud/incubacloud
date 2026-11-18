@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data>
+    <!-- noupdate: an update would write nextcall again, a date in the
+         past, and the prune would run at once on every server. A change
+         to this record reaches existing databases by a migration. -->
+    <data noupdate="1">
 
         <record id="cron_docker_prune" model="ir.cron">
             <field name="name">Docker Prune — All Hosts</field>

@@ -2881,8 +2881,14 @@ class CloudHost(models.Model):
     @api.private
     @api.model
     def cron_docker_prune(self):
-        """Called by ir.cron — queue a docker_prune job for each configured host."""
-        hosts = self._ssh_ready_hosts()
+        """Called by ir.cron — queue a docker_prune job for each set-up host.
+
+        Only the hosts whose Full Setup ended (``traefik_deployed``), as
+        for the observability agents: a server added but not set up yet
+        has no Docker, and its prune failed on the missing ``docker`` and
+        raised an alert every night (18-nov-2026).
+        """
+        hosts = self._ssh_ready_hosts().filtered("traefik_deployed")
         for host in hosts:
             try:
                 # docker_prune is a manager-gated job type; the cron bot is
