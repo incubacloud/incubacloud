@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.237] — unreleased
+
+Test and CI follow-ups; the update changes no table and has no data
+migration.
+
+### Fixed
+
+- **A flaky shell test no longer depends on the clock.** The test of
+  `rebuild.bats` that expects the message of a copy killed by the kernel
+  («after 0 min») failed now and then on a loaded runner: the script counts
+  the copy's minutes from bash's `SECONDS`, which ticks whole seconds, so a
+  stub that returned at once could cross a tick and the message said
+  «after 1 min». The copy stubs now freeze the clock (`BASH_ENV` unsets
+  `SECONDS` and sets it to 0, a plain variable), so the elapsed time is
+  0 s on any machine, and the test asserts the same message as before.
+
 ## [1.0.236] — unreleased
 
 Ansible jobs run on a panel on Odoo.sh, a playbook ends before the

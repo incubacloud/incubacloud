@@ -589,8 +589,17 @@ STUB
 }
 
 # A copy killed by a KILL (137) that was not timeout's, which comes only
-# after the budget and its minute more.
+# after the budget and its minute more. The script counts the copy's minutes
+# from bash's SECONDS, a clock that ticks whole seconds: a stub that returns
+# at once still crosses a tick now and then (more often on a loaded runner),
+# and the message said "after 1 min" instead of "after 0 min". The copy
+# stubs freeze the clock: BASH_ENV unsets SECONDS and sets it to 0, which
+# makes it a plain variable (the script runs under set -u, so it must exist),
+# so the elapsed time is 0 s whatever the machine does. The message the user
+# reads is still what the tests assert.
 copy_killed_stub() {
+    printf 'unset SECONDS\nSECONDS=0\n' > "$TMP/frozen-clock"
+    export BASH_ENV="$TMP/frozen-clock"
     cat > "$TMP/bin/timeout" <<'STUB'
 #!/usr/bin/env bash
 echo "timeout $*" >> "$CALLS"
