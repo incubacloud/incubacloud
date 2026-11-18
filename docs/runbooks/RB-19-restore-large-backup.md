@@ -50,7 +50,7 @@ command="exec /bin/bash -c 'ulimit -f <KiB> && exec /bin/bash /var/tmp/incubaclo
 
 The directory is in `/var/tmp`, not `/tmp`: Debian 13 and Ubuntu 26.04
 (Ubuntu since 24.10) mount `/tmp` as a tmpfs of half the memory, 1.9 GiB
-on a server of 4 GB, and before 1.0.238 no archive larger than about half
+on a server of 4 GB, and before 1.0.239 no archive larger than about half
 of that could be sent, whatever the instances' disk had free. `/var/tmp`
 is on disk, and on the usual server the same disk Docker keeps the
 instances on. Every restore lands its archive there: the doors, the path
@@ -76,7 +76,13 @@ file and write nothing beside it, `--inplace` (or `--append`), and
 `. restore.zip`; it creates `restore.zip` empty first, so rsync itself
 refuses a second file. `-a`, `-r`, `-d`, `-R`, `-b`, `-s`, another name,
 or no `--inplace` are refused before anything is written, with the
-command to use. So `ulimit -f` bounds all the door holds, not each file
+command to use, and so is every short option but `-v`, `-t` and `-z`:
+`-X` and `-A` would store metadata neither `ulimit -f` nor `du` counts,
+`-D` a device or a pipe, and `-o`, `-g` and `-p` an owner, a group and a
+mode that hold where the panel connects as root. The name is never free
+while a key works: the restore takes the archive with a hard link and
+renames an empty file over `restore.zip`, so a session held open since
+before still finds a file there. So `ulimit -f` bounds all the door holds, not each file
 of it: a key that took any number of files, each up to the limit, could
 fill the disk in the five minutes between two watches (18-nov-2026).
 
@@ -148,6 +154,12 @@ file, with a plain `cp`, which keeps no setuid bit.
 
 ### Revoking
 
+Removing a key ends the sessions it still has open: the panel account's
+`rsync` processes working in the door's directory. Until the job that
+removes it has done so, a door closed in the panel still counts against
+the server's free disk when another door opens, and the watch still
+measures it (`key_removed`), up to its deadline.
+
 Three things revoke a grant, and all are idempotent:
 
 - the restore that consumes the archive, when it starts — the key
@@ -163,8 +175,8 @@ On a host where that removal never ran, the daily sweep of `/tmp` and
 and a restore's working directory its worker left: only the panel's
 account's own, and only under a root that is its own. `/var/tmp` survives
 a reboot, where a tmpfs `/tmp` did not: the sweep is what empties it. It
-also sweeps `/tmp/incubacloud-restore`, where releases before 1.0.238 put
-the doors, and the handoffs they left in `/tmp`. The update to 1.0.238
+also sweeps `/tmp/incubacloud-restore`, where releases before 1.0.239 put
+the doors, and the handoffs they left in `/tmp`. The update to 1.0.239
 closes every door open then, whose key took any number of files and wrote
 to `/tmp`; the Import dialog says to ask for another key.
 

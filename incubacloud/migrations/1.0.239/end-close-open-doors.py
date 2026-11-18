@@ -1,8 +1,8 @@
-"""End-migrate for 1.0.238 — the upload doors open while the panel updates.
+"""End-migrate for 1.0.239 — the upload doors open while the panel updates.
 
-A door opened before 1.0.238 writes to ``/tmp``, a tmpfs of half the
+A door opened before 1.0.239 writes to ``/tmp``, a tmpfs of half the
 memory on Debian 13 and Ubuntu since 24.10, under a key whose command
-takes any number of files, each up to the door's limit. From 1.0.238 a
+takes any number of files, each up to the door's limit. From 1.0.239 a
 door writes to ``/var/tmp`` and takes one file, and the restore reads only
 there: what an older door received could not be restored, and the key
 would go on taking files past what the server's disk can hold.
@@ -37,4 +37,4 @@ def migrate(cr, version):
         _logger.exception("Upload doors: closing those open failed")
         return
     if closed:
-        _logger.info("Upload doors: closed %d opened before 1.0.238", len(closed))
+        _logger.info("Upload doors: closed %d opened before 1.0.239", len(closed))

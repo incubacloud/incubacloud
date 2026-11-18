@@ -7,10 +7,12 @@ restored until they have seen the name, the size and the digest of what
 actually landed, computed on the host rather than promised by the
 browser that sent it.
 """
+import asyncio
 import logging
 import posixpath
 import re
 import shlex
+import time
 
 from ..restore_space import (
     RESERVE_BYTES,
@@ -138,6 +140,15 @@ _DOOR_LINE = re.compile(r"door ([0-9a-f]{16})(?: (\d+))?")
 #: What the step that refuses a root of another account prints
 #: (``GrantRestoreUploadKeyExecutor.get_commands``).
 _FOREIGN_ROOT = re.compile(r"(\S+) belongs to (\S+), not to (\S+), the account")
+
+#: How long the job that opens a door waits for the lock of its host's
+#: doors, in seconds, and how long the measure it makes under that lock
+#: may take: another job holding the lock holds it while it measures, so
+#: the wait is bounded by the measure, and a host that stopped answering
+#: holds no other door's job for the hour of an SSH command's default
+#: (the review of 18-nov-2026, L3).
+HOST_DOORS_LOCK_WAIT_S = 150
+DOORS_MEASURE_TIMEOUT_S = 120
 
 
 def doors_measure_command(doors):
@@ -333,16 +344,30 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
         speaks = grant._in_lang()
         host_id = grant.host_id.id
         with read_committed_cursor(self.env.registry) as cr:
-            cr.execute(
-                "SELECT pg_advisory_xact_lock(%s, %s)",
-                (HOST_DOORS_LOCK_NAMESPACE, host_id),
-            )
+            if not await self._lock_host_doors(cr, host_id):
+                self._refuse(
+                    "Another upload door of this server was being opened "
+                    "and its measure of the disk did not end: no upload door "
+                    "was opened.",
+                    speaks._(
+                        "Another upload door of this server was being opened "
+                        "and its measure of the disk did not end: no upload "
+                        "door was opened. Ask for the upload key again in a "
+                        "few minutes."
+                    ),
+                )
+                return
             # Read on this cursor: a door another job recorded a moment
-            # ago is not in this job's snapshot.
+            # ago is not in this job's snapshot. A door closed in the
+            # panel whose key may still take an upload counts as open
+            # until the job that removes the key has done so
+            # (``key_removed``; the review of 18-nov-2026, M1): until
+            # its deadline at most, when OpenSSH stops accepting the key.
             cr.execute(
                 "SELECT token, upload_limit_bytes"
                 " FROM cloud_restore_upload_grant"
-                " WHERE host_id = %s AND id != %s AND state = 'granted'"
+                " WHERE host_id = %s AND id != %s"
+                " AND (state = 'granted' OR key_removed IS NOT TRUE)"
                 " AND expires_at > now() AT TIME ZONE 'UTC'"
                 " AND upload_limit_bytes > 0",
                 (host_id, grant.id),
@@ -353,7 +378,7 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
             ]
             answer = await transport.run(doors_measure_command([
                 (token, f"{UPLOAD_ROOT}/{token}") for token, _limit in others
-            ]))
+            ]), timeout=DOORS_MEASURE_TIMEOUT_S)
             disks, held = parse_doors_measure(answer.stdout)
             if disks is None:
                 self._refuse(
@@ -380,6 +405,31 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
                 return
             self._persist(grant.sudo(), {"upload_limit_bytes": limit})
         self._sys(door_limit_message(limit, disks, pending, len(others)))
+
+    async def _lock_host_doors(self, cr, host_id):
+        """Take the lock of *host_id*'s doors on *cr*, waiting a bounded time.
+
+        Tried again every second rather than waited on: the job holding
+        it measures its host over SSH (``DOORS_MEASURE_TIMEOUT_S``), and a
+        job of another door of the host must not wait on it unbounded.
+
+        :param cr: the cursor whose transaction holds the lock
+        :param int host_id: the host whose doors are measured
+        :return: whether the lock was taken within
+            ``HOST_DOORS_LOCK_WAIT_S``
+        :rtype: bool
+        """
+        deadline = time.monotonic() + HOST_DOORS_LOCK_WAIT_S
+        while True:
+            cr.execute(
+                "SELECT pg_try_advisory_xact_lock(%s, %s)",
+                (HOST_DOORS_LOCK_NAMESPACE, host_id),
+            )
+            if cr.fetchone()[0]:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            await asyncio.sleep(1)
 
     def _refuse_no_room(self, speaks, disks, room, pending, doors):
         """Refuse a door the disks, less the other doors' shares, leave no room for.
@@ -543,8 +593,10 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
             self._sys(f"✗ {err}")
         grant = self._grant()
         if grant.exists() and "Install the one-use key" not in results:
+            # No key went in: none to remove (``key_removed``).
             grant.sudo().write({
                 "state": "revoked",
+                "key_removed": True,
                 "notice": self._failure_notice(grant, results),
             })
 
@@ -659,8 +711,14 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
             # line counts it.
             " case \"$f\" in [!A-Za-z0-9]* | *[!A-Za-z0-9._-]*)"
             " echo -; continue ;; esac;"
+            # Read without waiting for a writer (``iflag=nonblock``): a
+            # pipe put in its place after the test above, which the door
+            # no longer lets through (``-D``, ``restore_door.sh``), ends
+            # the read at once rather than holding the check forever,
+            # and is then not a file of any size worth listing.
             " printf '%s %s %s\\n' \"$(stat -c %s -- \"$f\")\""
-            " \"$(sha256sum -- \"$f\" | cut -d' ' -f1)\" \"$f\"; done",
+            " \"$(dd if=\"$f\" iflag=nonblock bs=1M status=none"
+            " | sha256sum | cut -d' ' -f1)\" \"$f\"; done",
         ), (
             # What a restore of it would have free: the disk the door's
             # directory is on, and the instances' (``restore_space``).
@@ -784,14 +842,41 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
         })
 
 
+def end_door_sessions_command(directory):
+    """Return the shell that ends the sessions still open in a door.
+
+    Removing a key from ``authorized_keys`` lets its open sessions run
+    on. Each is an ``rsync`` of the account the panel connects as (or
+    the ``rrsync`` that starts it), working in the door's *directory*
+    (``restore_door.sh`` and ``rrsync`` change to it), or in a directory
+    below it: those, and no other process, are sent TERM. Read from
+    ``/proc``, which every Linux host has; never fails.
+
+    :param str directory: the door's directory
+    :rtype: str
+    """
+    return (
+        f"d={shlex.quote(directory)};"
+        ' for p in /proc/[0-9]*; do [ -O "$p" ] || continue;'
+        ' case "$(cat "$p/comm" 2>/dev/null)" in rsync | rrsync) ;;'
+        " *) continue ;; esac;"
+        ' c=$(readlink "$p/cwd" 2>/dev/null) || continue;'
+        ' case "$c" in "$d" | "$d"/*) kill -- "${p#/proc/}" 2>/dev/null ;; esac;'
+        " done; true"
+    )
+
+
 def _revoke_commands(grant, keep_directory=False, label=""):
     """Return the steps that close *grant*'s door on its host.
 
     The key's line goes, keyed on the grant's own marker, so an
     operator's own keys in the same file are untouched; then the whole
     lines an install before 1.0.200 left when the shell split its line
-    (``_STRAY_LINES``); then, unless *keep_directory*, its directory: a
-    session still open can then create no file there.
+    (``_STRAY_LINES``); then the sessions of the key still open end: the
+    account's ``rsync`` processes working in the door's directory, which
+    removing the key leaves running (the review of 18-nov-2026, H1);
+    then, unless *keep_directory*, its directory: a session still open
+    can then create no file there.
 
     :param grant: the ``cloud.restore.upload.grant``, its shape checked
     :param bool keep_directory: leave the directory, for a restore that
@@ -808,6 +893,9 @@ def _revoke_commands(grant, keep_directory=False, label=""):
         f"sed -i -e '/{comment}/d'"
         + "".join(f" -e '/^{stray}$/d'" for stray in _STRAY_LINES)
         + f" {authorized_keys_path()} || true",
+    ), (
+        f"End the door's sessions{label}",
+        end_door_sessions_command(grant._directory()),
     )]
     if not keep_directory:
         commands.append((
@@ -844,6 +932,14 @@ class RevokeRestoreUploadKeyExecutor(AbstractSSHExecutor):
         )
 
     async def on_success(self, results):
+        """Record that the key is gone, so the door counts no more.
+
+        Until then a door closed in the panel still counts in its host's
+        free disk and in the watch (``key_removed``).
+        """
+        grant = self._grant()
+        if grant.exists():
+            grant.sudo().key_removed = True
         self._sys("✓ Upload key revoked and directory removed.")
 
 
@@ -865,7 +961,10 @@ class WatchRestoreUploadsExecutor(AbstractSSHExecutor):
     * every door of the host, when the doors write on the disk the
       instances are kept on and it is down to the reserve.
 
-    A door is closed as its revocation does (``_revoke_commands``). What
+    A door is closed as its revocation does (``_revoke_commands``). A
+    door closed in the panel whose key has not been removed yet is
+    watched as an open one (``_key_may_work_domain``), and closing it
+    removes its key; one a restore consumed keeps its directory. What
     cannot be measured closes nothing: the key's own limit and deadline
     still hold.
     """
@@ -873,14 +972,18 @@ class WatchRestoreUploadsExecutor(AbstractSSHExecutor):
     _job_type = "watch_restore_uploads"
 
     def _doors(self):
-        """Return the host's open doors whose shape is the panel's own.
+        """Return the host's doors whose key may take an upload, of the panel's shape.
+
+        The open ones, and those closed in the panel whose key has not
+        been removed yet (``_key_may_work_domain``).
 
         :rtype: cloud.restore.upload.grant
         """
-        return self.env["cloud.restore.upload.grant"].sudo().search([
-            ("host_id", "=", self.job.host_id.id),
-            ("state", "=", "granted"),
-        ]).filtered(lambda door: GRANT_TOKEN.fullmatch(door.token or ""))
+        Grant = self.env["cloud.restore.upload.grant"].sudo()
+        return Grant.search(
+            [("host_id", "=", self.job.host_id.id)]
+            + Grant._key_may_work_domain()
+        ).filtered(lambda door: GRANT_TOKEN.fullmatch(door.token or ""))
 
     def _measure_command(self, doors):
         """Return the shell that prints the disks, then each door's bytes.
@@ -938,14 +1041,22 @@ class WatchRestoreUploadsExecutor(AbstractSSHExecutor):
         commands = []
         for door, _reason in getattr(self, "_closing", {}).items():
             door._check_shape()
-            commands += _revoke_commands(door, label=f" ({door.token})")
+            # A door a restore consumed keeps its directory: a failed
+            # restore gave the archive back there for its retry.
+            commands += _revoke_commands(
+                door, keep_directory=door.state == "used",
+                label=f" ({door.token})",
+            )
         return commands or [("Nothing to close", "true")]
 
     async def on_success(self, results):
         """Record the doors closed, and say why each was."""
         closing = getattr(self, "_closing", {})
         for door, reason in closing.items():
-            door.sudo().state = "revoked"
+            closed = {"key_removed": True}
+            if door.state == "granted":
+                closed["state"] = "revoked"
+            door.sudo().write(closed)
             _logger.warning(
                 "restore upload door %s of %s closed: %s",
                 door.token, door.instance_id.name, reason,

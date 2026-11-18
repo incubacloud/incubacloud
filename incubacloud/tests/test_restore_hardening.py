@@ -64,7 +64,9 @@ from odoo.addons.incubacloud.models.restore_instance_executor import (
     rsync_path,
 )
 from odoo.addons.incubacloud.models.restore_upload_key_executors import (
+    DOORS_MEASURE_TIMEOUT_S,
     GrantRestoreUploadKeyExecutor,
+    RevokeRestoreUploadKeyExecutor,
     VerifyRestoreUploadExecutor,
     WatchRestoreUploadsExecutor,
     cut_at_limit,
@@ -1786,12 +1788,103 @@ class TestADoorWritesNoMoreThanTheDisksTake(RestoreFixture, TransactionCase):
         )
         self.assertIn("other open door(s) may still receive 20.0 GiB", executor._refusal)
         self.assertIn("Close one", executor._refusal_notice)
-        # A closed door, or one past its deadline, holds no share.
-        first.sudo().state = "revoked"
+        # A door closed in the panel, its key not yet removed, still may
+        # receive its share (the review of 18-nov-2026, M1).
+        first.sudo().upload_limit_bytes = 4 * GIB
+        for state in ("revoked", "used"):
+            with self.subTest(state=state):
+                first.sudo().state = state
+                self.env.flush_all()
+                _executor, command = self._install_beside(
+                    _disks_output(25 * GIB) + f"door {first.token} 0\n",
+                )
+                self.assertIn(first.token, command)
+                self.assertEqual(
+                    self.grant.upload_limit_bytes,
+                    (21 * GIB - RESERVE_BYTES) // 4,
+                )
+        # Once its key is removed, or past its deadline, it holds none.
+        first.sudo().key_removed = True
         self.env.flush_all()
         _executor, command = self._install_beside(_disks_output(25 * GIB))
         self.assertNotIn(first.token, command)
         self.assertEqual(self.grant.upload_limit_bytes, (25 * GIB - RESERVE_BYTES) // 4)
+        first.sudo().write({
+            "key_removed": False,
+            "expires_at": fields.Datetime.now() - timedelta(minutes=1),
+        })
+        self.env.flush_all()
+        _executor, command = self._install_beside(_disks_output(25 * GIB))
+        self.assertNotIn(first.token, command)
+
+    def test_a_door_s_key_is_removed_once_its_job_has_done_so(self):
+        """The job that removes the key records it, and so does a watch
+        that closes the door; a door whose key never went in has none to
+        remove."""
+        Job = self.env["cloud.job"].sudo()
+        self.grant.sudo().upload_limit_bytes = 5 * GIB
+        (job,) = Job.browse(self.grant._revoke())
+        self.assertFalse(self.grant.sudo().key_removed)
+        executor = RevokeRestoreUploadKeyExecutor(job, self.host)
+        asyncio.run(executor.on_success({}))
+        self.assertTrue(self.grant.sudo().key_removed)
+        other = self._other_door(4 * GIB)
+        executor = GrantRestoreUploadKeyExecutor(
+            Job.create({
+                "name": "grant", "host_id": self.host.id,
+                "instance_id": other.instance_id.id,
+                "job_type_id": self.env.ref(
+                    "incubacloud.grant_restore_upload_key",
+                ).id,
+                "payload": {"grant_id": other.id},
+            }),
+            self.host,
+        )
+        executor._log_buffer = []
+        asyncio.run(executor.on_failure(
+            {"Prepare the upload directory": {"exit_status": 1}}, ["refused"],
+        ))
+        self.assertEqual(
+            (other.sudo().state, other.sudo().key_removed), ("revoked", True),
+        )
+
+    def test_the_lock_of_the_host_s_doors_is_waited_for_a_bounded_time(self):
+        """Tried again until ``HOST_DOORS_LOCK_WAIT_S``, then refused and
+        said; the measure made under it is bounded too (the review of
+        18-nov-2026, L3)."""
+        executor = GrantRestoreUploadKeyExecutor(
+            self._job("grant_restore_upload_key", payload={"grant_id": self.grant.id}),
+            self.host,
+        )
+        # What the lock is asked on: Odoo's cursor hands ``fetchone`` to it.
+        cr = MagicMock(spec=psycopg2.extensions.cursor)
+        cr.fetchone.return_value = (False,)
+        with patch.object(restore_upload_key_executors, "HOST_DOORS_LOCK_WAIT_S", 0):
+            self.assertFalse(asyncio.run(executor._lock_host_doors(cr, self.host.id)))
+        self.assertIn("pg_try_advisory_xact_lock", cr.execute.call_args.args[0])
+        cr.fetchone.return_value = (True,)
+        self.assertTrue(asyncio.run(executor._lock_host_doors(cr, self.host.id)))
+        transport = _transport(free=25 * GIB)
+        with patch.object(
+            GrantRestoreUploadKeyExecutor, "_lock_host_doors",
+            autospec=True, return_value=False,
+        ):
+            asyncio.run(executor.before_execute(transport))
+        transport.run.assert_not_awaited()
+        self.assertIn("Another upload door of this server", executor._refusal)
+        self.assertIn("Ask for the upload key again", executor._refusal_notice)
+        self.assertEqual(
+            [c[0] for c in executor.get_commands()], ["Measure free disk"],
+        )
+        executor = GrantRestoreUploadKeyExecutor(
+            self._job("grant_restore_upload_key", payload={"grant_id": self.grant.id}),
+            self.host,
+        )
+        transport = _transport(free=25 * GIB)
+        asyncio.run(executor.before_execute(transport))
+        self.assertEqual(
+            transport.run.await_args.kwargs.get("timeout"), DOORS_MEASURE_TIMEOUT_S,
+        )
 
     def _failed_install(self, results, stderr=()):
         """Run the end of a key's install that stopped; return the notice.
@@ -1854,7 +1947,7 @@ class TestADoorWritesNoMoreThanTheDisksTake(RestoreFixture, TransactionCase):
         ))
 
     def test_the_update_closes_the_doors_open_before_it(self):
-        """A door opened before 1.0.238 takes any number of files and
+        """A door opened before 1.0.239 takes any number of files and
         writes to /tmp: the update closes it, queues its revocation, and
         the dialog says to ask for another key."""
         jobs = self.env["cloud.job"].sudo()
@@ -1890,7 +1983,10 @@ class TestADoorWritesNoMoreThanTheDisksTake(RestoreFixture, TransactionCase):
         watches = Job.search([("job_type_id.code", "=", "watch_restore_uploads")])
         self.assertEqual(watches.host_id, self.host)
         self.assertNotIn(other, watches.host_id)
-        self.grant.sudo().state = "revoked"
+        # Closed in the panel, its key not removed yet: still watched.
+        self.grant.sudo().write({"state": "revoked", "upload_limit_bytes": GIB})
+        self.assertTrue(self.Grant._watch_doors())
+        self.grant.sudo().key_removed = True
         self.assertEqual(self.Grant._watch_doors(), [])
 
     def _watch(self, stdout):
@@ -1920,10 +2016,30 @@ class TestADoorWritesNoMoreThanTheDisksTake(RestoreFixture, TransactionCase):
         labels = [c[0] for c in past.get_commands()]
         self.assertEqual(labels, [
             f"Remove the one-use key ({self.grant.token})",
+            f"End the door's sessions ({self.grant.token})",
             f"Remove the upload directory ({self.grant.token})",
         ])
         asyncio.run(past.on_success({}))
         self.assertEqual(self.grant.sudo().state, "revoked")
+        self.assertTrue(self.grant.sudo().key_removed)
+
+    def test_a_consumed_door_whose_key_still_works_is_watched_and_kept(self):
+        """A restore took its archive and queued the key's removal: until
+        that ran, the door is watched; closing it removes the key and its
+        sessions, and leaves the directory a failed restore gives the
+        archive back to. Its state stays ``used``."""
+        self.grant.sudo().write({"state": "used", "upload_limit_bytes": 5 * GIB})
+        disks = _disks_output(100 * GIB)
+        past = self._watch(f"{disks}door {self.grant.token} {5 * GIB + 1}\n")
+        self.assertIn(self.grant, past._closing)
+        self.assertEqual([c[0] for c in past.get_commands()], [
+            f"Remove the one-use key ({self.grant.token})",
+            f"End the door's sessions ({self.grant.token})",
+        ])
+        asyncio.run(past.on_success({}))
+        self.assertEqual(
+            (self.grant.sudo().state, self.grant.sudo().key_removed), ("used", True),
+        )
 
     def test_every_door_is_closed_when_the_instances_disk_is_at_its_reserve(self):
         """On the disk the instances share; a tmpfs of its own at its

@@ -282,7 +282,7 @@ class TestBackupDownloadHandoff(_RestoreExecutorMixin, TransactionCase):
                         f"IC_RESERVE_BYTES={RESERVE_BYTES} ",
                     ) or f" IC_RESERVE_BYTES={RESERVE_BYTES} " in commands[label])
         self.assertTrue(handoff_dir(self.env, 1234).startswith("/var/tmp/"))
-        # The handoffs releases before 1.0.238 left in /tmp are swept too.
+        # The handoffs releases before 1.0.239 left in /tmp are swept too.
         self.assertIn("find /var/tmp -maxdepth 1", HANDOFF_SWEEP)
         self.assertIn("find /tmp -maxdepth 1", HANDOFF_SWEEP)
 

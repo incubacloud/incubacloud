@@ -152,27 +152,36 @@ def _where_its_name_says(path):
 def _take_upload(granted, received, local):
     """Return the shell that takes an uploaded archive as a copy of its own.
 
-    The file is first moved out of the grant's directory, under
-    *received*: the name is then this job's, and no session of the key
-    can put another file in its place. Only a regular file is read — a
-    pipe would hold the copy forever. Then it is copied to *local*, a
-    file no other name leads to, and the moved one removed. The key
-    stays open until its revocation runs, after the restore, and a hard
-    link sent beside the archive still names the moved file: whatever
-    is written through it, in place, never reaches the copy, whose
-    digest is the one checked (``_check_upload_digest``). A copy that
-    fails leaves the moved file at *local*, to be given back.
+    The file is first linked out of the grant's directory, under
+    *received* (a hard link: the job's directory is on the same disk),
+    and an empty file then renamed over its name there, in one step: the
+    name is then this job's, and the grant's directory never lacks it. A
+    session of the key held open since before would otherwise find the
+    name free, and rsync makes a directory of it for any number of files
+    (``restore_door.sh``); with an empty file there it refuses a second
+    one, and what it writes in place of the first stays one file, under
+    the key's limit (18-nov-2026). Only a regular file is read — a pipe
+    would hold the copy forever. Then it is copied to *local*, a file no
+    other name leads to, and the linked one removed. The key stays open
+    until its revocation runs, after the restore, and a hard link sent
+    beside the archive still names the linked file: whatever is written
+    through it, in place, never reaches the copy, whose digest is the one
+    checked (``_check_upload_digest``). A copy that fails leaves the
+    linked file at *local*, to be given back over the empty one.
 
     :param str granted: the archive in the grant's directory
-    :param str received: where it is moved, in the job's directory
+    :param str received: where it is linked, in the job's directory
     :param str local: the copy restored, in the job's directory
     :rtype: str
     """
     src, moved, dst = (shlex.quote(p) for p in (granted, received, local))
+    empty = shlex.quote(posixpath.join(posixpath.dirname(granted), ".taken.XXXXXX"))
     return (
         f"{_where_its_name_says(granted)}"
-        f" && mv -fT -- {src} {moved}"
+        f" && ln -T -- {src} {moved}"
         f" && test -f {moved} && ! test -L {moved}"
+        f" && e=$(mktemp -- {empty})"
+        f' && {{ mv -fT -- "$e" {src} || {{ rm -f -- "$e"; false; }}; }}'
         f" && {{ cp --reflink=auto -- {moved} {dst}"
         f" || {{ rm -f -- {dst}; mv -fT -- {moved} {dst}; false; }}; }}"
         f" && rm -f -- {moved}"

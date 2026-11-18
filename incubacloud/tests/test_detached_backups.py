@@ -341,3 +341,55 @@ class TestTheFreshAttemptFetchesWhatTheFirstMade(_BackupCase):
         self.assertEqual(fetched, [f"{_JOB_DIR}/neutralized.zip"])
         attachment = self._attachments(fresh.job)
         self.assertTrue(attachment.name.endswith("-full.zip"), attachment.name)
+
+
+class TestADownloadWithoutRoomSaysWhy(_BackupCase):
+    """A step refused for want of free disk (``backup_download.sh``'s 26)
+    fails the job with what the step said, how much it needs and has, not
+    with its exit status: that is what the dialogs of a download, a clone,
+    a refresh and a move, and the agents, show (the review of 18-nov-2026,
+    L1)."""
+
+    _SAID = (
+        "Not enough free disk on the server for the backup of prod: it takes "
+        "about 3.0 GiB, and the download needs 11.0 GiB free (the archive and "
+        "its copies while it is made, and 5.0 GiB the server's other instances "
+        "keep), with 8.0 GiB free. Nothing was downloaded: free space on the "
+        "server and try again."
+    )
+
+    def _failed(self, status, lines):
+        """Run *lines* through a step that exits *status*; return the errors.
+
+        :param int status: the step's exit status
+        :param lines: what the step wrote, as a step apart hands it over
+        :rtype: list
+        """
+        executor = self._executor(
+            BackupDownloadExecutor, self.prod,
+            {"time": "latest", "download_type": "all"},
+        )
+        executor._running_step = "Extract and package"
+        for line in lines:
+            asyncio.run(executor.on_stdout(line))
+        return executor.parse_results({
+            "Restore full from backup": {"exit_status": 0, "stdout": ""},
+            "Extract and package": {"exit_status": status, "stdout": ""},
+        })
+
+    def test_the_step_s_own_words(self):
+        errors = self._failed(26, [
+            "measuring", f"[incubacloud] ERROR: {self._SAID}", "",
+        ])
+        self.assertEqual(errors, [self._SAID])
+
+    def test_another_failure_keeps_its_status(self):
+        """Another exit, or a 26 that said nothing, names the step's status."""
+        self.assertEqual(
+            self._failed(1, [f"[incubacloud] ERROR: {self._SAID}"]),
+            ["'Extract and package' exited with status 1"],
+        )
+        self.assertEqual(
+            self._failed(26, ["no error line"]),
+            ["'Extract and package' exited with status 26"],
+        )

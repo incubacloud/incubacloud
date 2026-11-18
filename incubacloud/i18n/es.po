@@ -29641,3 +29641,31 @@ msgstr ""
 "El panel se actualizó mientras esta puerta de subida estaba abierta y la "
 "actualización la cerró: pida otra clave de subida y vuelva a enviar el "
 "archivo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"Another upload door of this server was being opened and its measure of the "
+"disk did not end: no upload door was opened. Ask for the upload key again in"
+" a few minutes."
+msgstr ""
+"Se estaba abriendo otra puerta de subida de este servidor y su medida del "
+"disco no terminó: no se abrió ninguna puerta de subida. Vuelva a pedir la "
+"clave de subida dentro de unos minutos."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__key_removed
+msgid "Key Removed"
+msgstr "Clave retirada"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_restore_upload_grant__key_removed
+msgid ""
+"Whether the job that removes the door's key from its host has done so. Until"
+" then, or until its deadline, a door closed in the panel still counts "
+"against its host's free disk and is watched."
+msgstr ""
+"Si el trabajo que retira la clave de la puerta de su servidor ya lo ha "
+"hecho. Hasta entonces, o hasta que vence, una puerta cerrada en el panel "
+"sigue contando en el disco libre de su servidor y se sigue vigilando."

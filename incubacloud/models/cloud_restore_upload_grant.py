@@ -62,7 +62,7 @@ _logger = logging.getLogger(__name__)
 #: on the disk a restore lands its archive on (``restore_space``).
 UPLOAD_ROOT = f"{STAGING_ROOT}/incubacloud-restore"
 
-#: Where releases before 1.0.238 put it, in ``/tmp``: only swept now, for
+#: Where releases before 1.0.239 put it, in ``/tmp``: only swept now, for
 #: what a door of theirs left (``upload_dir_sweep``).
 LEGACY_UPLOAD_ROOT = "/tmp/incubacloud-restore"
 
@@ -253,6 +253,13 @@ class CloudRestoreUploadGrant(models.Model):
              "open doors of the host may still receive. The one file the "
              "door takes is no larger, and a door whose directory holds "
              "more is closed.",
+    )
+    key_removed = fields.Boolean(
+        readonly=True,
+        copy=False,
+        help="Whether the job that removes the door's key from its host has "
+             "done so. Until then, or until its deadline, a door closed in the "
+             "panel still counts against its host's free disk and is watched.",
     )
     received_filename = fields.Char(readonly=True)
     # An archive past 2 GiB is common: 64 bits (``BigInteger``).
@@ -631,6 +638,27 @@ class CloudRestoreUploadGrant(models.Model):
         return jobs
 
     @api.model
+    def _key_may_work_domain(self):
+        """Return the domain of the doors whose key may still take an upload.
+
+        The open ones, and the ones closed in the panel — revoked, or
+        consumed by a restore — whose key the job that removes it has not
+        removed yet (``key_removed``), until their deadline, when OpenSSH
+        stops accepting it, and only once a limit was measured: a door
+        whose key never went in has none. Those count in their host's
+        free disk and are watched, as an open door is (the review of
+        18-nov-2026, M1).
+
+        :rtype: list
+        """
+        return [
+            "|", ("state", "=", "granted"),
+            "&", "&", ("key_removed", "=", False),
+            ("expires_at", ">", fields.Datetime.now()),
+            ("upload_limit_bytes", ">", 0),
+        ]
+
+    @api.model
     def _watch_doors(self):
         """Have every host with an open door measure what its doors hold.
 
@@ -639,11 +667,12 @@ class CloudRestoreUploadGrant(models.Model):
         limit, or every door that writes on the instances' disk once it
         is down to the reserve (``restore_space``). The key's file size
         limit bounds each file; this bounds what many files, or many
-        doors, add up to. Hosts without an open door are not reached.
+        doors, add up to. Hosts without a door whose key may take an upload
+        (``_key_may_work_domain``) are not reached.
 
         :return: ids of the jobs queued
         """
-        hosts = self.sudo().search([("state", "=", "granted")]).host_id
+        hosts = self.sudo().search(self._key_may_work_domain()).host_id
         jobs = []
         for host in hosts:
             try:
@@ -662,12 +691,12 @@ class CloudRestoreUploadGrant(models.Model):
     def _close_for_update(self):
         """Close every open door, saying why: the update that changed them.
 
-        A door opened before 1.0.238 writes to ``/tmp`` under a key that
+        A door opened before 1.0.239 writes to ``/tmp`` under a key that
         takes any number of files, each up to its limit; the restore
         after the update reads only ``/var/tmp`` and the door's one file.
         Such a door is closed as its revocation does, and the Import
         dialog tells the person to ask for another key (end-migration of
-        1.0.238). What it held in ``/tmp`` goes with the day's sweep
+        1.0.239). What it held in ``/tmp`` goes with the day's sweep
         (``upload_dir_sweep``).
 
         :return: the doors closed

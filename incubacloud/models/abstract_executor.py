@@ -267,7 +267,7 @@ _HANDOFF_NAME = ".incubacloud-handoff-"
 HANDOFF_PREFIX = f"{STAGING_ROOT}/{_HANDOFF_NAME}"
 
 #: Where handoffs are swept: their directory, and ``/tmp``, where
-#: releases before 1.0.238 handed them over (one release more).
+#: releases before 1.0.239 handed them over (one release more).
 HANDOFF_ROOTS = (STAGING_ROOT, "/tmp")
 
 

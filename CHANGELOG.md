@@ -6,6 +6,118 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.239] — unreleased
+
+A restore, and the download a clone, a refresh or a move restores, land
+their archive on the instances' disk, not in `/tmp`, and a download refuses
+what the disk cannot take, saying why. An upload door takes one file, its
+share of the server's disk, and the Import dialog says in your language
+what stopped one. The agents' MCP address is `/cloud/mcp`; `/mcp` still
+answers the agents connected to it, and gives way to another MCP server
+module of the same Odoo.
+
+The update adds two columns to the upload doors, `notice` and
+`key_removed`, empty. Its data migration, 1.0.239's `end-close-open-doors`,
+closes the upload doors open while the panel updates, saying so in the
+Import dialog.
+
+### Fixed
+
+- **A restore, and the download a clone, a refresh or a move restores,
+  land their archive on the instances' disk, not in `/tmp`.** Debian 13
+  and Ubuntu 26.04 (Ubuntu since 24.10) mount `/tmp` as a tmpfs of half
+  the memory, the base image of new servers too: 1.9 GiB on a server of
+  4 GB. Every restore staged its archive there, so an upload door took at
+  most 0.9 GiB, a link or a file copied to the server not much more, and
+  an archive of 2.7 GiB could be restored by no path with 57 GiB free on
+  the disk of the instances; a clone to staging, a refresh from
+  production and a move dumped production there and handed it over there
+  too. Now in `/var/tmp`, on disk, which on the usual server is the disk
+  Docker keeps the instances on: the doors' directories, the path *a file
+  already on the server* is read from (now
+  `/var/tmp/incubacloud-restore-<instance id>.zip`), the restore's own
+  working directory, the backup download's (its dump, what the backup
+  store gives back, the archive) and the handoff a clone, a refresh or a
+  move restores from, and the working directories of the neutralized
+  download and of the export. A download measures what it is about to
+  write, the database and its files, or what the store gave back, and
+  refuses, writing nothing and saying why, when that and its copies would
+  leave less than 5 GiB free where it lands or on Docker's disk: the job
+  fails with the step's own words, how much it needs and how much the
+  server has, which the dialogs and the agents show, not with its exit
+  status. A full backup is packaged with one copy fewer. A restore still
+  measures where the archive lands and Docker's disk, each for what it
+  holds, each keeping the 5 GiB reserve where they are two disks, and the
+  messages name `/var/tmp`: the same server now takes an archive of 13 GiB
+  through a door. The day's sweep removes what a dead worker, a door or a
+  handoff left in `/var/tmp`, three days on for the first two and one for
+  a handoff, since a reboot no longer does, and still what releases before
+  this one left in `/tmp`. `/tmp` itself is left as the server has it.
+- **An upload door takes one file, its share of the server's disk.** Its
+  key took any number of files, each up to the door's limit, and several
+  doors of one server each counted the same free disk: until the watch
+  came round, five minutes later, they could fill the disk every instance
+  of the server writes to. A door now takes `restore.zip` alone, sent with
+  `rsync -P --inplace` as the dialog shows it, with `-v`, `-t` or `-z` if
+  you add them: its key's command refuses, before anything is written,
+  another name, `-a`, `-r` and the other options that write more than one
+  file, and `-X`, `-A`, `-D`, `-o`, `-g` and `-p`, which write what the
+  door's limit does not count or keep an owner, a group and a mode; and
+  rsync itself refuses a second file, also from a session held open while
+  a restore takes the archive, which now leaves an empty `restore.zip` in
+  its place rather than the name free. Its limit is what the disks can
+  restore less what the server's other doors may still receive, measured
+  one door at a time, and it bounds all the door holds. A door closed in
+  the panel still counts, and is watched, until the job that removes its
+  key from the server has done so, and removing a key ends the sessions
+  it still has open. The job that opens a door waits two and a half
+  minutes at most for another door of its server being measured. The
+  watch stays as a second line. The Import dialog and
+  `grant_restore_upload` say so; the doors open while the panel updates
+  are closed, and the dialog says to ask for another key.
+- **The Import dialog says why a door did not open, in your language.**
+  What stopped it, a root of another account to remove with `sudo rm -rf`
+  or an `rrsync` to install, rather than a pointer to the job's log; that
+  and the reasons a check offers nothing are written in the language of
+  whoever opened the door.
+- **Another MCP server module in the same Odoo no longer meets the panel on
+  `/mcp`.** Odoo puts two routes with one URL in its map in the
+  alphabetical order of their modules, without a word, and the first one
+  answers: the panel took every call to `/mcp` and to the root RFC 9728
+  document, and the other module's agents were told their user had no role
+  on the panel (or, with another name, the other module would have taken
+  the panel's). The agents' endpoint now answers at `/cloud/mcp`, with its
+  document at `/.well-known/oauth-protected-resource/cloud/mcp`, and every
+  self-hosted panel gives that address, also one installed before, whose
+  stored `…/mcp` is left as it is. `/mcp`,
+  `/.well-known/oauth-protected-resource/mcp` and the root document stay as
+  aliases for the agents connected to `/mcp` while no other installed module
+  declares any of them; once one does, all three leave the routing map and
+  a warning names that module, again on every load of the registry
+  (`incubacloud_mcp/models/ir_http.py`). A token is accepted for either
+  address on the panel's own origin, `…/cloud/mcp` or `…/mcp`, so an agent
+  keeps its connection whichever address it connected to, also after
+  another module is removed. Each document names the URL of its own path,
+  and the root one `…/mcp`, which the clients that call `/mcp` check it
+  against (RFC 9728, §3.3); the 401 names the document of the path called.
+  A panel whose MCP address another panel sets gives it as set, `…/mcp`
+  included. *Connect an agent* and **Settings → Agents (MCP)** name the
+  other module and say that agents still on `/mcp` have to switch to
+  `/cloud/mcp`, or, where the address is a path of the panel's proxy, that
+  the proxy has to forward it to `/cloud/mcp`.
+
+### Documentation
+
+- RB-19 says where a restore lands its archive, what an upload door takes
+  and how its share of the server's disk is set.
+
+### Migration
+
+- 1.0.239's `end-close-open-doors` closes every upload door open while the
+  panel updates, as its revocation does, and the Import dialog says to ask
+  for another key; one savepoint, and a failure is logged without breaking
+  the update: the doors then close at their deadline.
+
 ## [1.0.238] — unreleased
 
 A server keeps the SSH keys its Administrators sign in with as known keys:
@@ -19,20 +131,16 @@ works on S3 destinations that sign for a region of their own. An SFTP
 backup destination can log in with a password. A shell test no longer
 depends on the clock, a short request time limit keeps most of its time for
 the playbook, and the Ansible launcher's CI job installs what
-`requirements.txt` pins. The agents' MCP address is `/cloud/mcp`; `/mcp`
-still answers the agents connected to it, and gives way to another MCP
-server module of the same Odoo.
+`requirements.txt` pins.
 
 The update adds the table `cloud_host_known_key`, empty, the column
 `owner_type` to the GitHub App, empty on an App there is, the column
 `s3_region` to `cloud_backup_backend`, empty, and two more to the backup
 destinations, `sftp_auth_method`, set to `key` on every one, and
-`sftp_password`, and the column `notice` to the upload doors, empty. Its data migration, 1.0.238's `end-stale-holds`, closes
+`sftp_password`. Its data migration, 1.0.238's `end-stale-holds`, closes
 the failures a conflict answered before 1.0.220 left holding an instance's
-queue, and cancels what waited behind them; `end-close-open-doors` closes
-the upload doors open while the panel updates, saying so in the Import
-dialog; the cron bot's end-migration recreates the bot only when it is
-missing.
+queue, and cancels what waited behind them; the cron bot's end-migration
+recreates the bot only when it is missing.
 
 ### Added
 
@@ -130,52 +238,6 @@ missing.
 
 ### Fixed
 
-- **A restore, and the download a clone, a refresh or a move restores,
-  land their archive on the instances' disk, not in `/tmp`.** Debian 13
-  and Ubuntu 26.04 (Ubuntu since 24.10) mount `/tmp` as a tmpfs of half
-  the memory, the base image of new servers too: 1.9 GiB on a server of
-  4 GB. Every restore staged its archive there, so an upload door took at
-  most 0.9 GiB, a link or a file copied to the server not much more, and
-  an archive of 2.7 GiB could be restored by no path with 57 GiB free on
-  the disk of the instances; a clone to staging, a refresh from
-  production and a move dumped production there and handed it over there
-  too. Now in `/var/tmp`, on disk, which on the usual server is the disk
-  Docker keeps the instances on: the doors' directories, the path *a file
-  already on the server* is read from (now
-  `/var/tmp/incubacloud-restore-<instance id>.zip`), the restore's own
-  working directory, the backup download's (its dump, what the backup
-  store gives back, the archive) and the handoff a clone, a refresh or a
-  move restores from, and the working directories of the neutralized
-  download and of the export. A download measures what it is about to
-  write, the database and its files, or what the store gave back, and
-  refuses, writing nothing and saying why, when that and its copies would
-  leave less than 5 GiB free where it lands or on Docker's disk; a full
-  backup is packaged with one copy fewer. A restore still measures where
-  the archive lands and Docker's disk, each for what it holds, each
-  keeping the 5 GiB reserve where they are two disks, and the messages
-  name `/var/tmp`: the same server now takes an archive of 13 GiB through
-  a door. The day's sweep removes what a dead worker, a door or a handoff
-  left in `/var/tmp`, three days on for the first two and one for a
-  handoff, since a reboot no longer does, and still what releases before
-  this one left in `/tmp`. `/tmp` itself is left as the server has it.
-- **An upload door takes one file, its share of the server's disk.** Its
-  key took any number of files, each up to the door's limit, and several
-  doors of one server each counted the same free disk: until the watch
-  came round, five minutes later, they could fill the disk every instance
-  of the server writes to. A door now takes `restore.zip` alone, sent with
-  `rsync -P --inplace` as the dialog shows it: its key's command refuses,
-  before anything is written, another name, `-a`, `-r` and the other
-  options that write more than one file, and rsync itself a second file.
-  Its limit is what the disks can restore less what the server's other
-  open doors may still receive, measured one door at a time, and it
-  bounds all the door holds. The watch stays as a second line. The Import
-  dialog and `grant_restore_upload` say so; the doors open while the
-  panel updates are closed, and the dialog says to ask for another key.
-- **The Import dialog says why a door did not open, in your language.**
-  What stopped it, a root of another account to remove with `sudo rm -rf`
-  or an `rrsync` to install, rather than a pointer to the job's log; that
-  and the reasons a check offers nothing are written in the language of
-  whoever opened the door.
 - **Every line of Monitoring's Load per core names its server.** The
   fleet's load is the 15-minute load divided by the cores, matched on the
   account and the server's id, and a division matched on some labels keeps
@@ -327,31 +389,6 @@ missing.
   loaded. The test of the admin password check's cron reads that it is
   active from the module's data, as a copy pauses its crons; the test of
   a shared backup path's alert counts only the alerts of its own paths.
-- **Another MCP server module in the same Odoo no longer meets the panel on
-  `/mcp`.** Odoo puts two routes with one URL in its map in the
-  alphabetical order of their modules, without a word, and the first one
-  answers: the panel took every call to `/mcp` and to the root RFC 9728
-  document, and the other module's agents were told their user had no role
-  on the panel (or, with another name, the other module would have taken
-  the panel's). The agents' endpoint now answers at `/cloud/mcp`, with its
-  document at `/.well-known/oauth-protected-resource/cloud/mcp`, and every
-  self-hosted panel gives that address, also one installed before, whose
-  stored `…/mcp` is left as it is. `/mcp`,
-  `/.well-known/oauth-protected-resource/mcp` and the root document stay as
-  aliases for the agents connected to `/mcp` while no other installed module
-  declares any of them; once one does, all three leave the routing map and
-  a warning names that module, again on every load of the registry
-  (`incubacloud_mcp/models/ir_http.py`). A token is accepted for either
-  address on the panel's own origin, `…/cloud/mcp` or `…/mcp`, so an agent
-  keeps its connection whichever address it connected to, also after
-  another module is removed. Each document names the URL of its own path,
-  and the root one `…/mcp`, which the clients that call `/mcp` check it
-  against (RFC 9728, §3.3); the 401 names the document of the path called.
-  A panel whose MCP address another panel sets gives it as set, `…/mcp`
-  included. *Connect an agent* and **Settings → Agents (MCP)** name the
-  other module and say that agents still on `/mcp` have to switch to
-  `/cloud/mcp`, or, where the address is a path of the panel's proxy, that
-  the proxy has to forward it to `/cloud/mcp`.
 
 ### Security
 

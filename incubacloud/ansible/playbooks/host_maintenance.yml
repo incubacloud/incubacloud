@@ -19,14 +19,14 @@
     ic_protect_label: "incubacloud.protect=1"
     # This account's leftovers in /tmp and /var/tmp: handoffs a day old
     # whose restore never came (a production database each), in /var/tmp
-    # and in /tmp, where releases before 1.0.238 handed them over, what releases before
+    # and in /tmp, where releases before 1.0.239 handed them over, what releases before
     # 1.0.200 left at fixed names (root's and the odoo container's too:
     # uid 1000, the live dumps; a pass through ``sudo -n`` only when a
     # search finds something), the directories of jobs
     # whose worker died, three days old, in /tmp and in /var/tmp (a
     # restore's), and the grant directories of upload keys under
     # /var/tmp/incubacloud-restore, and under /tmp/incubacloud-restore
-    # where releases before 1.0.238 put them, three days old too, in a
+    # where releases before 1.0.239 put them, three days old too, in a
     # root of this account's (``upload_dir_sweep``). DockerPruneExecutor passes the
     # same command (``TMP_SWEEP``), sparing the handoffs a restore still
     # waits for (``tmp_sweep``).

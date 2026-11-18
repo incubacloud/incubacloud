@@ -31,7 +31,12 @@
 # replace ``restore.zip`` with a directory of files; ``-R``; backups
 # (``-b``), which keep a second copy; ``-s``, whose names travel past this
 # check; a temporary file beside it (no ``--inplace``); and every option
-# not named below. Bash alone; nothing to source.
+# not named below. Of the short options, only those ``rsync -P --inplace``
+# sends with ``-v``, ``-t`` and ``-z`` added: ``-X`` and ``-A`` would
+# store metadata outside ``ulimit -f`` and ``du``, ``-D`` a device or a
+# special file, ``-o``, ``-g`` and ``-p`` an owner, a group and a mode that
+# hold where the panel connects as root (18-nov-2026). Bash alone;
+# nothing to source.
 #
 # Exit codes:
 #   0   what <wrapper> exits with, or ``install`` done
@@ -39,8 +44,9 @@
 set -euo pipefail
 
 # The short options of ``rsync --server`` a one-file upload may carry,
-# before the protocol's ``e.<capabilities>``.
-readonly SHORT_OK='vlogDtpzcIuWSHAXUNOJxniq'
+# before the protocol's ``e.<capabilities>``: what ``rsync -P --inplace``
+# sends with ``-v``, ``-t`` and ``-z`` (rsync 3.2.7 sends ``-vtze.…``).
+readonly SHORT_OK='vtz'
 
 # refuse <why>: say why the upload is refused, and stop.
 refuse() {
@@ -52,7 +58,10 @@ case "${1:-}" in
     install)
         [ $# -eq 2 ] || { echo "usage: restore_door.sh install <path>" >&2; exit 2; }
         target="$2"
-        tmp="$target.new.$$"
+        # A name of its own beside the target, removed if the copy fails:
+        # one left by an earlier install, read only, never stops this one.
+        tmp="$(mktemp -- "$target.new.XXXXXX")"
+        trap 'rm -f -- "$tmp"' EXIT
         cp -- "$0" "$tmp"
         chmod 500 "$tmp"
         mv -fT -- "$tmp" "$target"
@@ -107,7 +116,7 @@ while [ $# -gt 2 ]; do
             letters="${option#-}"
             letters="${letters%%e*}"
             case "$letters" in
-                *[!"$SHORT_OK"]*) refuse "the option -${letters//[$SHORT_OK]/} is not taken (no -a, -r, -d, -R, -b or -s)" ;;
+                *[!"$SHORT_OK"]*) refuse "the option -${letters//[$SHORT_OK]/} is not taken (only -v, -t and -z, beside -P and --inplace)" ;;
             esac
             ;;
         *) refuse "it names more than restore.zip" ;;

@@ -58,6 +58,17 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
     #: (``backup_download.sh``, ``restore_space.RESERVE_BYTES``).
     _ROOM_ENV = {"IC_RESERVE_BYTES": RESERVE_BYTES}
 
+    #: The exit status of a step of ``backup_download.sh`` that refused for
+    #: want of free disk (its ``EXIT_NO_ROOM``): the job's error is then the
+    #: line the step wrote last, which says how much it needs and has.
+    _EXIT_NO_ROOM = 26
+
+    #: What the script writes before each error line (``lib/common.sh``).
+    _ERROR_MARK = "[incubacloud] ERROR: "
+
+    #: The last error line each step wrote, by label (``_keep_error``).
+    _said_of = None
+
     def _inst(self):
         return self.job.instance_id
 
@@ -258,12 +269,58 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
             *self._handover_step(),
         ]
 
+    async def on_stdout(self, line):
+        """Log *line*, and keep it if it is an error of the running step.
+
+        :param str line: a line of the running step's output; a step apart
+            hands its whole log over here, stderr included
+        """
+        await super().on_stdout(line)
+        self._keep_error(line)
+
+    async def on_stderr(self, line):
+        """Log *line*, and keep it if it is an error of the running step.
+
+        :param str line: a line the running step wrote on stderr
+        """
+        await super().on_stderr(line)
+        self._keep_error(line)
+
+    def _keep_error(self, line):
+        """Keep *line* as the last error of the running step, if it is one.
+
+        :param str line: a line the step wrote
+        """
+        text = (line or "").strip()
+        if text.startswith(self._ERROR_MARK) and text[len(self._ERROR_MARK):]:
+            if self._said_of is None:
+                self._said_of = {}
+            self._said_of[getattr(self, "_running_step", None)] = (
+                text[len(self._ERROR_MARK):]
+            )
+
     def parse_results(self, results):
-        return [
-            f"'{label}' exited with status {data.get('exit_status')}"
-            for label, data in results.items()
-            if data.get('exit_status', 1) != 0
-        ]
+        """Return an error for each step that failed.
+
+        A step refused for want of free disk says, as the step wrote it,
+        how much it needs and how much the server has, rather than its
+        exit status: the dialogs of a download, a clone, a refresh and a
+        move, and the agents, show this (the review of 18-nov-2026, L1).
+
+        :param dict results: the steps that ran, by label
+        :rtype: list
+        """
+        errors = []
+        for label, data in results.items():
+            status = data.get('exit_status', 1)
+            if status == 0:
+                continue
+            said = (self._said_of or {}).get(label)
+            if status == self._EXIT_NO_ROOM and said:
+                errors.append(said)
+            else:
+                errors.append(f"'{label}' exited with status {status}")
+        return errors
 
     async def after_commands(self, transport, results):
         if self._handoff():

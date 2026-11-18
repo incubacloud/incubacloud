@@ -512,7 +512,7 @@ def upload_dir_sweep(root=UPLOAD_ROOT):
     ``rm -rf`` none inside a directory either.
 
     :param str root: the grants' root: ``UPLOAD_ROOT``, or
-        ``LEGACY_UPLOAD_ROOT`` for what releases before 1.0.238 left
+        ``LEGACY_UPLOAD_ROOT`` for what releases before 1.0.239 left
     :rtype: str
     """
     quoted = shlex.quote(root)
@@ -584,7 +584,7 @@ def tmp_sweep(env, host):
     (``handoff_sweep``), older releases' leftovers, the directories of
     jobs whose worker died, in /tmp and in /var/tmp, where a restore's
     is (``restore_space.STAGING_ROOT``), what upload keys left three days
-    ago, there and where releases before 1.0.238 put them
+    ago, there and where releases before 1.0.239 put them
     (``upload_dir_sweep``), and the step directories no open checkpoint
     holds (``detached_dir_sweep``). On disk, /var/tmp keeps what a
     server's reboot used to take from a /tmp in memory: this is what

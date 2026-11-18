@@ -25,6 +25,7 @@ import hashlib
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -80,6 +81,7 @@ from odoo.addons.incubacloud.models.restore_upload_key_executors import (
     GrantRestoreUploadKeyExecutor,
     RevokeRestoreUploadKeyExecutor,
     VerifyRestoreUploadExecutor,
+    end_door_sessions_command,
 )
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
 from odoo.addons.incubacloud.restore_space import disks_command
@@ -1144,11 +1146,14 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
         granted = shlex.quote(self.grant._remote_path("restore.zip"))
         received = executor._job_path("upload.received")
         move = next(c for c in runs if "mv " in c)
+        empty = shlex.quote(f"{self.grant._directory()}/.taken.XXXXXX")
         self.assertEqual(
             move,
             f'[ "$(realpath -e -- {granted})" = {granted} ]'
-            f" && mv -fT -- {granted} {received}"
+            f" && ln -T -- {granted} {received}"
             f" && test -f {received} && ! test -L {received}"
+            f" && e=$(mktemp -- {empty})"
+            f' && {{ mv -fT -- "$e" {granted} || {{ rm -f -- "$e"; false; }}; }}'
             f" && {{ cp --reflink=auto -- {received} {local}"
             f" || {{ rm -f -- {local}; mv -fT -- {received} {local}; false; }}; }}"
             f" && rm -f -- {received}",
@@ -1264,7 +1269,10 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
 
     def test_lab_the_archive_goes_into_the_job_and_back(self):
         """Taken where the key wrote it, checked, and given back when the
-        restore does not get to its end."""
+        restore does not get to its end. The door's name is never free:
+        an empty file takes it, so a session of the key held open since
+        before cannot make a directory of it for many files (the review
+        of 18-nov-2026, H1)."""
         with self._lab() as tmp:
             executor = self._restore()
             executor._job_dir_path = f"{tmp}/job"
@@ -1272,7 +1280,11 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
             granted.write_bytes(b"PK-ok")
             transport = self._lab_transport()
             asyncio.run(executor.before_execute(transport))
-            self.assertFalse(granted.exists())
+            self.assertTrue(granted.is_file())
+            self.assertEqual(granted.read_bytes(), b"")
+            self.assertEqual(
+                [p.name for p in granted.parent.iterdir()], ["restore.zip"],
+            )
             self.assertEqual(Path(tmp, "job/restore.zip").read_bytes(), b"PK-ok")
             asyncio.run(executor._discard_staging(transport))
             self.assertEqual(granted.read_bytes(), b"PK-ok")
@@ -1298,7 +1310,7 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
             self.assertEqual(local.read_bytes(), b"PK-ok")
             self.assertEqual(local.stat().st_nlink, 1)
             self.assertNotEqual(local.stat().st_ino, second.stat().st_ino)
-            self.assertFalse(granted.exists())
+            self.assertEqual(granted.read_bytes(), b"")
             self.assertEqual(
                 [p.name for p in Path(tmp, "job").iterdir()], ["restore.zip"],
             )
@@ -1517,6 +1529,43 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
                 hashlib.sha256(b"P" * 1024).hexdigest(),
             )
             self.assertFalse(self.grant.notice)
+
+    def test_lab_closing_a_door_ends_its_sessions(self):
+        """Removing the key leaves the sessions it opened running: closing
+        the door ends this account's ``rsync`` working in its directory,
+        or below it, and no other process (the review of 18-nov-2026,
+        H1). Real processes, a ``sleep`` named ``rsync``."""
+        with self._lab() as tmp:
+            directory = Path(self.grant._directory())
+            rsync = Path(tmp, "bin", "rsync")
+            rsync.parent.mkdir()
+            shutil.copy("/bin/sleep", rsync)
+            below = directory / "restore.zip"
+            below.mkdir()
+            elsewhere = Path(tmp, "elsewhere")
+            elsewhere.mkdir()
+            sessions = []
+            for cwd, name in ((directory, rsync), (below, rsync),
+                              (elsewhere, rsync), (directory, "/bin/sleep")):
+                process = subprocess.Popen([str(name), "60"], cwd=cwd)
+                self.addCleanup(lambda p=process: (p.kill(), p.wait()))
+                sessions.append(process)
+            steps = {
+                label: command for label, command, *_ in self._executor(
+                    RevokeRestoreUploadKeyExecutor, "revoke_restore_upload_key",
+                    payload={"grant_id": self.grant.id},
+                ).get_commands()
+            }
+            self.assertEqual(
+                steps["End the door's sessions"],
+                end_door_sessions_command(str(directory)),
+            )
+            self.assertEqual(_bash(steps["End the door's sessions"]).exit_status, 0)
+            self.assertEqual(
+                [p.wait(timeout=10) for p in sessions[:2]], [-15, -15],
+            )
+            self.assertIsNone(sessions[2].poll())
+            self.assertIsNone(sessions[3].poll())
 
     def test_the_upload_check_reports_no_link(self):
         """A link is not a file that arrived."""
