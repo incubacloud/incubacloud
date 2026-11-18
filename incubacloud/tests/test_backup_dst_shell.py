@@ -172,7 +172,8 @@ def _compose_env(content):
 class _BackupDstCase(TransactionCase):
 
     def setUp(self):
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         super().setUp()
         self.project = self.env["cloud.project"].create({"name": "bd-proj"})
         self.host = self.env["cloud.host"].create({

@@ -156,9 +156,9 @@ class CloudHostReboot(models.Model):
         help="When the restart was asked for; the job waits from then.",
     )
 
-    _job_uniq = models.Constraint(
-        "unique(job_id)", "A restart job has one row.",
-    )
+    _sql_constraints = [
+        ("job_uniq", "unique(job_id)", "A restart job has one row."),
+    ]
 
     def _containers(self):
         """Return the names of the containers running before the restart.

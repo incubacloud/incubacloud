@@ -179,5 +179,5 @@ class TestCronBotCreation(TransactionCase):
         self.assertEqual(bot.login, "__incubacloud_cron__")
         self.assertEqual(bot.name, "IncubaCloud Cron Bot")
         self.assertEqual(bot.partner_id[self.FIELD], "from-its-default")
-        self.assertIn(self.env.ref("incubacloud.group_cloud_manager"), bot.all_group_ids)
+        self.assertIn(self.env.ref("incubacloud.group_cloud_manager"), bot.groups_id)
         self.assertEqual(bot.notification_type, "inbox")

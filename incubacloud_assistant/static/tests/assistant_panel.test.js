@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import { AssistantPanel } from "@incubacloud_assistant/panel/assistant_panel";
 
@@ -32,7 +32,7 @@ function panel() {
 }
 
 describe("AssistantPanel calls", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("the answer of Stop is the new state when nothing came meanwhile", async () => {
         const comp = panel();

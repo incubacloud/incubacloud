@@ -72,7 +72,9 @@ class CloudFirstStep(models.Model):
         "what the database held when the panel started keeping marks.",
     )
 
-    _code_uniq = models.Constraint("unique (code)", "One row per first step mark.")
+    _sql_constraints = [
+        ("code_uniq", "unique (code)", "One row per first step mark."),
+    ]
 
     @api.model
     def _upsert(self, code, attempted_at=None, achieved_at=None,

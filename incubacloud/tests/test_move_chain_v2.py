@@ -533,7 +533,8 @@ class TestTheCutIsMeasured(_MoveCase):
 
     def test_the_stamp_follows_the_upload_of_the_scripts(self):
         """The drain comes right after it: the upload is not the cut."""
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         stop = self._job("stop_instance", self.source, payload={
             "services": ["odoo"], "move_cut": True,
         })
@@ -656,7 +657,8 @@ class TestTheCutIsBrokenDown(_MoveCase):
 
     def setUp(self):
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.job = self._job("move_fingerprint", self.source)
         self.started = time.time() - 30
         self.inst.write({

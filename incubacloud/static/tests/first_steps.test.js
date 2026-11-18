@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "@odoo/hoot";
 import { click, queryAll, queryAllTexts, queryOne } from "@odoo/hoot-dom";
 import { animationFrame } from "@odoo/hoot-mock";
 import { Component, xml } from "@odoo/owl";
-import { allowTranslations, mountWithCleanup, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, mountWithCleanup, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import { getTemplate } from "@web/core/templates";
 import {
@@ -67,7 +67,7 @@ async function mountCard(data, env = {}) {
 
 describe("FirstSteps — the card", () => {
     beforeEach(() => {
-        allowTranslations();
+        patchTranslations();
         registerFirstStepsHeader(null);
     });
 

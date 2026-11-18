@@ -1730,7 +1730,8 @@ class TestARestore(_PitrCase):
         # ``before_execute`` empties the admin password's state durably
         # (``_persist``): its cursor rides on the test's transaction.
         if not type(self)._registry_patched:
-            self.registry_enter_test_mode()
+            self.registry.enter_test_mode(self.cr)
+            self.addCleanup(self.registry.leave_test_mode)
         asyncio.run(executor.before_execute(transport))
         return executor
 
