@@ -1630,7 +1630,8 @@ class TestTheUploadKeyNeedsAModernRrsync(_StagingCase):
         session removes what another sent."""
         line = self.grant._authorized_keys_line()
         self.assertIn(
-            f"&& exec /usr/bin/rrsync -wo -munge -no-del "
+            "&& exec /bin/bash /var/tmp/incubacloud-restore/.door.sh receive"
+            f" /usr/bin/rrsync -wo -munge -no-del "
             f"{self.grant._directory()}'\",restrict,",
             line,
         )

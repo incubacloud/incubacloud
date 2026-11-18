@@ -417,6 +417,7 @@ class TestUploadGrant(TransactionCase):
         line = grant._authorized_keys_line()
         self.assertIn(
             "command=\"exec /bin/bash -c 'ulimit -f 10485760 && exec "
+            "/bin/bash /var/tmp/incubacloud-restore/.door.sh receive "
             "/usr/bin/rrsync -wo -munge -no-del ",
             line,
         )

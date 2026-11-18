@@ -351,11 +351,14 @@ archive is the Import's zip: `dump.sql` and `filestore/` at its root.
   is purged (`cloud.restore.upload.key`). An instance has one door open at a
   time: the caller's own is closed first, another person's refuses the new
   one, and so does the caller's own while a restore of what came through it
-  waits in the queue. No file sent through a door is larger than the largest
-  archive the server's disks could restore when it opened (`ulimit -f` in its
-  key's forced command), and every five minutes a watch measures the open
-  doors (`watch_restore_uploads`): it closes one whose directory holds more
-  than that, or every one once the instances' disk is down to its reserve. `check_restore_upload` queues the check, which offers nothing the
+  waits in the queue. A door takes one file, `restore.zip`, sent with
+  `rsync -P --inplace` (no `-a` or `-r`; the key's forced command refuses any
+  other line, `scripts/restore_door.sh`), no larger than the door's share of
+  the server's free disk when it opened: what the disks could restore, less
+  what the server's other open doors may still receive (`ulimit -f`). Every
+  five minutes a watch measures the open doors (`watch_restore_uploads`): it
+  closes one whose directory holds more than that, or every one once the
+  instances' disk is down to its reserve. `check_restore_upload` queues the check, which offers nothing the
   server's free disk cannot restore, nor a file cut at the door's limit, and
   answers that limit (`largest_archive_bytes`) once the key's job measured it; `restore_from_upload` restores what it
   found, `ssh_upload` mode, its approval naming the file and its SHA-256, the

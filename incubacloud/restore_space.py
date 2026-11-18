@@ -26,8 +26,10 @@ inside the instance's containers, on the disk Docker keeps them on
 (``DockerRootDir``). The two are one disk on most servers, but may be
 two: so a restore measures both (:func:`disks_command`, :class:`Disks`):
 on one disk it needs all of the above there; on two, room for the
-archive and its copies where it lands, and the reserve and the unpacking
-on Docker's (:func:`largest_archive`, :func:`room_refusal`).
+archive and its copies where it lands, and the unpacking on Docker's,
+each disk keeping the reserve (:func:`largest_archive`,
+:func:`room_refusal`): where the archive lands is the server's root disk
+then, which its system and its logs write to.
 """
 import shlex
 from collections import namedtuple
@@ -192,9 +194,36 @@ def largest_archive(disks, on_job_disk=1):
             0, (disks.free() - RESERVE_BYTES) // (on_job_disk + UNPACK_FACTOR),
         )
     return max(0, min(
-        disks.job // on_job_disk,
+        (disks.job - RESERVE_BYTES) // on_job_disk,
         (disks.docker - RESERVE_BYTES) // UNPACK_FACTOR,
     ))
+
+
+def room_shortfall(disks, archive_bytes, copies):
+    """Return where an archive on the host lacks room, or None.
+
+    What :func:`room_refusal` says, as values, for a message in another
+    language: ``(where, free, needed)``, *where* ``"disk"`` for the one
+    disk both share, ``"staging"`` for the disk the archive lands on
+    (:data:`STAGING_ROOT`), ``"docker"`` for the instances'.
+
+    :param Disks disks: what the host has free
+    :param int archive_bytes: the archive's size
+    :param int copies: further copies of it the restore makes on the
+        job's disk first (``room_needed``)
+    :rtype: tuple | None
+    """
+    archive_bytes = int(archive_bytes)
+    if disks.shared:
+        needed = room_needed(archive_bytes, copies)
+        return ("disk", disks.free(), needed) if disks.free() < needed else None
+    needed = RESERVE_BYTES + archive_bytes * copies
+    if disks.job < needed:
+        return ("staging", disks.job, needed)
+    needed = RESERVE_BYTES + archive_bytes * UNPACK_FACTOR
+    if disks.docker < needed:
+        return ("docker", disks.docker, needed)
+    return None
 
 
 def room_refusal(disks, archive_bytes, copies, what):
@@ -207,31 +236,28 @@ def room_refusal(disks, archive_bytes, copies, what):
     :param str what: the archive, as the message names it
     :rtype: str
     """
-    archive_bytes = int(archive_bytes)
-    if disks.shared:
-        needed = room_needed(archive_bytes, copies)
-        if disks.free() < needed:
-            return no_room_message(disks.free(), needed, what)
+    short = room_shortfall(disks, archive_bytes, copies)
+    if short is None:
         return ""
-    needed = archive_bytes * copies
-    if disks.job < needed:
+    where, free, needed = short
+    if where == "disk":
+        return no_room_message(free, needed, what)
+    if where == "staging":
         return (
             f"Not enough free disk on the server for {what} in "
-            f"{STAGING_ROOT}: {in_gib(disks.job)} free, {in_gib(needed)} "
-            f"needed for its copy. Nothing was restored: free space in "
-            f"{STAGING_ROOT} on the server, or restore a smaller archive."
+            f"{STAGING_ROOT}: {in_gib(free)} free, {in_gib(needed)} "
+            f"needed (its copy, and {in_gib(RESERVE_BYTES)} kept free "
+            f"there). Nothing was restored: free space in {STAGING_ROOT} "
+            "on the server, or restore a smaller archive."
         )
-    needed = RESERVE_BYTES + archive_bytes * UNPACK_FACTOR
-    if disks.docker < needed:
-        return (
-            f"Not enough free disk on the server for {what} on the disk "
-            f"its instances are kept on: {in_gib(disks.docker)} free, "
-            f"{in_gib(needed)} needed ({UNPACK_FACTOR} times its size to "
-            f"unpack it, and {in_gib(RESERVE_BYTES)} the server's other "
-            "instances keep). Nothing was restored: free space on the "
-            "server, or restore a smaller archive."
-        )
-    return ""
+    return (
+        f"Not enough free disk on the server for {what} on the disk "
+        f"its instances are kept on: {in_gib(free)} free, "
+        f"{in_gib(needed)} needed ({UNPACK_FACTOR} times its size to "
+        f"unpack it, and {in_gib(RESERVE_BYTES)} the server's other "
+        "instances keep). Nothing was restored: free space on the "
+        "server, or restore a smaller archive."
+    )
 
 
 def described(disks):

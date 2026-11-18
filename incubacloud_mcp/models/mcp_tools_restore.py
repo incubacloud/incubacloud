@@ -147,12 +147,15 @@ TOOLS = (
         "grant_restore_upload",
         "Open a one-use door to upload an archive for restore_from_upload: the "
         "server accepts your own ed25519 public key (ssh-keygen -t ed25519) for "
-        "rsync into one directory only, write only, until it expires (12 hours) "
-        "or a restore takes what arrived. Never give the private key. Answers the "
-        "upload command, and the job that installs the key: the command works once "
-        "that job has started. That job measures the largest archive the "
-        "server's free disk can restore through the door; its log (get_job) and "
-        "check_restore_upload say it, and a larger file stops at that size.",
+        "rsync of one file, restore.zip, written in place (rsync -P --inplace, "
+        "no -a or -r: anything else is refused), write only, until it expires "
+        "(12 hours) or a restore takes what arrived. Never give the private key. "
+        "Answers the upload command, and the job that installs the key: the "
+        "command works once that job has started. That job measures the largest "
+        "archive the door takes, its share of the server's free disk (what it can "
+        "restore, less what the server's other open doors may still receive); its log "
+        "(get_job) and check_restore_upload say it, and a larger file stops at "
+        "that size.",
         _DEVELOPER,
         obj(
             {

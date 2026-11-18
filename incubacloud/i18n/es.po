@@ -21809,13 +21809,16 @@ msgstr ""
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_restore_upload_grant__upload_limit_bytes
 msgid ""
-"The largest archive the host's disks could restore when the door opened: no "
-"file sent through it is larger, and a door whose directory holds more is "
-"closed."
+"The door's share of its host's free disk when it opened: the largest archive"
+" the disks could restore, less what the other open doors of the host may "
+"still receive. The one file the door takes is no larger, and a door whose "
+"directory holds more is closed."
 msgstr ""
-"El mayor archivo que los discos del servidor podían restaurar cuando se "
-"abrió la puerta: ningún fichero enviado por ella es mayor, y se cierra una "
-"puerta cuyo directorio contiene más."
+"La parte del disco libre de su servidor que le tocó a la puerta al abrirse: "
+"el mayor archivo que los discos podían restaurar, menos lo que las demás "
+"puertas abiertas del servidor aún pueden recibir. El único archivo que "
+"admite la puerta no es mayor, y se cierra una puerta cuyo directorio "
+"contiene más."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__upload_limit_bytes
@@ -29394,6 +29397,8 @@ msgstr "Guarde para generar la clave y luego añádala al servidor."
 
 #. module: incubacloud
 #. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
 msgid ""
 "The upload door did not open: the log of the job that installs its key says"
@@ -29406,12 +29411,15 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
 msgid ""
-"This door takes an archive of at most %(size)s GiB: the most the server's "
-"free disk can restore now. A larger file stops at that size."
+"This door takes one file, restore.zip, of at most %(size)s GiB: its share of"
+" the server's free disk now, what it can restore less what the server's "
+"other open doors may still receive. A larger file stops at that size, and a "
+"second file is refused."
 msgstr ""
-"Esta puerta acepta un archivo de %(size)s GiB como máximo: lo más que el "
-"disco libre del servidor puede restaurar ahora. Un archivo mayor se detiene "
-"en ese tamaño."
+"Esta puerta admite un solo archivo, restore.zip, de %(size)s GiB como "
+"máximo: su parte del disco libre del servidor ahora, lo que puede restaurar "
+"menos lo que las demás puertas abiertas del servidor aún pueden recibir. Un "
+"archivo mayor se detiene en ese tamaño, y se rechaza un segundo archivo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -29434,3 +29442,202 @@ msgstr ""
 "Por qué no se abrió la puerta, o por qué lo que llegó por ella no se puede "
 "restaurar, según el último trabajo sobre ella: lo que muestra el diálogo "
 "Importar. Vacío cuando no hay nada que decir."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"Not enough free disk on the server for %(what)s in %(dir)s: %(free)s free, "
+"%(needed)s needed (its copy, and %(reserve)s kept free there). Free space on"
+" the server, or restore a smaller archive."
+msgstr ""
+"No hay suficiente disco libre en el servidor para %(what)s en %(dir)s: "
+"%(free)s libres, %(needed)s necesarios (su copia y %(reserve)s que se dejan "
+"libres ahí). Libere espacio en el servidor o restaure un archivo más "
+"pequeño."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"Not enough free disk on the server for %(what)s on the disk its instances "
+"are kept on: %(free)s free, %(needed)s needed (twice its size to unpack it, "
+"and %(reserve)s the server's other instances keep). Free space on the "
+"server, or restore a smaller archive."
+msgstr ""
+"No hay suficiente disco libre en el servidor para %(what)s en el disco donde"
+" se guardan sus instancias: %(free)s libres, %(needed)s necesarios (el doble"
+" de su tamaño para descomprimirlo y %(reserve)s que conservan las demás "
+"instancias del servidor). Libere espacio en el servidor o restaure un "
+"archivo más pequeño."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"Not enough free disk on the server for %(what)s: %(free)s free, %(needed)s "
+"needed (the archive, twice its size to unpack it, and %(reserve)s the "
+"server's other instances keep). Free space on the server, or restore a "
+"smaller archive."
+msgstr ""
+"No hay suficiente disco libre en el servidor para %(what)s: %(free)s libres,"
+" %(needed)s necesarios (el archivo, el doble de su tamaño para "
+"descomprimirlo y %(reserve)s que conservan las demás instancias del "
+"servidor). Libere espacio en el servidor o restaure un archivo más pequeño."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"The free disk on the server could not be measured: no upload door was "
+"opened. Ask for the upload key again."
+msgstr ""
+"No se pudo medir el disco libre del servidor: no se abrió ninguna puerta de "
+"subida. Vuelva a pedir la clave de subida."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"Not enough free disk on the server for another upload door: its %(doors)s "
+"other open door(s) may still receive %(pending)s, and what is left is not "
+"enough. Close one, or wait until it closes, then ask for the upload key "
+"again."
+msgstr ""
+"No hay suficiente disco libre en el servidor para otra puerta de subida: sus"
+" otras %(doors)s puerta(s) abierta(s) aún pueden recibir %(pending)s, y lo "
+"que queda no basta. Cierre una o espere a que se cierre, y vuelva a pedir la"
+" clave de subida."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid "an upload"
+msgstr "una subida"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"Not enough free disk on the server for an upload: no upload door was opened."
+msgstr ""
+"No hay suficiente disco libre en el servidor para una subida: no se abrió "
+"ninguna puerta de subida."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"%(root)s belongs to %(owner)s, not to %(account)s, the account this panel "
+"connects as, or is not a plain directory: remove it as root (sudo rm -rf "
+"%(root)s) and ask for the upload key again."
+msgstr ""
+"%(root)s pertenece a %(owner)s, no a %(account)s, la cuenta con la que se "
+"conecta este panel, o no es un directorio normal: elimínelo como root (sudo "
+"rm -rf %(root)s) y vuelva a pedir la clave de subida."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"The upload door's command could not be installed in %(root)s: the log of the"
+" job that installs its key says why."
+msgstr ""
+"No se pudo instalar el comando de la puerta de subida en %(root)s: el "
+"registro del trabajo que instala su clave dice por qué."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"This server has an rrsync older than rsync 3.2.4, through which an upload "
+"could write outside its directory: no upload door was opened. Update rsync "
+"to 3.2.4 or later, or restore from a link."
+msgstr ""
+"Este servidor tiene un rrsync anterior a rsync 3.2.4, con el que una subida "
+"podría escribir fuera de su directorio: no se abrió ninguna puerta de "
+"subida. Actualice rsync a la versión 3.2.4 o posterior, o restaure desde un "
+"enlace."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"This server has no rrsync, so a restricted upload key cannot be installed. "
+"Install rsync 3.2.4 or later, or restore from a link."
+msgstr ""
+"Este servidor no tiene rrsync, así que no se puede instalar una clave de "
+"subida restringida. Instale rsync 3.2.4 o posterior, o restaure desde un "
+"enlace."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"The rsync package of this server ships an rrsync that would do, but the "
+"account this panel connects as cannot install it: it cannot run sudo without"
+" a password. Install it as root at %(path)s (mode 755), or let this account "
+"run sudo without a password, then ask for the upload key again."
+msgstr ""
+"El paquete rsync de este servidor trae un rrsync que serviría, pero la "
+"cuenta con la que se conecta este panel no puede instalarlo: no puede usar "
+"sudo sin contraseña. Instálelo como root en %(path)s (modo 755), o permita "
+"que esta cuenta use sudo sin contraseña, y vuelva a pedir la clave de "
+"subida."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"The rrsync of this server could not be installed at %(path)s: the log of the"
+" job that installs its key says why."
+msgstr ""
+"No se pudo instalar el rrsync de este servidor en %(path)s: el registro del "
+"trabajo que instala su clave dice por qué."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"%(count)s file(s) arrived with a name that cannot be restored: only letters,"
+" digits, dots, dashes and underscores, starting with a letter or a digit. "
+"Send the archive again as restore.zip."
+msgstr ""
+"Llegaron %(count)s archivo(s) con un nombre que no se puede restaurar: solo "
+"letras, dígitos, puntos, guiones y guiones bajos, empezando por una letra o "
+"un dígito. Vuelva a enviar el archivo como restore.zip."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"%(name)s stopped at %(size)s, the most this door takes (%(limit)s, its share"
+" of the server's free disk when it opened): the archive is larger, and what "
+"arrived cannot be restored. Free space on the server and open another door, "
+"or restore a smaller archive."
+msgstr ""
+"%(name)s se detuvo en %(size)s, lo más que admite esta puerta (%(limit)s, su"
+" parte del disco libre del servidor cuando se abrió): el archivo es mayor y "
+"lo que llegó no se puede restaurar. Libere espacio en el servidor y abra "
+"otra puerta, o restaure un archivo más pequeño."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/restore_upload_key_executors.py:0
+msgid ""
+"%(name)s arrived (%(size)s bytes), but the free disk on the server could not"
+" be measured: it cannot be restored. Check again."
+msgstr ""
+"%(name)s llegó (%(size)s bytes), pero no se pudo medir el disco libre del "
+"servidor: no se puede restaurar. Vuelva a comprobarlo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_restore_upload_grant.py:0
+msgid ""
+"The panel was updated while this upload door was open, and the update closed"
+" it: ask for another upload key and send the archive again."
+msgstr ""
+"El panel se actualizó mientras esta puerta de subida estaba abierta y la "
+"actualización la cerró: pida otra clave de subida y vuelva a enviar el "
+"archivo."

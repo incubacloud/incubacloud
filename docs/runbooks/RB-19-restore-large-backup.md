@@ -45,7 +45,7 @@ pair, installs the public half on the host and shows the private half
 once. The line added to the host's `authorized_keys` is:
 
 ```
-command="exec /bin/bash -c 'ulimit -f <KiB> && exec /usr/bin/rrsync -wo -munge -no-del /var/tmp/incubacloud-restore/<token>'",restrict,expiry-time="<stamp>" ssh-ed25519 AAAA… ic-restore-<token>
+command="exec /bin/bash -c 'ulimit -f <KiB> && exec /bin/bash /var/tmp/incubacloud-restore/.door.sh receive /usr/bin/rrsync -wo -munge -no-del /var/tmp/incubacloud-restore/<token>'",restrict,expiry-time="<stamp>" ssh-ed25519 AAAA… ic-restore-<token>
 ```
 
 The directory is in `/var/tmp`, not `/tmp`: Debian 13 and Ubuntu 26.04
@@ -55,18 +55,50 @@ of that could be sent, whatever the instances' disk had free. `/var/tmp`
 is on disk, and on the usual server the same disk Docker keeps the
 instances on. Every restore lands its archive there: the doors, the path
 `restore_from_host_file` reads, and the restore's own working directory
-(`restore_space.STAGING_ROOT`).
+(`restore_space.STAGING_ROOT`). So do the downloads that become a
+restore (clone to staging, refresh from production, move: the dump, the
+archive and its handoff), the other backup downloads and the export,
+each the size of the instance's data. A download measures what it is
+about to write first, and refuses, writing nothing, when that and its
+copies would leave less than the 5 GiB reserve free
+(`backup_download.sh`, `IC_RESERVE_BYTES`).
+
+A door takes **one file**, `restore.zip`, sent as the dialog says:
+
+```
+rsync -P --inplace -e "ssh -i ic-upload-key" <your-backup.zip> <account>@<server>:restore.zip
+```
+
+`/var/tmp/incubacloud-restore/.door.sh` (`scripts/restore_door.sh`, put
+there by the job that installs a key) reads the command the client sent
+and passes on to `rrsync` only `rsync --server`, options that send one
+file and write nothing beside it, `--inplace` (or `--append`), and
+`. restore.zip`; it creates `restore.zip` empty first, so rsync itself
+refuses a second file. `-a`, `-r`, `-d`, `-R`, `-b`, `-s`, another name,
+or no `--inplace` are refused before anything is written, with the
+command to use. So `ulimit -f` bounds all the door holds, not each file
+of it: a key that took any number of files, each up to the limit, could
+fill the disk in the five minutes between two watches (18-nov-2026).
 
 The job that installs the key measures that disk and Docker's, and sets
-`<KiB>` to the largest archive they can restore with the copy the
-restore makes of it (`restore_space.largest_archive`). The Import dialog
-shows it once that job has run, and so does `check_restore_upload`. A
-larger file stops at that size (rsync says *File too large*), and
-*Check what arrived* says the archive is larger than the door takes
-instead of offering what arrived.
+`<KiB>` to the door's share of them: the largest archive they can
+restore with the copy the restore makes of it
+(`restore_space.largest_archive`), less what the server's other open
+doors may still receive (their limit, less what they already hold).
+Two doors of one server opening at once are measured one after the
+other, under a lock of the server's doors, so they never count the same
+free disk twice. The Import dialog shows the limit once that job has
+run, and so does `check_restore_upload`. A larger file stops at that
+size (rsync says *File too large*), and *Check what arrived* says the
+archive is larger than the door takes instead of offering what arrived.
+Where Docker keeps the instances on a disk of its own, each disk keeps
+the 5 GiB reserve: the one the archive lands on is then the server's
+root disk.
 
 Every part is load-bearing:
 
+- `.door.sh receive` — one file, `restore.zip`, in place, nothing
+  beside it (above).
 - `rrsync -wo -munge -no-del <dir>` — rsync's own restricted wrapper,
   **write only**, confined to that directory. No shell, no reads,
   nothing else runs. `-munge` stores a link it receives so that it
@@ -132,7 +164,9 @@ and a restore's working directory its worker left: only the panel's
 account's own, and only under a root that is its own. `/var/tmp` survives
 a reboot, where a tmpfs `/tmp` did not: the sweep is what empties it. It
 also sweeps `/tmp/incubacloud-restore`, where releases before 1.0.238 put
-the doors.
+the doors, and the handoffs they left in `/tmp`. The update to 1.0.238
+closes every door open then, whose key took any number of files and wrote
+to `/tmp`; the Import dialog says to ask for another key.
 
 To check what is outstanding:
 

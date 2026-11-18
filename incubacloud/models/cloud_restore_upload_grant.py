@@ -10,20 +10,24 @@ So the platform lends its access instead of sharing it. It installs a key
 the caller holds the private half of, restricted to one directory, one
 command and a deadline:
 
-* ``command="rrsync -wo -munge -no-del <dir>"`` — rsync's own restricted
-  wrapper, write only, confined to that directory. No shell, no reads,
-  nothing else runs; a link it receives is stored munged, so it leads
-  nowhere, and nothing is deleted. Under a file size limit
-  (``ulimit -f``): no file it writes is larger than the largest archive
-  the host's disks could restore when the door opened
-  (``upload_limit_bytes``, ``restore_space``).
+* ``command="… rrsync -wo -munge -no-del <dir>"`` — rsync's own
+  restricted wrapper, write only, confined to that directory. No shell, no
+  reads, nothing else runs; a link it receives is stored munged, so it
+  leads nowhere, and nothing is deleted. Behind the door's own check
+  (``scripts/restore_door.sh``): one file, ``restore.zip``, written in
+  place, and nothing beside it. Under a file size limit (``ulimit -f``):
+  that file, and so all the door holds, is no larger than the door's
+  share of the host's free disk when it opened (``upload_limit_bytes``,
+  ``restore_space``): what the disks could restore, less what the other
+  open doors of the host may still receive (18-nov-2026).
 * ``restrict`` — no pty, no port or agent forwarding, no user rc.
 * ``expiry-time`` — OpenSSH stops accepting the key by itself, whether or
   not anything remembers to remove it.
 
 Four things revoke it: the restore that consumes the archive, the daily
 sweep, the operator, and the watch of the open doors, every few minutes
-(``_watch_doors``): a door whose directory holds more than its limit, or
+(``_watch_doors``), a second line behind the key's own bound: a door
+whose directory holds more than its limit, or
 that writes on the instances' disk once it is down to the reserve, is
 closed there and then — every door of a host shares its disk with the
 host's other instances, whoever's they are. The first closes the key and keeps the
@@ -75,6 +79,14 @@ SAFE_UPLOAD_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,254}")
 #: if it cannot — an unrestricted key is not a fallback.
 RRSYNC = "/usr/bin/rrsync"
 
+#: The door's own check, run before the wrapper (``scripts/restore_door.sh``):
+#: in the doors' root, which only the account the panel connects as can
+#: reach, put there by the job that opens a door.
+DOOR_COMMAND = f"{UPLOAD_ROOT}/.door.sh"
+
+#: The one file a door takes (``restore_door.sh``).
+DOOR_FILENAME = "restore.zip"
+
 #: The shape of what ``_open`` writes, checked again before a job puts
 #: any of it in a command: a token names a directory and a key line, the
 #: public key is written into ``authorized_keys``.
@@ -99,12 +111,19 @@ USED_GRANT_DAYS = 3
 #: after the other.
 _DOOR_LOCK_NAMESPACE = 0x0C10D10D
 
+#: The advisory lock the job that measures a door's share of its host's
+#: disk holds while it measures and records it: two doors of one host,
+#: of two instances, are measured one after the other, each counting
+#: what the other may still receive (``GrantRestoreUploadKeyExecutor``).
+HOST_DOORS_LOCK_NAMESPACE = 0x0C10D10E
 
-def forced_command(directory, limit_bytes, wrapper=RRSYNC):
+
+def forced_command(directory, limit_bytes, wrapper=RRSYNC, door=DOOR_COMMAND):
     """Return the command a door's key is forced to run.
 
-    *wrapper* confined to *directory*, under a file size limit of
-    *limit_bytes*. sshd runs it with the account's login shell, whose
+    *door*, which takes one file and nothing beside it, then *wrapper*,
+    confined to *directory*, under a file size limit of *limit_bytes*:
+    the most the door holds. sshd runs it with the account's login shell, whose
     ``ulimit -f`` counts in blocks of 512 bytes (``sh``, ``dash``) or of
     1024 (``bash``): the limit is set by ``/bin/bash`` itself, named here,
     in blocks of 1024 — and were it in POSIX mode, in blocks of 512, half
@@ -114,14 +133,16 @@ def forced_command(directory, limit_bytes, wrapper=RRSYNC):
     own, ``/var/tmp/incubacloud-restore/<16 hex digits>``.
 
     :param str directory: the door's directory
-    :param int limit_bytes: the largest file it may write
+    :param int limit_bytes: the most the door may hold
     :param str wrapper: the restricted rsync
+    :param str door: the door's check (``scripts/restore_door.sh``)
     :rtype: str
     """
     blocks = max(1, int(limit_bytes) // 1024)
     return (
         f"exec /bin/bash -c 'ulimit -f {blocks}"
-        f" && exec {wrapper} -wo -munge -no-del {directory}'"
+        f" && exec /bin/bash {door} receive"
+        f" {wrapper} -wo -munge -no-del {directory}'"
     )
 
 
@@ -227,9 +248,11 @@ class CloudRestoreUploadGrant(models.Model):
     upload_limit_bytes = fields.Float(
         digits=(20, 0),
         readonly=True,
-        help="The largest archive the host's disks could restore when the "
-             "door opened: no file sent through it is larger, and a door "
-             "whose directory holds more is closed.",
+        help="The door's share of its host's free disk when it opened: the "
+             "largest archive the disks could restore, less what the other "
+             "open doors of the host may still receive. The one file the "
+             "door takes is no larger, and a door whose directory holds "
+             "more is closed.",
     )
     received_filename = fields.Char(readonly=True)
     # An archive past 2 GiB is common: 64 bits (``BigInteger``).
@@ -258,6 +281,19 @@ class CloudRestoreUploadGrant(models.Model):
         """Return where an uploaded archive lands on the host."""
         self.ensure_one()
         return f"{self._directory()}/{filename}"
+
+    def _in_lang(self):
+        """Return an environment that speaks the language of who opened it.
+
+        What the jobs on a door write for the Import dialog to show
+        (``notice``) is written in that person's language, as the dialog
+        would say it.
+
+        :rtype: odoo.api.Environment
+        """
+        self.ensure_one()
+        lang = self.sudo().user_id.lang or "en_US"
+        return self.env(context=dict(self.env.context, lang=lang))
 
     def _key_comment(self):
         """Return the marker that identifies this grant's key line.
@@ -318,10 +354,10 @@ class CloudRestoreUploadGrant(models.Model):
         in the rrsync of rsync 3.2.4 and later, which is why the key is
         installed only where that one is (``_ensure_rrsync``).
 
-        And no file it writes is larger than ``upload_limit_bytes``
-        (``forced_command``): each door of a host fills the disk the
-        host's instances share. A door whose limit was not measured has
-        no line.
+        And the door takes one file, ``restore.zip``, no larger than
+        ``upload_limit_bytes`` (``forced_command``, ``restore_door.sh``):
+        each door of a host fills the disk the host's instances share. A
+        door whose limit was not measured has no line.
 
         :raise ValueError: when the door has no limit
         """
@@ -621,6 +657,30 @@ class CloudRestoreUploadGrant(models.Model):
                     host.name, exc,
                 )
         return jobs
+
+    @api.model
+    def _close_for_update(self):
+        """Close every open door, saying why: the update that changed them.
+
+        A door opened before 1.0.238 writes to ``/tmp`` under a key that
+        takes any number of files, each up to its limit; the restore
+        after the update reads only ``/var/tmp`` and the door's one file.
+        Such a door is closed as its revocation does, and the Import
+        dialog tells the person to ask for another key (end-migration of
+        1.0.238). What it held in ``/tmp`` goes with the day's sweep
+        (``upload_dir_sweep``).
+
+        :return: the doors closed
+        """
+        doors = self.sudo().search([("state", "=", "granted")])
+        for door in doors:
+            door._revoke()
+            door.notice = door._in_lang()._(
+                "The panel was updated while this upload door was open, and "
+                "the update closed it: ask for another upload key and send "
+                "the archive again."
+            )
+        return doors
 
     @api.model
     def _gc_grants(self):

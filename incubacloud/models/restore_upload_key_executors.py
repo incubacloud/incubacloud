@@ -14,16 +14,21 @@ import shlex
 
 from ..restore_space import (
     RESERVE_BYTES,
+    STAGING_ROOT,
     described,
     disks_command,
     in_gib,
     largest_archive,
     parse_disks,
     room_refusal,
+    room_shortfall,
 )
+from ._concurrency import read_committed_cursor
 from .abstract_executor import AbstractSSHExecutor
 from .cloud_restore_upload_grant import (
+    DOOR_COMMAND,
     GRANT_TOKEN,
+    HOST_DOORS_LOCK_NAMESPACE,
     RRSYNC,
     SAFE_UPLOAD_NAME,
     UPLOAD_ROOT,
@@ -126,23 +131,122 @@ _STRAY_LINES = (
 #: A line of the upload's listing: size, SHA-256 and name.
 _LISTED = re.compile(r"(\d+) ([0-9a-f]{64}) (\S+)")
 
+#: A line of what a door holds (``doors_measure_command``):
+#: ``door <token> <bytes>``.
+_DOOR_LINE = re.compile(r"door ([0-9a-f]{16})(?: (\d+))?")
+
+#: What the step that refuses a root of another account prints
+#: (``GrantRestoreUploadKeyExecutor.get_commands``).
+_FOREIGN_ROOT = re.compile(r"(\S+) belongs to (\S+), not to (\S+), the account")
+
+
+def doors_measure_command(doors):
+    """Return the shell that prints the disks of the doors, then what each holds.
+
+    The disks as ``restore_space.disks_command`` prints them, for the
+    doors' root, then one line ``door <token> <bytes>`` a door, its bytes
+    left out when its directory cannot be read. Without doors, the disks
+    alone.
+
+    :param doors: ``(token, directory)`` of each door to measure
+    :rtype: str
+    """
+    disks = disks_command(posixpath.dirname(UPLOAD_ROOT))
+    if not doors:
+        return disks
+    sizes = "".join(
+        f"; printf 'door %s %s\\n' {token}"
+        f' "$(du -sb -- {shlex.quote(directory)} 2>/dev/null'
+        " | cut -f1)\""
+        for token, directory in doors
+    )
+    return f"{{ {disks}; }} 2>/dev/null{sizes}"
+
+
+def parse_doors_measure(stdout):
+    """Return what :func:`doors_measure_command` printed.
+
+    :param str stdout: what it printed
+    :return: ``(disks, held)``: the ``restore_space.Disks``, or None when
+        they could not be read, and ``{token: bytes}`` of each door
+        measured, 0 for one whose directory could not be read
+    :rtype: tuple
+    """
+    lines = (stdout or "").splitlines()
+    held = {}
+    for line in lines:
+        found = _DOOR_LINE.fullmatch(line.strip())
+        if found:
+            held[found.group(1)] = int(found.group(2) or 0)
+    disks = parse_disks("\n".join(
+        line for line in lines if not line.startswith("door ")
+    ))
+    return disks, held
+
+
+def room_notice(env, short, what):
+    """Return, in *env*'s language, why *what* finds no room on the host.
+
+    :param env: an environment in the language of the door's owner
+        (``cloud.restore.upload.grant._in_lang``)
+    :param tuple short: what ``restore_space.room_shortfall`` answered
+    :param str what: the archive, as the notice names it
+    :rtype: str
+    """
+    where, free, needed = short
+    values = {
+        "what": what, "free": in_gib(free), "needed": in_gib(needed),
+        "reserve": in_gib(RESERVE_BYTES), "dir": STAGING_ROOT,
+    }
+    if where == "staging":
+        return env._(
+            "Not enough free disk on the server for %(what)s in %(dir)s: "
+            "%(free)s free, %(needed)s needed (its copy, and %(reserve)s kept "
+            "free there). Free space on the server, or restore a smaller "
+            "archive.",
+            **values,
+        )
+    if where == "docker":
+        return env._(
+            "Not enough free disk on the server for %(what)s on the disk its "
+            "instances are kept on: %(free)s free, %(needed)s needed (twice "
+            "its size to unpack it, and %(reserve)s the server's other "
+            "instances keep). Free space on the server, or restore a smaller "
+            "archive.",
+            **values,
+        )
+    return env._(
+        "Not enough free disk on the server for %(what)s: %(free)s free, "
+        "%(needed)s needed (the archive, twice its size to unpack it, and "
+        "%(reserve)s the server's other instances keep). Free space on the "
+        "server, or restore a smaller archive.",
+        **values,
+    )
+
 
 def authorized_keys_path():
     """Return the shell expression naming the acting user's key file."""
     return "$HOME/.ssh/authorized_keys"
 
 
-def door_limit_message(limit, disks):
+def door_limit_message(limit, disks, pending=0, doors=0):
     """Return what the log of the job that opens a door says of its limit.
 
-    :param int limit: the largest file the door takes, in bytes
+    :param int limit: the most the door takes, in bytes
     :param restore_space.Disks disks: what the host had free
+    :param int pending: what the host's other open doors may still receive
+    :param int doors: how many those are
     :rtype: str
     """
+    others = (
+        f", less {in_gib(pending)} its {doors} other open door(s) may still "
+        "receive" if doors else ""
+    )
     return (
         f"An upload through this door may be at most {in_gib(limit)} "
-        f"({described(disks)}): the largest archive the server's free disk "
-        "can restore now. A larger file stops at that size."
+        f"({described(disks)}{others}): the largest archive the server's "
+        "free disk can restore now. The door takes one file, restore.zip, "
+        "sent with rsync --inplace; a larger file stops at that size."
     )
 
 
@@ -176,44 +280,147 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
             self.job.payload.get("grant_id"),
         )
 
-    #: Why the door cannot open, when the disks leave no room for it.
+    #: Why the door cannot open, when the disks leave no room for it: in
+    #: English for the job's log, and in the language of the door's owner
+    #: for the Import dialog (``notice``).
     _refusal = ""
+    _refusal_notice = ""
+
+    #: The last line each step wrote on stderr, for the notice of a step
+    #: that stopped the run (``on_failure``).
+    _stderr_of = None
+
+    async def on_stderr(self, line):
+        """Log *line*, and keep it as the last its step said.
+
+        :param str line: a line the running step wrote on stderr
+        """
+        await super().on_stderr(line)
+        if line.strip():
+            if self._stderr_of is None:
+                self._stderr_of = {}
+            self._stderr_of[getattr(self, "_running_step", None)] = line.strip()
+
+    def _refuse(self, english, notice):
+        """Refuse the door: the first step says *english*, the dialog *notice*.
+
+        :param str english: for the job's log
+        :param str notice: in the language of the door's owner
+        """
+        self._refusal = english
+        self._refusal_notice = notice
 
     async def before_execute(self, transport):
-        """Measure the host's disks, and set the door's size limit from them.
+        """Measure the host's disks, and set the door's share of them.
 
         The largest archive the disks could restore, with the copy the
-        restore makes of it out of the door (``restore_space``): what no
-        file sent through the door may pass, and what the watch of the
-        doors holds its directory to (``_watch_doors``). Not raised: a
-        door the disks leave no room for is refused by the first step,
-        and ``on_failure`` closes it.
+        restore makes of it out of the door (``restore_space``), less what
+        the host's other open doors may still receive, each up to its own
+        limit: what the one file the door takes may not pass
+        (``restore_door.sh``), and what the watch of the doors holds its
+        directory to (``_watch_doors``). Under a lock of the host's doors,
+        held until the limit is recorded: two doors of the host opening
+        at once are measured one after the other, so they cannot both
+        count the same free disk. Not raised: a door the disks leave no
+        room for is refused by the first step, and ``on_failure`` closes
+        it.
 
         :param transport: the job's open transport
         """
         grant = self._grant()
         if not grant.exists():
             return
-        answer = await transport.run(
-            disks_command(posixpath.dirname(UPLOAD_ROOT)),
+        speaks = grant._in_lang()
+        host_id = grant.host_id.id
+        with read_committed_cursor(self.env.registry) as cr:
+            cr.execute(
+                "SELECT pg_advisory_xact_lock(%s, %s)",
+                (HOST_DOORS_LOCK_NAMESPACE, host_id),
+            )
+            # Read on this cursor: a door another job recorded a moment
+            # ago is not in this job's snapshot.
+            cr.execute(
+                "SELECT token, upload_limit_bytes"
+                " FROM cloud_restore_upload_grant"
+                " WHERE host_id = %s AND id != %s AND state = 'granted'"
+                " AND expires_at > now() AT TIME ZONE 'UTC'"
+                " AND upload_limit_bytes > 0",
+                (host_id, grant.id),
+            )
+            others = [
+                (token, int(limit)) for token, limit in cr.fetchall()
+                if GRANT_TOKEN.fullmatch(token or "")
+            ]
+            answer = await transport.run(doors_measure_command([
+                (token, f"{UPLOAD_ROOT}/{token}") for token, _limit in others
+            ]))
+            disks, held = parse_doors_measure(answer.stdout)
+            if disks is None:
+                self._refuse(
+                    "The free disk on the server could not be measured: no "
+                    "upload door was opened.",
+                    speaks._(
+                        "The free disk on the server could not be measured: "
+                        "no upload door was opened. Ask for the upload key "
+                        "again."
+                    ),
+                )
+                return
+            pending = sum(
+                max(0, limit - held.get(token, 0)) for token, limit in others
+            )
+            room = disks._replace(
+                job=max(0, disks.job - pending),
+                docker=max(0, disks.docker - pending)
+                if disks.shared else disks.docker,
+            )
+            limit = largest_archive(room, on_job_disk=2)
+            if not limit:
+                self._refuse_no_room(speaks, disks, room, pending, len(others))
+                return
+            self._persist(grant.sudo(), {"upload_limit_bytes": limit})
+        self._sys(door_limit_message(limit, disks, pending, len(others)))
+
+    def _refuse_no_room(self, speaks, disks, room, pending, doors):
+        """Refuse a door the disks, less the other doors' shares, leave no room for.
+
+        The other doors are named only when without them there would be
+        room: a disk too full for any door says so.
+
+        :param speaks: an environment in the language of the door's owner
+        :param restore_space.Disks disks: what the disks have free
+        :param restore_space.Disks room: what the disks have free, less
+            what the other open doors may still receive
+        :param int pending: that much
+        :param int doors: how many doors those are
+        """
+        if doors and largest_archive(disks, on_job_disk=2):
+            self._refuse(
+                f"Not enough free disk on the server for another upload "
+                f"door: its {doors} other open door(s) may still receive "
+                f"{in_gib(pending)}, and what is left is not enough. Close "
+                "one, or wait until it closes, then ask again.",
+                speaks._(
+                    "Not enough free disk on the server for another upload "
+                    "door: its %(doors)s other open door(s) may still receive "
+                    "%(pending)s, and what is left is not enough. Close one, "
+                    "or wait until it closes, then ask for the upload key "
+                    "again.",
+                    doors=doors, pending=in_gib(pending),
+                ),
+            )
+            return
+        short = room_shortfall(room, 1, 1)
+        self._refuse(
+            room_refusal(room, 1, 1, "an upload")
+            or "Not enough free disk on the server for an upload: no upload "
+               "door was opened.",
+            room_notice(speaks, short, speaks._("an upload")) if short
+            else speaks._(
+                "Not enough free disk on the server for an upload: no upload "
+                "door was opened."
+            ),
         )
-        disks = parse_disks(answer.stdout) if answer.exit_status == 0 else None
-        if disks is None:
-            self._refusal = (
-                "The free disk on the server could not be measured: no "
-                "upload door was opened."
-            )
-            return
-        limit = largest_archive(disks, on_job_disk=2)
-        if not limit:
-            self._refusal = (
-                room_refusal(disks, 1, 1, "an upload")
-                or "Not enough free disk on the server for an upload: no "
-                   "upload door was opened."
-            )
-            return
-        grant.sudo().upload_limit_bytes = limit
-        self._sys(door_limit_message(limit, disks))
 
     def get_commands(self):
         grant = self._grant()
@@ -260,6 +467,15 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
                 ' (sudo rm -rf $root) and ask for the upload key again" >&2;'
                 ' exit 1; }',
                 # Neither step may fail and the key still be installed.
+                {"stop_on_failure": True},
+            ),
+            (
+                # In the root just checked: the check that holds the door
+                # to one file, which the key runs before the wrapper
+                # (``forced_command``). Replaced in one rename, so a door
+                # already open keeps the copy it runs.
+                "Install the door's command",
+                self.run_script("restore_door.sh", ["install", DOOR_COMMAND]),
                 {"stop_on_failure": True},
             ),
             (
@@ -329,11 +545,82 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
         if grant.exists() and "Install the one-use key" not in results:
             grant.sudo().write({
                 "state": "revoked",
-                "notice": self._refusal or (
-                    "The upload door did not open: the log of the job that "
-                    "installs its key says why."
-                ),
+                "notice": self._failure_notice(grant, results),
             })
+
+    def _failure_notice(self, grant, results):
+        """Return why the door did not open, as the step that stopped it said.
+
+        In the language of the door's owner, for the Import dialog: the
+        steps' own words where the panel knows them, the line the step
+        wrote last where it does not, and the job's log otherwise. No
+        step prints a secret: the key's line is the last step's.
+
+        :param grant: the ``cloud.restore.upload.grant``
+        :param dict results: the steps that ran, by label
+        :rtype: str
+        """
+        speaks = grant._in_lang()
+        if self._refusal_notice:
+            return self._refusal_notice
+        failed = next((
+            label for label, data in reversed(list(results.items()))
+            if data.get("exit_status", 1) != 0
+        ), None)
+        said = (self._stderr_of or {}).get(failed, "")
+        if failed == "Prepare the upload directory":
+            found = _FOREIGN_ROOT.search(said)
+            if found:
+                return speaks._(
+                    "%(root)s belongs to %(owner)s, not to %(account)s, the "
+                    "account this panel connects as, or is not a plain "
+                    "directory: remove it as root (sudo rm -rf %(root)s) and "
+                    "ask for the upload key again.",
+                    root=found.group(1), owner=found.group(2),
+                    account=found.group(3),
+                )
+        elif failed == "Install the door's command":
+            return speaks._(
+                "The upload door's command could not be installed in "
+                "%(root)s: the log of the job that installs its key says why.",
+                root=UPLOAD_ROOT,
+            )
+        elif failed == "Resolve the restricted rsync wrapper":
+            printed = (results[failed].get("stdout") or "").split()
+            known = {
+                "OLD": speaks._(
+                    "This server has an rrsync older than rsync 3.2.4, through "
+                    "which an upload could write outside its directory: no "
+                    "upload door was opened. Update rsync to 3.2.4 or later, "
+                    "or restore from a link."
+                ),
+                "MISSING": speaks._(
+                    "This server has no rrsync, so a restricted upload key "
+                    "cannot be installed. Install rsync 3.2.4 or later, or "
+                    "restore from a link."
+                ),
+                "NOSUDO": speaks._(
+                    "The rsync package of this server ships an rrsync that "
+                    "would do, but the account this panel connects as cannot "
+                    "install it: it cannot run sudo without a password. "
+                    "Install it as root at %(path)s (mode 755), or let this "
+                    "account run sudo without a password, then ask for the "
+                    "upload key again.",
+                    path=RRSYNC,
+                ),
+                "FAILED": speaks._(
+                    "The rrsync of this server could not be installed at "
+                    "%(path)s: the log of the job that installs its key says "
+                    "why.",
+                    path=RRSYNC,
+                ),
+            }
+            if printed and printed[-1] in known:
+                return known[printed[-1]]
+        return said or speaks._(
+            "The upload door did not open: the log of the job that installs "
+            "its key says why."
+        )
 
 
 class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
@@ -392,6 +679,7 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
         restore must not take it for what was confirmed.
         """
         grant = self._grant()
+        speaks = grant._in_lang()
         rows = []
         unusable = 0
         for line in results.get("Inspect the upload", {}).get(
@@ -402,18 +690,27 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
                 continue
             listed = _LISTED.fullmatch(line)
             if listed and SAFE_UPLOAD_NAME.fullmatch(listed.group(3)):
-                rows.append(listed.groups())
+                # The empty restore.zip the door makes before the first
+                # upload (``restore_door.sh``) is not one.
+                if int(listed.group(1)):
+                    rows.append(listed.groups())
             else:
                 unusable += 1
         unusable_note = ""
         if unusable:
-            unusable_note = (
-                f"{unusable} file(s) arrived with a name that cannot be "
+            self._sys(
+                f"⚠ {unusable} file(s) arrived with a name that cannot be "
                 "restored: only letters, digits, dots, dashes and "
                 "underscores, starting with a letter or a digit. Send the "
                 "archive again as restore.zip."
             )
-            self._sys("⚠ " + unusable_note)
+            unusable_note = speaks._(
+                "%(count)s file(s) arrived with a name that cannot be "
+                "restored: only letters, digits, dots, dashes and "
+                "underscores, starting with a letter or a digit. Send the "
+                "archive again as restore.zip.",
+                count=unusable,
+            )
         if not rows:
             self._forget(grant, unusable_note)
             self._sys("Nothing that can be restored has arrived yet.")
@@ -423,15 +720,21 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
         if cut_at_limit(size, limit):
             # The key's file size limit stopped it (``forced_command``):
             # what arrived is the start of a larger archive.
-            note = (
-                f"{name} stopped at {in_gib(int(size))}, the most this door "
-                f"takes ({in_gib(limit)}, what the server's free disk could "
-                "restore when it opened): the archive is larger, and what "
+            self._sys(
+                f"⚠ {name} stopped at {in_gib(int(size))}, the most this "
+                f"door takes ({in_gib(limit)}, its share of the server's "
+                "free disk when it opened): the archive is larger, and what "
                 "arrived cannot be restored. Free space on the server and "
                 "open another door, or restore a smaller archive."
             )
-            self._forget(grant, note)
-            self._sys("⚠ " + note)
+            self._forget(grant, speaks._(
+                "%(name)s stopped at %(size)s, the most this door takes "
+                "(%(limit)s, its share of the server's free disk when it "
+                "opened): the archive is larger, and what arrived cannot be "
+                "restored. Free space on the server and open another door, or "
+                "restore a smaller archive.",
+                name=name, size=in_gib(int(size)), limit=in_gib(limit),
+            ))
             return
         # Not offered for a restore the disk cannot take: the restore
         # copies it out of the door, then unpacks it (``restore_space``).
@@ -440,18 +743,24 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
         disks = parse_disks(
             results.get("Measure free disk", {}).get("stdout", ""),
         )
-        refusal = disks and room_refusal(
-            disks, int(size), 1, f"{name} ({in_gib(int(size))})",
-        )
-        if disks is None or refusal:
-            if disks is None:
-                refusal = (
-                    f"{name} arrived ({size} bytes), but the free disk on "
-                    "the server could not be measured: it cannot be "
-                    "restored. Check again."
-                )
-            self._forget(grant, refusal)
-            self._sys("⚠ " + refusal)
+        what = f"{name} ({in_gib(int(size))})"
+        if disks is None:
+            self._sys(
+                f"⚠ {name} arrived ({size} bytes), but the free disk on the "
+                "server could not be measured: it cannot be restored. Check "
+                "again."
+            )
+            self._forget(grant, speaks._(
+                "%(name)s arrived (%(size)s bytes), but the free disk on the "
+                "server could not be measured: it cannot be restored. Check "
+                "again.",
+                name=name, size=size,
+            ))
+            return
+        short = room_shortfall(disks, int(size), 1)
+        if short:
+            self._sys("⚠ " + room_refusal(disks, int(size), 1, what))
+            self._forget(grant, room_notice(speaks, short, what))
             return
         grant.sudo().write({
             "received_filename": name,
@@ -541,8 +850,11 @@ class RevokeRestoreUploadKeyExecutor(AbstractSSHExecutor):
 class WatchRestoreUploadsExecutor(AbstractSSHExecutor):
     """Close the open doors of a host that hold too much, or the disk needs.
 
-    The key's file size limit bounds each file a door writes; many files,
-    or the doors of many instances on one host, still add up. Every few
+    A door takes one file, under the key's file size limit, its share of
+    the host's free disk (``restore_door.sh``, ``forced_command``): that
+    bounds what it holds. This is the second line behind it, for what the
+    shares did not foresee (the instances' own growth while doors are
+    open) and for a door opened before the bound. Every few
     minutes (``cloud.restore.upload.grant._watch_doors``) this measures
     each open door's directory (``du``) and the disks (``restore_space``),
     and closes, there and then rather than through the instance's queue:
@@ -560,9 +872,6 @@ class WatchRestoreUploadsExecutor(AbstractSSHExecutor):
 
     _job_type = "watch_restore_uploads"
 
-    #: A line of the measurement: ``door <token> <bytes>``.
-    _DOOR_LINE = re.compile(r"door ([0-9a-f]{16})(?: (\d+))?")
-
     def _doors(self):
         """Return the host's open doors whose shape is the panel's own.
 
@@ -579,13 +888,9 @@ class WatchRestoreUploadsExecutor(AbstractSSHExecutor):
         :param doors: the doors to measure
         :rtype: str
         """
-        sizes = "".join(
-            f"; printf 'door %s %s\\n' {door.token}"
-            f' "$(du -sb -- {shlex.quote(door._directory())} 2>/dev/null'
-            " | cut -f1)\""
-            for door in doors
+        return doors_measure_command(
+            [(door.token, door._directory()) for door in doors],
         )
-        return f"{{ {disks_command(posixpath.dirname(UPLOAD_ROOT))}; }} 2>/dev/null{sizes}"
 
     def _over(self, doors, stdout):
         """Return the *doors* to close, and why, from what the host printed.
@@ -595,15 +900,7 @@ class WatchRestoreUploadsExecutor(AbstractSSHExecutor):
         :return: ``{door: reason}``
         :rtype: dict
         """
-        lines = (stdout or "").splitlines()
-        held = {}
-        for line in lines:
-            found = self._DOOR_LINE.fullmatch(line.strip())
-            if found:
-                held[found.group(1)] = int(found.group(2) or 0)
-        disks = parse_disks("\n".join(
-            line for line in lines if not line.startswith("door ")
-        ))
+        disks, held = parse_doors_measure(stdout)
         closing = {}
         for door in doors:
             # A door opened before the limits were kept is held to what

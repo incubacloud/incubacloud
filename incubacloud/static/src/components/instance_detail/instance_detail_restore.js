@@ -157,7 +157,7 @@ export const RestoreUploadMixin = (Base) =>
       const bytes = this.state.restoreDialog?.limitBytes;
       if (!bytes) return "";
       return _t(
-        "This door takes an archive of at most %(size)s GiB: the most the server's free disk can restore now. A larger file stops at that size.",
+        "This door takes one file, restore.zip, of at most %(size)s GiB: its share of the server's free disk now, what it can restore less what the server's other open doors may still receive. A larger file stops at that size, and a second file is refused.",
         { size: (bytes / 1024 ** 3).toFixed(1) }
       );
     }

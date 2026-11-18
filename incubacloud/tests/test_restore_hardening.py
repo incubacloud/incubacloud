@@ -39,8 +39,23 @@ from odoo.modules.module import get_module_path
 from odoo.tests.common import BaseCase, TransactionCase, new_test_user, tagged
 from odoo.tools import mute_logger
 
-from odoo.addons.incubacloud.models import cloud_restore_upload_grant
-from odoo.addons.incubacloud.models.abstract_executor import JOB_DIR_PREFIX
+from odoo.addons.incubacloud.models import (
+    cloud_restore_upload_grant,
+    restore_upload_key_executors,
+)
+from odoo.addons.incubacloud.models.abstract_executor import (
+    JOB_DIR_PREFIX,
+    STAGING_JOB_DIR_PREFIX,
+)
+from odoo.addons.incubacloud.models.backup_download_executor import (
+    BackupDownloadExecutor,
+)
+from odoo.addons.incubacloud.models.backup_download_neutralized_executor import (
+    BackupDownloadNeutralizedExecutor,
+)
+from odoo.addons.incubacloud.models.export_instance_executor import (
+    ExportInstanceExecutor,
+)
 from odoo.addons.incubacloud.models.deploy_instance_executor import (
     DeployInstanceExecutor,
 )
@@ -52,6 +67,7 @@ from odoo.addons.incubacloud.models.restore_upload_key_executors import (
     GrantRestoreUploadKeyExecutor,
     VerifyRestoreUploadExecutor,
     WatchRestoreUploadsExecutor,
+    cut_at_limit,
 )
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
 from odoo.addons.incubacloud.net import outbound, restore_source
@@ -745,6 +761,16 @@ class TestARestoreTakesNoMoreDiskThanIsFree(RestoreFixture, TransactionCase):
         )
         self.assertTrue(JOB_DIR_PREFIX.startswith("/tmp/"))
         self.assertEqual(DeployInstanceExecutor._job_dir_prefix, JOB_DIR_PREFIX)
+        # So do the jobs that stage an archive the size of the instance's
+        # data: the downloads, the one a clone, a refresh or a move hands
+        # over among them, and the export.
+        for executor in (
+            BackupDownloadExecutor, BackupDownloadNeutralizedExecutor,
+            ExportInstanceExecutor,
+        ):
+            with self.subTest(executor=executor.__name__):
+                self.assertEqual(executor._job_dir_prefix, STAGING_JOB_DIR_PREFIX)
+        self.assertEqual(STAGING_JOB_DIR_PREFIX, "/var/tmp/.incubacloud-job-")
         transport = _transport(free=int(57.6 * GIB))
         with _resolving_to():
             asyncio.run(self.executor.before_execute(transport))
@@ -770,9 +796,12 @@ class TestARestoreTakesNoMoreDiskThanIsFree(RestoreFixture, TransactionCase):
         Docker's disk. A small disk there beside a large Docker disk
         restores what fits in it; a large one beside a nearly full Docker
         disk restores what Docker's leaves, its reserve kept."""
-        tmpfs = Disks(job=2 * GIB, docker=500 * GIB, shared=False)
-        # Measured as one disk, the 2 GiB of /tmp were less than the reserve.
-        self.assertEqual(largest_download(tmpfs.job), 0)
+        # The disk the archive lands on keeps the reserve too: on two
+        # disks it is the server's root disk, which its system writes to.
+        bare = Disks(job=2 * GIB, docker=500 * GIB, shared=False)
+        self.assertEqual(largest_archive(bare, on_job_disk=1), 0)
+        self.assertIn("kept free there", room_refusal(bare, GIB, 0, "it"))
+        tmpfs = Disks(job=RESERVE_BYTES + 2 * GIB, docker=500 * GIB, shared=False)
         self.assertEqual(largest_archive(tmpfs, on_job_disk=1), 2 * GIB)
         self.assertEqual(largest_archive(tmpfs, on_job_disk=2), GIB)
         self.assertEqual(room_refusal(tmpfs, 3 * GIB, 0, "it"), "")
@@ -799,7 +828,7 @@ class TestARestoreTakesNoMoreDiskThanIsFree(RestoreFixture, TransactionCase):
         the tmpfs; 400 GiB of /tmp beside 6 GiB for Docker: half of what
         Docker's disk has above its reserve."""
         for free, docker, limit in (
-            (2 * GIB, 400 * GIB, 2 * GIB),
+            (RESERVE_BYTES + 2 * GIB, 400 * GIB, 2 * GIB),
             (400 * GIB, RESERVE_BYTES + GIB, GIB // UNPACK_FACTOR),
         ):
             with self.subTest(free=free, docker=docker), _resolving_to():
@@ -971,6 +1000,13 @@ class TestACheckOffersNothingTheDiskCannotRestore(TransactionCase):
                 self._report(size, free)
                 self.assertFalse(self.grant.received_sha256)
                 self.assertFalse(self.grant.received_filename)
+
+    def test_the_empty_file_the_door_makes_is_not_what_arrived(self):
+        """The door creates ``restore.zip`` empty before the first upload
+        (``restore_door.sh``): nothing has arrived until it holds a byte."""
+        self._report(0, 100 * GIB)
+        self.assertFalse(self.grant.received_filename)
+        self.assertFalse(self.grant.notice)
 
     def test_an_upload_the_disk_can_restore_is_offered(self):
         size = 4 * GIB
@@ -1522,10 +1558,14 @@ class TestADoorWritesNoMoreThanTheDisksTake(RestoreFixture, TransactionCase):
         self.assertEqual(self.grant.upload_limit_bytes, 5 * GIB)
         install = dict((label, command) for label, command, *_ in commands)
         self.assertIn(
-            f"ulimit -f {5 * GIB // 1024} && exec /usr/bin/rrsync -wo -munge",
+            f"ulimit -f {5 * GIB // 1024} && exec /bin/bash "
+            "/var/tmp/incubacloud-restore/.door.sh receive /usr/bin/rrsync -wo -munge",
             install["Install the one-use key"],
         )
-        _executor, _commands = self._install(free=3 * GIB, docker=500 * GIB)
+        # On two disks the one the door writes on keeps the reserve too.
+        _executor, _commands = self._install(
+            free=RESERVE_BYTES + 3 * GIB, docker=500 * GIB,
+        )
         self.assertEqual(self.grant.upload_limit_bytes, 3 * GIB // 2)
 
     def test_a_door_the_disks_leave_no_room_for_never_opens(self):
@@ -1596,9 +1636,15 @@ class TestADoorWritesNoMoreThanTheDisksTake(RestoreFixture, TransactionCase):
         }))
         self.assertFalse(self.grant.sudo().notice)
 
-    def _lab_upload(self, shell, limit):
-        """Run the key's forced command under *shell*, a writer standing in
-        for rrsync that sends 1 MiB into the door; return what landed."""
+    #: What ``rsync -P --inplace <archive> <account>@<server>:restore.zip``
+    #: asks the server for (rsync 3.2.7).
+    _SENT = "rsync --server -e.LsfxCIvu --log-format=X --inplace . restore.zip"
+
+    def _lab_door(self, shell, limit, sent=_SENT):
+        """Run the key's forced command under *shell*, as sshd does for a
+        client that sent *sent*: the real door's check, then a writer
+        standing in for rrsync that sends 1 MiB, and a second file, into
+        the door. Return the door's directory."""
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         door = Path(tmp, "door")
@@ -1606,26 +1652,222 @@ class TestADoorWritesNoMoreThanTheDisksTake(RestoreFixture, TransactionCase):
         writer = Path(tmp, "rrsync")
         writer.write_text(
             "#!/bin/sh\nfor last; do :; done\n"
-            'head -c 1048576 /dev/zero > "$last/restore.zip"\n',
+            'head -c 1048576 /dev/zero > "$last/restore.zip"\n'
+            'head -c 1024 /dev/zero > "$last/second.zip"\n',
             encoding="utf-8",
         )
         writer.chmod(0o755)
         command = cloud_restore_upload_grant.forced_command(
             str(door), limit, wrapper=str(writer),
+            door=os.path.join(
+                get_module_path("incubacloud"), "scripts", "restore_door.sh",
+            ),
         )
         subprocess.run(
             [shell, "-c", command], check=False, capture_output=True,
-            env={"PATH": "/usr/bin:/bin"},
+            env={"PATH": "/usr/bin:/bin", "SSH_ORIGINAL_COMMAND": sent},
         )
-        return os.path.getsize(door / "restore.zip")
+        return door
+
+    def _lab_upload(self, shell, limit):
+        """Return what landed as ``restore.zip`` through :meth:`_lab_door`."""
+        return os.path.getsize(self._lab_door(shell, limit) / "restore.zip")
 
     def test_lab_no_file_through_the_door_passes_its_limit(self):
         """sshd runs the command with the account's shell, ``sh`` or
-        ``bash``: either way bash sets the limit, in KiB."""
+        ``bash``: either way bash sets the limit, in KiB. What stops at it
+        is what the check of the door says was cut there."""
         for shell in ("/bin/sh", "/bin/bash"):
             with self.subTest(shell=shell):
-                self.assertLessEqual(self._lab_upload(shell, 64 * 1024), 64 * 1024)
-        self.assertEqual(self._lab_upload("/bin/sh", 4 * 1024 * 1024), 1024 * 1024)
+                size = self._lab_upload(shell, 64 * 1024)
+                self.assertLessEqual(size, 64 * 1024)
+                self.assertTrue(cut_at_limit(size, 64 * 1024))
+        whole = self._lab_upload("/bin/sh", 4 * 1024 * 1024)
+        self.assertEqual(whole, 1024 * 1024)
+        self.assertFalse(cut_at_limit(whole, 4 * 1024 * 1024))
+
+    def test_lab_the_door_takes_one_file_and_nothing_else(self):
+        """The key's command checks what the client asked for before the
+        wrapper runs (``restore_door.sh``): another name, recursion or no
+        ``--inplace`` writes nothing at all, and ``restore.zip`` is there
+        first, so rsync itself refuses a second file. That the files
+        together stay within the limit is the shell tests' (real rsync)."""
+        for sent in (
+            "rsync --server -e.LsfxCIvu --inplace . other.zip",
+            "rsync --server -vlogDtpre.iLsfxCIvu --inplace . restore.zip",
+            "rsync --server -e.LsfxCIvu --log-format=X . restore.zip",
+            "rsync --server -se.LsfxCIvu",
+            "sh -c id",
+        ):
+            with self.subTest(sent=sent):
+                door = self._lab_door("/bin/sh", 64 * 1024, sent)
+                self.assertEqual(list(door.iterdir()), [])
+        door = self._lab_door("/bin/sh", 64 * 1024)
+        self.assertTrue((door / "restore.zip").is_file())
+
+    def test_the_door_s_command_is_installed_with_its_key(self):
+        """In the root just checked, before the key that runs it, and the
+        run stops when it cannot be."""
+        _executor, commands = self._install(free=25 * GIB)
+        labels = [label for label, *_ in commands]
+        self.assertEqual(labels, [
+            "Prepare the upload directory", "Install the door's command",
+            "Resolve the restricted rsync wrapper", "Install the one-use key",
+        ])
+        label, command, opts = commands[1]
+        self.assertTrue(opts.get("stop_on_failure"))
+        argv = shlex.split(command)
+        self.assertTrue(argv[1].endswith("/restore_door.sh"), argv)
+        self.assertEqual(argv[2:], ["install", "/var/tmp/incubacloud-restore/.door.sh"])
+
+    def _other_door(self, limit):
+        """Open a door of another instance of the host, its limit *limit*."""
+        other = self.env["cloud.instance"].create({
+            "name": "hardening-other-inst", "project_id": self.project.id,
+            "host_id": self.host.id, "odoo_version": "19.0",
+        })
+        door, _private = self.Grant._open(other)
+        door.sudo().upload_limit_bytes = limit
+        self.env.flush_all()
+        return door
+
+    def _install_beside(self, stdout):
+        """Measure the fixture's door on a host that prints *stdout*.
+
+        The other doors are read on the test's own cursor: the job reads
+        them on a fresh one, which sees what their jobs committed, and a
+        test commits nothing.
+        """
+        executor = GrantRestoreUploadKeyExecutor(
+            self._job("grant_restore_upload_key", payload={"grant_id": self.grant.id}),
+            self.host,
+        )
+        transport = MagicMock(spec=SSHTransport)
+        take_the_tar(transport)
+        transport.run.return_value = CommandResult(stdout, 0)
+
+        @contextlib.contextmanager
+        def this_cursor(_registry):
+            """Yield the test's cursor."""
+            yield self.env.cr
+
+        with patch.object(
+            restore_upload_key_executors, "read_committed_cursor", this_cursor,
+        ):
+            asyncio.run(executor.before_execute(transport))
+        return executor, transport.run.await_args.args[0]
+
+    def test_the_doors_of_a_host_share_its_free_disk(self):
+        """Two doors of one host, of two instances, each up to its whole
+        limit: the second is given what is left once the first's may still
+        receive is set aside, never the same free disk again (owner's
+        decision of 18-nov-2026)."""
+        first = self._other_door(4 * GIB)
+        # The first holds 1 GiB of its 4: 3 GiB may still arrive there.
+        executor, command = self._install_beside(
+            _disks_output(25 * GIB) + f"door {first.token} {GIB}\n",
+        )
+        self.assertIn(f"du -sb -- {first._directory()}", command)
+        self.assertEqual(
+            self.grant.upload_limit_bytes, (22 * GIB - RESERVE_BYTES) // 4,
+        )
+        logged = "".join(text for text, _src in executor._log_buffer)
+        self.assertIn("less 3.0 GiB its 1 other open door(s) may still receive", logged)
+        # A first door already full sets nothing more aside.
+        self._install_beside(
+            _disks_output(25 * GIB) + f"door {first.token} {4 * GIB}\n",
+        )
+        self.assertEqual(self.grant.upload_limit_bytes, (25 * GIB - RESERVE_BYTES) // 4)
+        # One whose share takes what is left: refused, and said.
+        first.sudo().upload_limit_bytes = 20 * GIB
+        self.env.flush_all()
+        executor, _command = self._install_beside(
+            _disks_output(25 * GIB) + f"door {first.token} 0\n",
+        )
+        self.assertIn("other open door(s) may still receive 20.0 GiB", executor._refusal)
+        self.assertIn("Close one", executor._refusal_notice)
+        # A closed door, or one past its deadline, holds no share.
+        first.sudo().state = "revoked"
+        self.env.flush_all()
+        _executor, command = self._install_beside(_disks_output(25 * GIB))
+        self.assertNotIn(first.token, command)
+        self.assertEqual(self.grant.upload_limit_bytes, (25 * GIB - RESERVE_BYTES) // 4)
+
+    def _failed_install(self, results, stderr=()):
+        """Run the end of a key's install that stopped; return the notice.
+
+        :param dict results: the steps that ran
+        :param stderr: ``(step, line)`` each step wrote on stderr
+        """
+        executor = GrantRestoreUploadKeyExecutor(
+            self._job("grant_restore_upload_key", payload={"grant_id": self.grant.id}),
+            self.host,
+        )
+        executor._log_buffer = []
+        for step, line in stderr:
+            executor._running_step = step
+            asyncio.run(executor.on_stderr(line))
+        asyncio.run(executor.on_failure(results, ["refused"]))
+        self.assertEqual(self.grant.sudo().state, "revoked")
+        return self.grant.sudo().notice
+
+    def test_a_door_that_did_not_open_says_what_stopped_it(self):
+        """The step's own words, not a pointer to the job's log: a root
+        another account owns says what to remove, an rrsync that will not
+        do what to install. Nothing of the key's line."""
+        root = "/var/tmp/incubacloud-restore"
+        notice = self._failed_install(
+            {"Prepare the upload directory": {"stdout": "", "exit_status": 1}},
+            [("Prepare the upload directory",
+              f"{root} belongs to root, not to deploy, the account this panel "
+              f"connects as, or is not a plain directory: remove it as root "
+              f"(sudo rm -rf {root}) and ask for the upload key again")],
+        )
+        self.assertIn(f"sudo rm -rf {root}", notice)
+        self.assertIn("belongs to root, not to deploy", notice)
+        self.grant.sudo().state = "granted"
+        notice = self._failed_install({
+            "Prepare the upload directory": {"stdout": "", "exit_status": 0},
+            "Install the door's command": {"stdout": "", "exit_status": 0},
+            "Resolve the restricted rsync wrapper": {
+                "stdout": "NOSUDO\n", "exit_status": 1,
+            },
+        })
+        self.assertIn("cannot run sudo without a password", notice)
+        self.assertIn("/usr/bin/rrsync", notice)
+        self.assertNotIn(self.grant.public_key.split()[1], notice)
+
+    def test_a_door_s_notice_speaks_the_language_of_who_opened_it(self):
+        """Written when the job ends, in the grant's person's language: the
+        Import dialog shows it as it is (es.po, usted)."""
+        self.env["res.lang"]._activate_lang("es_ES")
+        self.grant.sudo().user_id.lang = "es_ES"
+        notice = self._failed_install({
+            "Resolve the restricted rsync wrapper": {
+                "stdout": "MISSING\n", "exit_status": 1,
+            },
+        })
+        self.assertEqual(notice, (
+            "Este servidor no tiene rrsync, así que no se puede instalar una "
+            "clave de subida restringida. Instale rsync 3.2.4 o posterior, o "
+            "restaure desde un enlace."
+        ))
+
+    def test_the_update_closes_the_doors_open_before_it(self):
+        """A door opened before 1.0.238 takes any number of files and
+        writes to /tmp: the update closes it, queues its revocation, and
+        the dialog says to ask for another key."""
+        jobs = self.env["cloud.job"].sudo()
+        before = jobs.search_count([("job_type_id.code", "=", "revoke_restore_upload_key")])
+        closed = self.Grant._close_for_update()
+        self.assertIn(self.grant, closed)
+        self.assertEqual(self.grant.sudo().state, "revoked")
+        self.assertIn("ask for another upload key", self.grant.sudo().notice)
+        self.assertEqual(
+            jobs.search_count([("job_type_id.code", "=", "revoke_restore_upload_key")]),
+            before + 1,
+        )
+        self.assertFalse(self.Grant._close_for_update())
 
     def test_the_key_line_holds_no_quote_that_would_end_its_command(self):
         """``command="…"`` is read by sshd up to the next unescaped double

@@ -27,8 +27,10 @@ The update adds the table `cloud_host_known_key`, empty, the column
 destinations, `sftp_auth_method`, set to `key` on every one, and
 `sftp_password`, and the column `notice` to the upload doors, empty. Its data migration, 1.0.238's `end-stale-holds`, closes
 the failures a conflict answered before 1.0.220 left holding an instance's
-queue, and cancels what waited behind them; the cron bot's end-migration
-recreates the bot only when it is missing.
+queue, and cancels what waited behind them; `end-close-open-doors` closes
+the upload doors open while the panel updates, saying so in the Import
+dialog; the cron bot's end-migration recreates the bot only when it is
+missing.
 
 ### Added
 
@@ -126,30 +128,52 @@ recreates the bot only when it is missing.
 
 ### Fixed
 
-- **A restore lands its archive on the instances' disk, not in `/tmp`.**
-  Debian 13 and Ubuntu 26.04 (Ubuntu since 24.10) mount `/tmp` as a tmpfs
-  of half the memory, the base image of new servers too: 1.9 GiB on a
-  server of 4 GB. Every restore staged its archive there, so an upload
-  door took at most 0.9 GiB, a link or a file copied to the server not
-  much more, and an archive of 2.7 GiB could be restored by no path with
-  57 GiB free on the disk of the instances. The doors' directories, the
-  path *a file already on the server* is read from and the restore's own
-  working directory are now in `/var/tmp`, on disk, which on the usual
-  server is the disk Docker keeps the instances on: there the same server
-  takes an archive of 13 GiB through a door. The limit is still measured
-  where the archive lands and on Docker's disk, each for what it holds,
-  and the messages name `/var/tmp`. The Import dialog shows the largest
-  archive a door takes once its key is installed, and says why when the
-  disk leaves no room for one, rather than showing a command; *Check
-  what arrived* says why nothing can be restored, a file `rsync` left cut
-  at the door's limit among the reasons, instead of offering it, and
-  `check_restore_upload` answers the limit to an agent. The day's sweep
-  removes what a restore's dead worker or a door left in `/var/tmp`
-  three days on, since a reboot no longer does, and still what doors left
-  in `/tmp/incubacloud-restore`. A file to restore from the server is now
-  copied to `/var/tmp/incubacloud-restore-<instance id>.zip`; a door open
-  while the panel updates still writes to `/tmp`: open another.
-  `/tmp` itself is left as the server has it.
+- **A restore, and the download a clone, a refresh or a move restores,
+  land their archive on the instances' disk, not in `/tmp`.** Debian 13
+  and Ubuntu 26.04 (Ubuntu since 24.10) mount `/tmp` as a tmpfs of half
+  the memory, the base image of new servers too: 1.9 GiB on a server of
+  4 GB. Every restore staged its archive there, so an upload door took at
+  most 0.9 GiB, a link or a file copied to the server not much more, and
+  an archive of 2.7 GiB could be restored by no path with 57 GiB free on
+  the disk of the instances; a clone to staging, a refresh from
+  production and a move dumped production there and handed it over there
+  too. Now in `/var/tmp`, on disk, which on the usual server is the disk
+  Docker keeps the instances on: the doors' directories, the path *a file
+  already on the server* is read from (now
+  `/var/tmp/incubacloud-restore-<instance id>.zip`), the restore's own
+  working directory, the backup download's (its dump, what the backup
+  store gives back, the archive) and the handoff a clone, a refresh or a
+  move restores from, and the working directories of the neutralized
+  download and of the export. A download measures what it is about to
+  write, the database and its files, or what the store gave back, and
+  refuses, writing nothing and saying why, when that and its copies would
+  leave less than 5 GiB free where it lands or on Docker's disk; a full
+  backup is packaged with one copy fewer. A restore still measures where
+  the archive lands and Docker's disk, each for what it holds, each
+  keeping the 5 GiB reserve where they are two disks, and the messages
+  name `/var/tmp`: the same server now takes an archive of 13 GiB through
+  a door. The day's sweep removes what a dead worker, a door or a handoff
+  left in `/var/tmp`, three days on for the first two and one for a
+  handoff, since a reboot no longer does, and still what releases before
+  this one left in `/tmp`. `/tmp` itself is left as the server has it.
+- **An upload door takes one file, its share of the server's disk.** Its
+  key took any number of files, each up to the door's limit, and several
+  doors of one server each counted the same free disk: until the watch
+  came round, five minutes later, they could fill the disk every instance
+  of the server writes to. A door now takes `restore.zip` alone, sent with
+  `rsync -P --inplace` as the dialog shows it: its key's command refuses,
+  before anything is written, another name, `-a`, `-r` and the other
+  options that write more than one file, and rsync itself a second file.
+  Its limit is what the disks can restore less what the server's other
+  open doors may still receive, measured one door at a time, and it
+  bounds all the door holds. The watch stays as a second line. The Import
+  dialog and `grant_restore_upload` say so; the doors open while the
+  panel updates are closed, and the dialog says to ask for another key.
+- **The Import dialog says why a door did not open, in your language.**
+  What stopped it, a root of another account to remove with `sudo rm -rf`
+  or an `rrsync` to install, rather than a pointer to the job's log; that
+  and the reasons a check offers nothing are written in the language of
+  whoever opened the door.
 - **Every line of Monitoring's Load per core names its server.** The
   fleet's load is the 15-minute load divided by the cores, matched on the
   account and the server's id, and a division matched on some labels keeps

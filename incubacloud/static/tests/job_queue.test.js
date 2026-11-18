@@ -668,7 +668,7 @@ describe("job queue — every button that enqueues says what became of its job",
         expect(dialog.limitBytes).toBe(13 * 1024 ** 3);
         expect(dialog.grant.grant_id).toBe(4);
         expect(comp.doorLimitText()).toBe(
-            "This door takes an archive of at most 13.0 GiB: the most the server's free disk can restore now. A larger file stops at that size."
+            "This door takes one file, restore.zip, of at most 13.0 GiB: its share of the server's free disk now, what it can restore less what the server's other open doors may still receive. A larger file stops at that size, and a second file is refused."
         );
     });
 
