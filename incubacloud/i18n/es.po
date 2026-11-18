@@ -29219,6 +29219,8 @@ msgstr "Acceso"
 msgid "The server's access could not be read."
 msgstr "No se pudo leer el acceso al servidor."
 
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_backup_backend.py:0
 msgid "The SFTP password of %(name)s cannot be read: enter it again."
 msgstr ""
