@@ -1,19 +1,22 @@
 """The MCP's settings: issuer, per-user limit, key and resource URL.
 
 The issuer and the limit are fields of the settings singleton, edited in
-Settings. The HMAC key and the canonical URL of ``/mcp`` are system
+Settings. The HMAC key and the canonical URL of the MCP are system
 parameters: the key is never shown, and on a panel whose settings another
 panel pushes, the URL arrives that way, through the database's
 parameters.
 """
 
+import logging
 import secrets
 from urllib.parse import urlsplit
 
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
-from ..protocol.canonical import canonical_resource
+from ..protocol.canonical import ALIAS_PATH, MCP_PATH, canonical_resource
+
+_logger = logging.getLogger(__name__)
 
 SECRET_PARAM = "incubacloud.mcp.secret"
 RESOURCE_PARAM = "incubacloud.mcp.resource"
@@ -64,19 +67,58 @@ class CloudSettings(models.Model):
         return (self._get_system().mcp_oauth_issuer or "").strip().rstrip("/")
 
     @api.model
-    def _mcp_resource(self):
-        """Return the canonical URL of this panel's ``/mcp``.
+    def _mcp_stored_resource(self):
+        """Return the canonical URL of this panel's MCP, as configured.
 
-        The stored parameter, else ``web.base.url`` + ``/mcp``; ``''``
-        when neither makes an absolute URL.
+        The stored parameter, else ``web.base.url`` + ``/cloud/mcp``; ``''``
+        when neither makes an absolute URL. Panels installed before
+        ``/cloud/mcp`` stored ``…/mcp`` and keep it.
         """
         ICP = self.env["ir.config_parameter"].sudo()
         base_url = (ICP.get_param("web.base.url") or "").rstrip("/")
-        raw = ICP.get_param(RESOURCE_PARAM) or f"{base_url}/mcp"
+        raw = ICP.get_param(RESOURCE_PARAM) or f"{base_url}{MCP_PATH}"
         try:
             return canonical_resource(raw)
         except ValueError:
             return ""
+
+    @api.model
+    def _mcp_resource(self):
+        """Return the canonical URL of this panel's MCP: the agents' audience.
+
+        The configured one (:meth:`_mcp_stored_resource`), except where it
+        is ``…/mcp`` and another installed module answers ``/mcp``
+        (``ir.http._mcp_alias_owners``): then the same origin with
+        ``/cloud/mcp``, which is still this panel's. Nothing is written:
+        once that module is gone, the configured URL is back.
+        """
+        resource = self._mcp_stored_resource()
+        if not resource:
+            return ""
+        parts = urlsplit(resource)
+        if parts.path != ALIAS_PATH:
+            return resource
+        owner = dict(self.env["ir.http"]._mcp_alias_owners()).get(ALIAS_PATH)
+        if not owner:
+            return resource
+        moved = f"{parts.scheme}://{parts.netloc}{MCP_PATH}"
+        _logger.debug(
+            "[mcp] %s answers %s: this panel's MCP is %s instead of %s",
+            owner,
+            ALIAS_PATH,
+            moved,
+            resource,
+        )
+        return moved
+
+    @api.model
+    def _mcp_conflicts(self):
+        """Return the aliases another installed module answers, and which.
+
+        :return: ``{alias: module}``, as ``ir.http._mcp_alias_owners``
+        :rtype: dict
+        """
+        return dict(self.env["ir.http"]._mcp_alias_owners())
 
     @api.model
     def _mcp_secret(self):
@@ -102,12 +144,15 @@ class CloudSettings(models.Model):
         """Give the module its key and this panel its resource URL.
 
         Runs on every install and update (``data/mcp_defaults.xml``) and
-        changes nothing already set: a URL pushed from another panel stays.
+        changes nothing already set: a URL pushed from another panel stays,
+        and so does the ``…/mcp`` of a panel installed before ``/cloud/mcp``.
+        The routing map is not read here: while a module installs, it is
+        not in it yet.
         """
         self._mcp_secret()
         ICP = self.env["ir.config_parameter"].sudo()
         if not ICP.get_param(RESOURCE_PARAM):
-            resource = self._mcp_resource()
+            resource = self._mcp_stored_resource()
             if resource:
                 ICP.set_param(RESOURCE_PARAM, resource)
 

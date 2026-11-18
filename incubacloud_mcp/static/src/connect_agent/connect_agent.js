@@ -3,7 +3,12 @@
 import { Component, onWillStart, onWillUnmount, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
-import { API_KEY_ENV, API_KEY_PLACEHOLDER, connectView } from "./connect_agent_format";
+import {
+    API_KEY_ENV,
+    API_KEY_PLACEHOLDER,
+    conflictNotice,
+    connectView,
+} from "./connect_agent_format";
 import { ownRuleText } from "../auto_approval/auto_approval";
 
 /** How long a Copy button says it copied. */
@@ -71,6 +76,11 @@ export class ConnectAgent extends Component {
     /** Everything the template shows (see `connectView`). */
     get view() {
         return connectView(this.state.config || {});
+    }
+
+    /** What the page says when another module answers `/mcp`, or "". */
+    get conflictNotice() {
+        return conflictNotice(this.view.aliasTakenBy);
     }
 
     /** The person's own auto-approval rules that still count. */

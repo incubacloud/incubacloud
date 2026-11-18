@@ -1,4 +1,8 @@
-"""``POST /mcp``: the MCP endpoint of the panel.
+"""``POST /cloud/mcp``: the MCP endpoint of the panel.
+
+``/mcp`` is its alias, for the panels whose agents connected there
+before: it leaves the routing map when another installed module declares
+it (``models/ir_http.py``).
 
 Only the transport lives here — method, database, origin, content type,
 the credential — and the shape of the answer (always JSON, never SSE).
@@ -32,7 +36,7 @@ from odoo.http import request
 from odoo.addons.incubacloud.controllers._client_ip import client_ip
 
 from ..models.mcp_auth import AUTH_FAILURES_PER_MIN
-from ..protocol.canonical import same_origin
+from ..protocol.canonical import ALIAS_PATH, MCP_PATH, same_origin
 from ..protocol.context import Reply
 from ..protocol.errors import INVALID_REQUEST, PARSE_ERROR, AuthError, McpError
 from ._reply import respond
@@ -78,7 +82,7 @@ class McpController(http.Controller):
     """The MCP endpoint: transport and credential, then the server model."""
 
     @http.route(
-        "/mcp",
+        [MCP_PATH, ALIAS_PATH],
         type="http",
         auth="none",
         methods=["POST", "GET", "DELETE"],

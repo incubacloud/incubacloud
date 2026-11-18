@@ -19,7 +19,8 @@ works on S3 destinations that sign for a region of their own. An SFTP
 backup destination can log in with a password. A shell test no longer
 depends on the clock, a short request time limit keeps most of its time for
 the playbook, and the Ansible launcher's CI job installs what
-`requirements.txt` pins.
+`requirements.txt` pins. The agents' endpoint answers at `/cloud/mcp`, and
+its `/mcp` gives way to another MCP server module of the same Odoo.
 
 The update adds the table `cloud_host_known_key`, empty, the column
 `owner_type` to the GitHub App, empty on an App there is, the column
@@ -325,6 +326,26 @@ missing.
   loaded. The test of the admin password check's cron reads that it is
   active from the module's data, as a copy pauses its crons; the test of
   a shared backup path's alert counts only the alerts of its own paths.
+- **Another MCP server module in the same Odoo no longer meets the panel on
+  `/mcp`.** Odoo puts two routes with one URL in its map in the
+  alphabetical order of their modules, without a word, and the first one
+  answers: the panel took every call to `/mcp` and to the root RFC 9728
+  document, and the other module's agents were told their user had no role
+  on the panel (or, with another name, the other module would have taken
+  the panel's). The agents' endpoint now answers at `/cloud/mcp`, with its
+  document at `/.well-known/oauth-protected-resource/cloud/mcp`. `/mcp`,
+  `/.well-known/oauth-protected-resource/mcp` and the root document stay as
+  aliases while no other installed module declares them; one that does
+  keeps the URL, and the routing map logs a warning that names it, again on
+  every load of the registry (`incubacloud_mcp/models/ir_http.py`). A new
+  panel's MCP address is `…/cloud/mcp`; a panel installed before keeps its
+  `…/mcp`, and its agents change nothing. Where another module answers
+  `/mcp`, the panel's address is the same with `/cloud/mcp`, nothing is
+  written, and it is back once that module is removed; *Connect an agent*
+  and **Settings → Agents (MCP)** name the module and say that an agent
+  connected to `/mcp` before has to be connected again. A path-inserted
+  document answers only for the panel's address (RFC 9728, §3.3): the other
+  one is 404.
 
 ### Security
 

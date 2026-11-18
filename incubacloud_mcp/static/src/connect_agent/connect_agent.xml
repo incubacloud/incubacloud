@@ -52,6 +52,10 @@
                 <div class="rl-saas-fsec">This panel's MCP address</div>
                 <CopyBlock t-if="!view.urlProblem" text="view.url" inline="true"
                            label.translate="Copy this panel's MCP address"/>
+                <div t-if="conflictNotice and !view.urlProblem" class="ic-mcp-notice ic-mcp-conflict" role="status">
+                    <i class="fa fa-info-circle" aria-hidden="true"/>
+                    <t t-esc="conflictNotice"/>
+                </div>
 
                 <t t-if="view.urlProblem === 'missing'">
                     <div class="ic-mcp-notice">

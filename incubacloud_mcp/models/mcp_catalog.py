@@ -173,6 +173,7 @@ CORE_EXCLUDED = {
     "/cloud/github/webhook": _PUBLIC,
     "/cloud/gitlab/webhook/<string:hook_key>": _PUBLIC,
     "/cloud/health": _PUBLIC,
+    "/cloud/mcp": "The MCP endpoint itself: agents talk to it; no tool calls it.",
     "/cloud/mcp/approve/<string:token>": (
         "A page for a person: where agents' actions are approved."
     ),

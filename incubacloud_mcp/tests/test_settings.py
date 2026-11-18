@@ -49,15 +49,15 @@ class TestMcpSettings(TransactionCase):
         self.assertEqual(bytes.fromhex(self.ICP.get_param(SECRET_PARAM)), key)
 
     def test_the_resource_defaults_to_web_base_url_in_canonical_form(self):
-        """Without a URL, web.base.url gives one, in canonical form."""
+        """Without a URL, web.base.url + /cloud/mcp gives one, in canonical form."""
         self.ICP.set_param(RESOURCE_PARAM, False)
         self.ICP.set_param("web.base.url", "HTTPS://Panel.Example.TEST:443/")
         self.assertEqual(
-            self.Settings._mcp_resource(), "https://panel.example.test/mcp"
+            self.Settings._mcp_resource(), "https://panel.example.test/cloud/mcp"
         )
         self.Settings._mcp_install_defaults()
         self.assertEqual(
-            self.ICP.get_param(RESOURCE_PARAM), "https://panel.example.test/mcp"
+            self.ICP.get_param(RESOURCE_PARAM), "https://panel.example.test/cloud/mcp"
         )
 
     def test_a_resource_already_set_is_kept(self):

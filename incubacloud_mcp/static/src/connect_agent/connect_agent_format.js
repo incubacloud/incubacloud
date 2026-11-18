@@ -9,6 +9,8 @@
  * VS Code's `code --add-mcp` and Codex's `config.toml`.
  */
 
+import { _t } from "@web/core/l10n/translation";
+
 /** The name each client gives this panel's server. */
 export const SERVER_NAME = "incubacloud";
 /** Where the commands say the user's API key goes. */
@@ -113,6 +115,35 @@ export function codexConfig(url, { apiKey = false } = {}) {
 }
 
 /**
+ * Which module answers `/mcp` in this Odoo instead of the panel, or "".
+ *
+ * Another MCP server module may declare `/mcp`: the panel then leaves it to
+ * that module and its agents use `/cloud/mcp`, which is the address shown.
+ *
+ * @param {Object} [conflict] `{alias: module}`, as the routes answer it
+ * @returns {string} the other module's technical name, or ""
+ */
+export function aliasTakenBy(conflict) {
+    return (conflict && conflict["/mcp"]) || "";
+}
+
+/**
+ * What Connect an agent and Settings say when another module answers `/mcp`.
+ *
+ * @param {string} module that module's technical name
+ * @returns {string} the notice, or "" without a module
+ */
+export function conflictNotice(module) {
+    if (!module) {
+        return "";
+    }
+    return _t(
+        "Another module in this Odoo, %(module)s, answers /mcp, so this panel's agents use /cloud/mcp. An agent connected to /mcp before has to be connected again.",
+        { module }
+    );
+}
+
+/**
  * Everything the page shows, from `/cloud/mcp/config`'s answer.
  *
  * Without an issuer, agents sign in with an API key: every command
@@ -142,6 +173,7 @@ export function connectView(config = {}) {
         urlProblem,
         needsApiKey,
         managed: Boolean(config.managed),
+        aliasTakenBy: aliasTakenBy(config.conflict),
         apiKeysRefused: !config.issuer && !config.api_keys,
         agentsUrl: config.agents_url || "",
         docsUrl: config.docs_url || "",
@@ -156,13 +188,19 @@ export function connectView(config = {}) {
 }
 
 /**
- * How Settings shows the issuer and the URL: read-only where set from above.
+ * How Settings shows the issuer and the URL: read-only where set from above,
+ * and which module answers `/mcp` instead of the panel, if any.
  *
- * @param {{managed?: boolean}} [settings] the answer of `/cloud/mcp/get_settings`
- * @returns {{readonly: boolean}} whether the two fields are read-only
+ * @param {{managed?: boolean, conflict?: Object}} [settings] the answer of
+ *     `/cloud/mcp/get_settings`
+ * @returns {{readonly: boolean, aliasTakenBy: string}} whether the two
+ *     fields are read-only, and the other module's name or ""
  */
 export function settingsView(settings = {}) {
-    return { readonly: Boolean(settings.managed) };
+    return {
+        readonly: Boolean(settings.managed),
+        aliasTakenBy: aliasTakenBy(settings.conflict),
+    };
 }
 
 /**

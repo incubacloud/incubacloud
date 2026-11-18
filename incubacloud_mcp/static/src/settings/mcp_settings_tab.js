@@ -3,7 +3,11 @@
 import { Component, onWillStart, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
-import { changedSettings, settingsView } from "../connect_agent/connect_agent_format";
+import {
+    changedSettings,
+    conflictNotice,
+    settingsView,
+} from "../connect_agent/connect_agent_format";
 import { McpAutoApproval } from "../auto_approval/auto_approval";
 import { SettingField, SettingsBlock } from "@incubacloud/components/settings_form/settings_form";
 import { useSettingsSave } from "@incubacloud/components/settings_form/use_settings_save";
@@ -21,6 +25,8 @@ export class McpSettingsTab extends Component {
             // What failed while loading, shown with Retry instead of the form.
             loadError: null,
             managed: false,
+            // {alias: module}: the URLs of the MCP another module answers.
+            conflict: {},
             form: { mcp_oauth_issuer: "", mcp_resource: "" },
         });
         // What was read, to save only what changed (null until read).
@@ -50,6 +56,7 @@ export class McpSettingsTab extends Component {
             this.state.form.mcp_oauth_issuer = data.mcp_oauth_issuer || "";
             this.state.form.mcp_resource = data.mcp_resource || "";
             this.state.managed = Boolean(data.managed);
+            this.state.conflict = data.conflict || {};
             this._loaded = { ...this.state.form };
         } catch {
             this.state.loadError = _t("Failed to load the agents' settings.");
@@ -64,9 +71,15 @@ export class McpSettingsTab extends Component {
         this.settingsSave.register();
     }
 
-    /** Read-only where the platform sets them (see `settingsView`). */
+    /** Read-only where the platform sets them; the module that answers `/mcp`
+     * instead of the panel, if any (see `settingsView`). */
     get view() {
-        return settingsView({ managed: this.state.managed });
+        return settingsView({ managed: this.state.managed, conflict: this.state.conflict });
+    }
+
+    /** What the tab says when another module answers `/mcp`, or "". */
+    get conflictNotice() {
+        return conflictNotice(this.view.aliasTakenBy);
     }
 
     /**

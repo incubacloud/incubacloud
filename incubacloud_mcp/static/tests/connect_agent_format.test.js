@@ -1,10 +1,13 @@
-import { describe, expect, test } from "@odoo/hoot";
+import { beforeEach, describe, expect, test } from "@odoo/hoot";
+import { allowTranslations } from "@web/../tests/web_test_helpers";
 import {
     API_KEY_ENV,
     API_KEY_PLACEHOLDER,
     changedSettings,
+    aliasTakenBy,
     claudeCodeCommand,
     codexConfig,
+    conflictNotice,
     connectView,
     cursorConfig,
     cursorInstallLink,
@@ -23,6 +26,10 @@ import {
 const URL = "https://acme.example.com/mcp";
 
 describe("Connect an agent — what it shows", () => {
+    // The conflict's notice is a translated string: read without a loaded
+    // catalogue it throws, as it would before the web client loaded its own.
+    beforeEach(() => allowTranslations());
+
     test("the panel's URL and the Claude Code command with it", () => {
         const view = connectView({
             resource: URL,
@@ -83,6 +90,33 @@ describe("Connect an agent — what it shows", () => {
         expect(settingsView({ managed: 1 }).readonly).toBe(true);
         expect(settingsView({ managed: "" }).readonly).toBe(false);
         expect(settingsView().readonly).toBe(false);
+    });
+
+    test("another module that answers /mcp is named, on the page and in Settings", () => {
+        const conflict = { "/mcp": "other_mcp_server" };
+        const view = connectView({
+            resource: "https://acme.example.com/cloud/mcp",
+            issuer: "https://login.example.com",
+            conflict,
+        });
+        expect(view.aliasTakenBy).toBe("other_mcp_server");
+        expect(view.url).toBe("https://acme.example.com/cloud/mcp");
+        expect(view.claudeCode).toInclude("'https://acme.example.com/cloud/mcp'");
+        expect(settingsView({ conflict }).aliasTakenBy).toBe("other_mcp_server");
+        const notice = conflictNotice(view.aliasTakenBy);
+        expect(notice).toInclude("other_mcp_server");
+        expect(notice).toInclude("/cloud/mcp");
+    });
+
+    test("without another module on /mcp, no notice", () => {
+        expect(connectView({ resource: URL, issuer: "x" }).aliasTakenBy).toBe("");
+        expect(connectView({ resource: URL, conflict: {} }).aliasTakenBy).toBe("");
+        // Only /mcp is the agents' business: the root document alone is not.
+        expect(
+            aliasTakenBy({ "/.well-known/oauth-protected-resource": "other_mcp_server" })
+        ).toBe("");
+        expect(settingsView().aliasTakenBy).toBe("");
+        expect(conflictNotice("")).toBe("");
     });
 
     test("where the platform sets the address, its notice sends to support", () => {

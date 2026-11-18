@@ -2,6 +2,7 @@
 
 from . import auth_oauth_provider
 from . import cloud_settings
+from . import ir_http
 from . import cloud_audit_log
 from . import cloud_job
 from . import mcp_auth

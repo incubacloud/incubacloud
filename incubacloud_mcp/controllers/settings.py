@@ -35,6 +35,8 @@ class McpSettingsController(http.Controller):
         return {
             "auto_approvals": [rule for rule in own if rule["state"] != "expired"],
             "resource": Settings._mcp_resource(),
+            # {alias: module}: the URLs of the MCP another module answers.
+            "conflict": Settings._mcp_conflicts(),
             "issuer": Settings._mcp_issuer(),
             "api_keys": api_keys,
             "managed": Settings._mcp_settings_managed(),
@@ -54,6 +56,7 @@ class McpSettingsController(http.Controller):
             "mcp_resource": Settings._mcp_resource(),
             "rate_limit_mcp_user_per_min": settings.rate_limit_mcp_user_per_min or 0,
             "managed": Settings._mcp_settings_managed(),
+            "conflict": Settings._mcp_conflicts(),
         }
 
     @http.route("/cloud/mcp/save_settings", type="jsonrpc", auth="user")

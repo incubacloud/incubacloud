@@ -9,6 +9,13 @@ import re
 from urllib.parse import urlsplit, urlunsplit
 
 _DEFAULT_PORTS = {"https": 443, "http": 80}
+#: Where the MCP answers: the panel's own path, which no other module
+#: claims, and the one it had before, kept while no other module takes it.
+MCP_PATH = "/cloud/mcp"
+ALIAS_PATH = "/mcp"
+#: RFC 9728: the protected resource metadata, with the resource's path
+#: inserted after it.
+METADATA_PATH = "/.well-known/oauth-protected-resource"
 #: What the host and the path may hold. Connect an agent pastes the URL
 #: into commands a user runs in a terminal: nothing a shell would read.
 _SAFE_HOST = re.compile(r"[a-z0-9._-]+|\[[0-9a-f:.]+\]")
@@ -77,8 +84,9 @@ def same_origin(origin, resource):
 def resource_metadata_url(resource):
     """Return the RFC 9728 document of *resource*, path inserted.
 
-    ``https://panel/mcp`` → ``https://panel/.well-known/oauth-protected-resource/mcp``,
-    the URL clients try first and the one the 401 challenge names.
+    ``https://panel/cloud/mcp`` →
+    ``https://panel/.well-known/oauth-protected-resource/cloud/mcp``, the URL
+    clients try first and the one the 401 challenge names.
     """
     parts = urlsplit(canonical_resource(resource))
-    return f"{parts.scheme}://{parts.netloc}/.well-known/oauth-protected-resource{parts.path}"
+    return f"{parts.scheme}://{parts.netloc}{METADATA_PATH}{parts.path}"

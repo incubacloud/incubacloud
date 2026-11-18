@@ -176,8 +176,8 @@ class McpHttpMixin:
         self.env["ir.config_parameter"].sudo().set_param(RESOURCE_PARAM, resource)
         return resource
 
-    def _post(self, body, credential=None, headers=None, raw=None):
-        """POST *body* (or the *raw* text) to ``/mcp``; return the response."""
+    def _post(self, body, credential=None, headers=None, raw=None, path="/mcp"):
+        """POST *body* (or the *raw* text) to *path*; return the response."""
         sent = {
             "Content-Type": "application/json",
             "X-Odoo-Database": self.env.cr.dbname,
@@ -186,7 +186,7 @@ class McpHttpMixin:
             sent["Authorization"] = f"Bearer {credential}"
         sent.update(headers or {})
         data = raw if raw is not None else json.dumps(body)
-        return self.url_open("/mcp", data=data, headers=sent)
+        return self.url_open(path, data=data, headers=sent)
 
     def _modern(
         self,
@@ -196,8 +196,10 @@ class McpHttpMixin:
         capabilities=None,
         request_id=1,
         headers=None,
+        path="/mcp",
     ):
-        """Send a 2026-07-28 request with consistent ``_meta`` and headers."""
+        """Send a 2026-07-28 request with consistent ``_meta`` and headers, to
+        *path*."""
         params = dict(params or {})
         params["_meta"] = {
             META_VERSION: MODERN,
@@ -209,7 +211,7 @@ class McpHttpMixin:
             sent["Mcp-Name"] = params["name"]
         sent.update(headers or {})
         body = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
-        return self._post(body, credential, sent)
+        return self._post(body, credential, sent, path=path)
 
     def _call_tool(self, credential, name, arguments=None, capabilities=None, **params):
         """Call tool *name* in 2026-07-28 and return the JSON-RPC ``result``."""
