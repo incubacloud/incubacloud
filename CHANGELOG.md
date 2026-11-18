@@ -15,7 +15,10 @@ servers alone, and the central serves no cross-account read. A conflict
 answered before 1.0.220 no longer holds its instance's queue. The GitHub
 App can be created under an organization, chosen on the setup page. A
 database that lost the panel's cron bot updates again. Continuous recovery
-works on S3 destinations that sign for a region of their own.
+works on S3 destinations that sign for a region of their own. A shell test
+no longer depends on the clock, a short request time limit keeps most of
+its time for the playbook, and the Ansible launcher's CI job installs what
+`requirements.txt` pins.
 
 The update adds the table `cloud_host_known_key`, empty, the column
 `owner_type` to the GitHub App, empty on an App there is, and the column
@@ -204,6 +207,30 @@ when it is missing.
   with. Empty, everything signs as before, so Cloudflare R2 keeps `auto`.
   An instance imported from a server takes the region of its
   `backup.env`.
+- **A flaky shell test no longer depends on the clock.** The test of
+  `rebuild.bats` that expects the message of a copy killed by the kernel
+  («after 0 min») failed now and then on a loaded runner: the script counts
+  the copy's minutes from bash's `SECONDS`, which ticks whole seconds, so a
+  stub that returned at once could cross a tick and the message said
+  «after 1 min». The copy stubs now freeze the clock (`BASH_ENV` unsets
+  `SECONDS` and sets it to 0, a plain variable), so the elapsed time is
+  0 s on any machine, and the test asserts the same message as before.
+- **A short request time limit keeps most of its time for the playbook.** A
+  playbook stops a minute before what its request has left of
+  `limit_time_real`, which on Odoo's default of 120 s took half the time;
+  the margin is now a minute or a quarter of the limit, whichever is less
+  (18-nov-2026: the closing hooks need seconds), so a 120 s limit leaves the
+  playbook 90 s, and a 240 s or longer limit still keeps the minute.
+- **The Ansible launcher's CI job installs what `requirements.txt` pins.**
+  The `ansible-noshm` job installed literal versions, so bumping
+  `requirements.txt` alone left it green on the old ones; it now installs
+  the two pins from `requirements.txt`, and its tests assert that the
+  installed versions are those pins. Its comments, this changelog and
+  `docs/architecture.md` say that the job simulates a read-only `/dev/shm`
+  with a `sitecustomize` and does not mount one. The launcher's docstrings
+  state what it does not cover: a signal handler that raises while a lock
+  is taken can lose its byte (the playbook's time limit bounds it), and a
+  module run on the panel itself starts in an interpreter it does not patch.
 
 ### Security
 
@@ -317,7 +344,9 @@ The update changes no table and has no data migration.
   (`incubacloud/ansible_noshm.py`) that gives Ansible locks over pipes, and
   the job's log says so. A panel whose `/dev/shm` works runs
   ansible-playbook as before. The CI's `ansible-noshm` job runs playbooks
-  through the launcher on a `/dev/shm` made read-only, and fails on a new
+  through the launcher on a simulated read-only `/dev/shm` (a
+  `sitecustomize` makes `sem_open` and `shm_open` fail with `EROFS`; only
+  the QA's Odoo.sh profile mounts it read-only), and fails on a new
   ansible-core or ansible-runner until what it uses of `multiprocessing` is
   reviewed.
 - **A playbook ends before the request's time limit.** A playbook runs

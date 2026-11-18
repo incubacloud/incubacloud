@@ -558,6 +558,22 @@ def multiprocessing_uses(package_dir, base):
     return uses
 
 
+def test_the_installed_versions_are_the_pins_of_requirements_txt():
+    """Bumping ``requirements.txt`` alone cannot leave this job green.
+
+    The panel's image installs ``requirements.txt``; the versions tested
+    here must be the ones it pins, whatever installed them.
+    """
+    pins = {}
+    for line in (HERE.parent.parent / "requirements.txt").read_text().splitlines():
+        match = re.fullmatch(r"(ansible-core|ansible-runner)==(\S+)", line.strip())
+        if match:
+            pins[match.group(1)] = match.group(2)
+    assert sorted(pins) == ["ansible-core", "ansible-runner"], pins
+    installed = {package: importlib.metadata.version(package) for package in pins}
+    assert installed == pins, "install the pins of requirements.txt, or update them"
+
+
 def test_the_multiprocessing_uses_are_the_reviewed_ones():
     """A new ansible-core or ansible-runner fails here until it is reviewed.
 

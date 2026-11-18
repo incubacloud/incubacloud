@@ -548,6 +548,17 @@ class TestPlaybookTimeLimit(AnsibleExecutorCase):
         self.assertLessEqual(timeout, 900 - 100 - margin)
         self.assertGreaterEqual(timeout, 900 - 102 - margin)
 
+    def test_a_short_limit_gives_up_a_quarter_at_most(self):
+        """Odoo's default ``limit_time_real`` of 120 s keeps 90 s, not 60."""
+        self._limit(120)
+        self.executor._attempt_started = time.monotonic()
+        timeout = self.executor._playbook_timeout()
+        self.assertLessEqual(timeout, 90)
+        self.assertGreaterEqual(timeout, 88)
+        self.assertEqual(ansible_executor_module.playbook_limit_margin(120), 30)
+        self.assertEqual(ansible_executor_module.playbook_limit_margin(240), 60)
+        self.assertEqual(ansible_executor_module.playbook_limit_margin(900), 60)
+
     def test_a_configured_budget_does_not_shorten_it(self):
         """``attempt_budget_seconds`` = 60 stands for a 100 s limit; the server's is 900."""
         self._limit(900)
@@ -587,7 +598,8 @@ class TestPlaybookStopped(_RunnerCase):
         self.assertIsNone(runner.run.call_args.kwargs["timeout"])
 
     def test_a_playbook_past_its_time_is_stopped_and_fails_the_job(self):
-        self._limit(ansible_executor_module.PLAYBOOK_LIMIT_MARGIN_S + 3)
+        # A 4 s limit leaves 3 s after its quarter of margin.
+        self._limit(4)
         executor = self._local({"ic_sleep": 60})
         executor._attempt_started = time.monotonic()
         started = time.monotonic()

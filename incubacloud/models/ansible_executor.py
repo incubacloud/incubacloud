@@ -53,7 +53,24 @@ except ImportError:
 #: and send the panel's notices. Past the limit Odoo kills the request
 #: (with ``workers = 0``, the whole server), which leaves the job to be
 #: retried from the start and the run's key and variables on the disk.
+#: A quarter of the limit at most (18-nov-2026): a fixed minute would take
+#: half of Odoo's default ``limit_time_real`` of 120 s, and the closing
+#: needs seconds, not a minute, so a short limit gives up less of its time.
 PLAYBOOK_LIMIT_MARGIN_S = 60
+PLAYBOOK_LIMIT_MARGIN_FRACTION = 4
+
+
+def playbook_limit_margin(limit):
+    """Return the seconds a playbook leaves of a *limit* for closing the job.
+
+    ``PLAYBOOK_LIMIT_MARGIN_S``, or a quarter of the limit when that is
+    less, so that a short ``limit_time_real`` (Odoo's default is 120 s)
+    does not lose half its time to the margin.
+
+    :param limit: the server's ``limit_time_real``, in seconds.
+    :rtype: float
+    """
+    return min(PLAYBOOK_LIMIT_MARGIN_S, limit / PLAYBOOK_LIMIT_MARGIN_FRACTION)
 
 
 class AnsibleExecutor(AbstractExecutor):
@@ -223,7 +240,7 @@ class AnsibleExecutor(AbstractExecutor):
         """Return how long the playbook may run, in seconds, or None.
 
         What this attempt has left of the server's ``limit_time_real``,
-        less ``PLAYBOOK_LIMIT_MARGIN_S``, and at least one second: past
+        less ``playbook_limit_margin()``, and at least one second: past
         it ansible-runner stops the playbook and the run ends as a
         ``timeout``, through ``on_failure``, with its private directory
         removed. The server's own limit, not the one a configured
@@ -237,7 +254,7 @@ class AnsibleExecutor(AbstractExecutor):
         if limit <= 0 or self._attempt_started is None:
             return None
         elapsed = time.monotonic() - self._attempt_started
-        return max(1, int(limit - elapsed - PLAYBOOK_LIMIT_MARGIN_S))
+        return max(1, int(limit - elapsed - playbook_limit_margin(limit)))
 
     def _run_playbook(self, root, semaphore_error=None):
         """Run the playbook synchronously. Returns ``(rc, status)``.
@@ -382,7 +399,8 @@ class AnsibleExecutor(AbstractExecutor):
                 "✗ The playbook was stopped: it ran past the time this "
                 "request has left before the server's limit_time_real "
                 f"({config.get('limit_time_real')} s), less "
-                f"{PLAYBOOK_LIMIT_MARGIN_S} s for closing the job."
+                f"{playbook_limit_margin(config.get('limit_time_real') or 0):g} s "
+                "for closing the job."
             )
         self._sys(f"Playbook finished: {status} (rc={rc}).")
         results = {

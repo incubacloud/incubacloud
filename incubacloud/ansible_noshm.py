@@ -31,6 +31,13 @@ one ansible-core uses (``ansible.utils.multiprocessing``):
 Then it runs ansible-playbook's ``main`` in its own process, so the
 signals of a cancel reach Ansible as they do without it.
 
+It patches the controller's process only, and the workers forked from it.
+A task that runs on the panel itself (``delegate_to: localhost``, or a
+play on ``localhost``) executes its module in a new interpreter, which has
+none of this: a module that needs a semaphore there would fail on Odoo.sh
+as the controller did. The panel's playbooks work on the hosts through
+SSH only, and the tripwire test does not cover modules.
+
 A test of the panel (``tests/ansible_noshm``) records which ``multiprocessing``
 primitives each reviewed ansible-core and ansible-runner use, and fails
 on a version that uses others until someone reviews them here.
@@ -125,6 +132,14 @@ class PipeLock:
     in each process that holds a copy, and never at the interpreter's
     exit, when a queue's feeder thread may still be using them. They are
     not inherited by what Ansible executes (``O_CLOEXEC``).
+
+    Known limit: a signal handler that raises, between ``acquire``'s read
+    of the byte and its return, loses the byte, and the lock stays held
+    for ever; a semaphore has no such window. ansible-core's task
+    ``timeout:`` is one such handler (it raises from a ``SIGALRM`` in the
+    worker). The window is a few bytecodes wide, and the playbook's
+    time limit (``PLAYBOOK_LIMIT_MARGIN_S`` of ``AnsibleExecutor``) ends
+    a run that a lost byte leaves blocked.
     """
 
     def __init__(self):
