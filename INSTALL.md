@@ -323,6 +323,12 @@ port = 443
 Odoo reads the file when it starts: after editing it, run `odoosh-restart cron`
 in the branch's shell so the job runner picks up the change.
 
+Ansible jobs (Harden Host, maintenance, the observability agents, Delete Host)
+run on Odoo.sh too. Odoo.sh mounts `/dev/shm` read-only, where Ansible keeps the
+locks of its queues, so the panel runs each playbook with locks over pipes and
+says so in the job's log. A playbook runs within the request: the panel stops it
+a minute before what is left of Odoo.sh's 900 s.
+
 Odoo.sh also bears on the panel's [own address](#network), where the
 [encryption key](#the-encryption-key) is kept, where the metrics central runs
 (same section) and [HTTPS](#https-as-odoo-sees-it).
