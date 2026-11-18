@@ -159,6 +159,9 @@ class TestFirstStepMarks(_FirstStepsBase):
         self.Steps._reconcile()
         self.assertEqual(self._row("server").failed_job_type, "host_hardening")
         setup = self._job("full_setup", host, state="failed")
+        # What the creation left to write goes first, or its flush would
+        # put the job's write date back after the bump.
+        self.env.flush_all()
         self.env.cr.execute(
             "UPDATE cloud_job SET write_date = write_date + interval '1 minute'"
             " WHERE id = %s", (setup.id,),

@@ -1729,7 +1729,7 @@ class TestARestore(_PitrCase):
         transport.run = AsyncMock(return_value=CommandResult(answer or self.LIST, 0))
         # ``before_execute`` empties the admin password's state durably
         # (``_persist``): its cursor rides on the test's transaction.
-        if not type(self)._registry_patched:
+        if self.registry.test_cr is None:
             self.registry.enter_test_mode(self.cr)
             self.addCleanup(self.registry.leave_test_mode)
         asyncio.run(executor.before_execute(transport))
