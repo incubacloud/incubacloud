@@ -398,4 +398,41 @@ describe("BackupBackendDetail — SFTP", () => {
     expect(comp.state.sftp.fingerprint).toBe("SHA256:new");
     expect(comp.state.presented).toBe(null);
   });
+
+  test("logs in with a key unless a password is chosen", () => {
+    const comp = sftp();
+    comp.state.form.sftp_auth_method = "key";
+    expect(comp.authOptions.map((o) => o.value)).toEqual(["key", "password"]);
+    expect(comp.isSftpPassword).toBe(false);
+    comp.state.form.sftp_auth_method = "password";
+    expect(comp.isSftpPassword).toBe(true);
+  });
+
+  test("switching a saved destination between a key and a password asks first", async () => {
+    const sent = [];
+    patchWithCleanup(rpc, {
+      _rpc: async (route, params) => {
+        sent.push([route, params]);
+        return {ok: true};
+      },
+    });
+    const comp = sftp({
+      form: {backend_type: "sftp", sftp_host: "h.example.com", sftp_port: 22, sftp_auth_method: "key"},
+      saving: false,
+    });
+    comp.validator = {validate: () => ({isValid: true, firstError: ""})};
+    comp._confirm = async (opts) => {
+      expect.step("asked");
+      return false;
+    };
+    expect(comp._switchesLogin).toBe(false);
+    comp.state.form.sftp_auth_method = "password";
+    expect(comp._switchesLogin).toBe(true);
+    await comp.save();
+    expect.verifySteps(["asked"]);
+    expect(sent).toEqual([]);
+    const fresh = sftp({form: {backend_type: "sftp", sftp_auth_method: "key"}}, true);
+    fresh.state.form.sftp_auth_method = "password";
+    expect(fresh._switchesLogin).toBe(false);
+  });
 });

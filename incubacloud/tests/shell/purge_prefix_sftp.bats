@@ -16,7 +16,7 @@ setup() {
     printf 'backup.example.com ssh-ed25519 AAAA\n' > "$HOME/.ssh/known_hosts"
     : > "$HOME/.ssh/id_ed25519"
     export DST="sftp://u1@backup.example.com/backups/proj/inst"
-    unset PURGE_BEFORE PURGE_SINCE
+    unset PURGE_BEFORE PURGE_SINCE BACKEND_PASSWORD
 
     mkdir -p "$TMP/pylib/paramiko"
     cat > "$TMP/pylib/paramiko/__init__.py" <<'FAKE'
@@ -146,9 +146,14 @@ class SSHClient:
         if not os.path.isfile(path):
             raise OSError(errno.ENOENT, "No such file", path)
 
-    def connect(self, host, port, username, key_filename, **_kw):
+    def connect(self, host, port, username, key_filename=None, password=None,
+                look_for_keys=True, allow_agent=True, **_kw):
         data = _load()
         data["connected"] = [host, port, username]
+        data["auth"] = {
+            "key_filename": key_filename, "password": password,
+            "look_for_keys": look_for_keys, "allow_agent": allow_agent,
+        }
         _save(data)
         verdict = data.get("verdict", "ok")
         if verdict == "badkey":
@@ -230,6 +235,27 @@ _run_program() {
     [ "$(_state files)" = '{"backups/proj/other/keep": {"mtime": 100, "link": false}}' ]
     [[ "$(_state dirs)" != *"backups/proj/inst"* ]]
     [ "$(_state connected)" = '["backup.example.com", 22, "u1"]' ]
+    [ "$(_state auth)" = "{\"key_filename\": \"$HOME/.ssh/id_ed25519\", \"password\": null, \"look_for_keys\": false, \"allow_agent\": false}" ]
+}
+
+@test "sftp: with BACKEND_PASSWORD it logs in with the password and no key" {
+    # A destination that logs in with a password ships no key file.
+    _seed ok 0 "backups/proj/inst/a=100"
+    rm "$HOME/.ssh/id_ed25519"
+    export BACKEND_PASSWORD='Correct-horse 9 battery!'
+    run _run_program
+    [ "$status" -eq 0 ]
+    [ "$(_state auth)" = '{"key_filename": null, "password": "Correct-horse 9 battery!", "look_for_keys": false, "allow_agent": false}' ]
+    [[ "$output" != *"Correct-horse"* ]]
+}
+
+@test "sftp: a refused password is 21 and says it was the password" {
+    _seed auth 0 "backups/proj/inst/a=100"
+    export BACKEND_PASSWORD='Correct-horse 9 battery!'
+    run _run_program
+    [ "$status" -eq 21 ]
+    [[ "$output" == *"rejected the password"* ]]
+    [[ "$output" != *"Correct-horse"* ]]
 }
 
 @test "sftp: with a cutoff the successor's files survive" {

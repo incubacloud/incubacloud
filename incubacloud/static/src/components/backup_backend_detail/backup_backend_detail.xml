@@ -409,11 +409,44 @@
                                     <h3 class="ic-set-block__title" id="bbd-g-sftp-keys">Keys</h3>
                                 </div>
                                 <div class="ic-set-block__body">
+                                    <div class="rl-frow ic-w-m">
+                                        <label for="bbd-sftp_auth_method">Authentication</label>
+                                        <RlSelect
+                    id="'bbd-sftp_auth_method'"
+                    value="state.form.sftp_auth_method"
+                    ariaLabel="'Authentication'"
+                    ariaDescribedby="'bbd-sftp_auth_method-note'"
+                    options="authOptions"
+                    onChange="(value) => this.onInput('sftp_auth_method', { target: { value: value } })"
+                  />
+                                        <span class="ic-form-note" id="bbd-sftp_auth_method-note">A key the panel generates is the safer way in. Choose a password only for a server that accepts no key.</span>
+                                    </div>
+                                    <t t-if="isSftpPassword">
+                                        <div
+                  t-att-class="'rl-frow ic-w-m' + (validator.fieldError('sftp_password') ? ' has-error' : '')"
+                >
+                                            <label for="bbd-sftp_password" id="bbd-sftp_password-label">Password <span class="rl-req" t-if="!state.has_sftp_password">*</span></label>
+                                            <PasswordInput
+                    id="'bbd-sftp_password'"
+                    value="state.form.sftp_password"
+                    hasValue="state.has_sftp_password"
+                    ariaInvalid="Boolean(validator.fieldError('sftp_password'))"
+                    ariaDescribedby="validator.fieldError('sftp_password') ? 'bbd-err-sftp_password' : 'bbd-sftp_password-note'"
+                    onChange="(val) => this.onPasswordChange('sftp_password', val)"
+                  />
+                                            <t t-if="validator.fieldError('sftp_password')">
+                                                <span class="ic-field-error" t-att-id="'bbd-err-sftp_password'" t-esc="validator.fieldError('sftp_password')"/>
+                                            </t>
+                                            <span class="ic-form-note" id="bbd-sftp_password-note">The SFTP user's password. It may not hold quotes, backquotes, $, \ or #, nor start or end with a space.</span>
+                                        </div>
+                                    </t>
                                     <t t-if="isNew">
-                                        <p class="ic-form-note">The panel generates a key for this destination when you create it. You then add it to the server and confirm the server's key here.</p>
+                                        <p class="ic-form-note" t-if="!isSftpPassword">The panel generates a key for this destination when you create it. You then add it to the server and confirm the server's key here.</p>
+                                        <p class="ic-form-note" t-else="">Once you create it, confirm the server's key here.</p>
                                     </t>
                                     <t t-else="">
-                                        <div class="rl-frow ic-w-l">
+                                        <p class="ic-form-note" t-if="!isSftpPassword and !state.sftp.public_key">Save to generate the key, then add it to the server.</p>
+                                        <div class="rl-frow ic-w-l" t-elif="!isSftpPassword">
                                             <label for="bbd-sftp-authorized">Public key for the server's authorized_keys</label>
                                             <output id="bbd-sftp-authorized" class="rl-mono ic-backup-dst" aria-describedby="bbd-sftp-authorized-note" t-esc="authorizedKeysLine"/>
                                             <span class="ic-form-note" id="bbd-sftp-authorized-note">Add this line to the user's ~/.ssh/authorized_keys. restrict keeps the key to file transfers; leave it out if your provider does not accept options.</span>

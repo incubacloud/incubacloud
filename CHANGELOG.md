@@ -6,6 +6,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.237] — unreleased
+
+An SFTP backup destination can log in with a password. The update adds two
+columns to the backup destinations (`sftp_auth_method`, set to `key` on
+every one, and `sftp_password`) and has no data migration.
+
+### Added
+
+- **An SFTP destination can log in with a password.** For a server that
+  accepts no key, the destination's **Authentication** is **Key
+  (recommended)** or **Password**. The password is encrypted, readable by
+  the panel's managers only and never sent back to the page; the server's
+  key is read and trusted as with a key, and still required. The panel's
+  connection test, usage measure and backup listing log in with it; the
+  backups, the restores and the purges get it as `BACKEND_PASSWORD`, the
+  variable duplicity 3.0.5.1 logs in with (its paramiko backend's
+  `get_password`), in `backup.env` and in the archived purge's environment
+  file, and the instances' `~/.ssh` holds the trusted server key and a
+  config without an identity. A password has at least 8 characters, so the
+  agents' scrubber always masks it, and may not hold what compose reads as
+  more than a value (quotes, backquotes, `$`, `\`, `#`, a space at either
+  end). Switching between a key and a password deletes the other secret,
+  generating a new key pair when going back to a key, removes the old key
+  from the hosts on the next build, and leaves the instances on the
+  destination with changes to apply; through the MCP, the switch waits for
+  the user's approval. The instances' configuration snapshot, which project
+  members read, keeps of the password only an HMAC keyed by the database's
+  `database.secret`: it changes when the password does, not when the same
+  one is saved again. A neutralized copy of the database keeps no password,
+  as it keeps no private key.
+
 ## [1.0.236] — unreleased
 
 Ansible jobs run on a panel on Odoo.sh, a playbook ends before the

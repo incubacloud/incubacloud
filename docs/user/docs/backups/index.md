@@ -94,9 +94,9 @@ uses its own if it has one, else its project's, else the default.
 
 An SFTP destination is a folder on a server you reach over SSH: a storage
 service, a NAS or a server you run. The panel logs in with
-a key it generates for the destination (no password), and checks the
-server's own key against the one you confirmed: a server presenting another
-key is refused.
+a key it generates for the destination, or with a password for a server that
+accepts no key, and checks the server's own key against the one you confirmed:
+a server presenting another key is refused.
 
 ### Create one
 
@@ -109,6 +109,7 @@ key is refused.
     | **Port** | 22 unless your provider says otherwise ([a storage service](#a-storage-service)). |
     | **User** | The SFTP user, for instance `backups`. |
     | **Folder** | Under the user's home, `backups` by default; start with `/` for an absolute path. Each instance writes under `<folder>/<project folder>/<instance>/`. |
+    | **Authentication** | **Key (recommended)**, which the panel generates, or **Password** for a server that accepts no key ([below](#a-server-that-accepts-no-key)). |
 
 2. **Create Destination**. The **Keys** block now shows the public key, as a
    line for `authorized_keys`. Add it to the user's `~/.ssh/authorized_keys`
@@ -125,6 +126,15 @@ key is refused.
 The test runs from the panel; the backups run from each server that hosts an
 instance. A server that accepts only some addresses must accept both.
 
+#### A server that accepts no key
+
+Choose **Password** under **Authentication** and type the SFTP user's
+password; skip step 2. The panel keeps it encrypted and never shows it again,
+and the server's key is read and trusted as in step 3. The password has at
+least 8 characters and may not hold quotes, `$`, `\` or `#`, nor start or end
+with a space. Use a key where
+the server accepts one: it cannot be guessed, nor reused from another account.
+
 #### A storage service
 
 Turn on SSH or SFTP access for the service, or for the sub-account you give the
@@ -138,6 +148,9 @@ the line.
 - **Another server or port** drops the trusted key: read and trust the new
   one, then rebuild the instances on the destination. The server, port and
   user cannot change while an archived instance keeps its copy there.
+- **Key or password**: switching deletes the other one; back to a key, the
+  panel generates a new pair to add to the server. Rebuild the instances on
+  the destination: until then they log in as before.
 - **Regenerate key** replaces the key pair. Add the new public key to the
   server and keep the old line until every instance on the destination has
   been rebuilt: until then they log in with the old key.

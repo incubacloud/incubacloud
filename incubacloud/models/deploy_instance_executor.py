@@ -929,6 +929,16 @@ class DeployInstanceExecutor(
             lines.append(
                 "OPTIONS_EXTRA=--metadata-sync-mode partial --full-if-older-than 1W"
             )
+            if bb.sftp_auth_method == "password":
+                # What duplicity 3.0.5.1 logs in with (``Backend.get_password``,
+                # which its paramiko backend calls; ``FTP_PASSWORD`` is the
+                # deprecated name), and the purges with it
+                # (``lib/purge_prefix.sh``). The template's own
+                # ``backup_backend_password`` answer stays empty: the answers
+                # are kept in the configuration snapshot.
+                lines.append(
+                    compose_env_line("BACKEND_PASSWORD", bb.sftp_password or "")
+                )
         elif bb.s3_access_key_id:
             lines.append(compose_env_line("AWS_ACCESS_KEY_ID", bb.s3_access_key_id))
         if bb.backend_type == "s3":
@@ -3037,19 +3047,21 @@ class DeployInstanceExecutor(
         """Whether this build ships the ``backup`` service's SSH files.
 
         Read from the files the instance lists, so the deploy, the
-        rebuild and a layer's own builds agree with what was staged.
+        rebuild and a layer's own builds agree with what was staged. The
+        trusted server key goes with a key and with a password alike.
 
         :rtype: bool
         """
-        return sftp_dst.SSH_KEY_FILE in self._addon_env_files()
+        return sftp_dst.SSH_KNOWN_HOSTS_FILE in self._addon_env_files()
 
     def _backup_ssh_dir_step(self, d):
         """Return the step that readies or removes the SSH directory.
 
         With SFTP the directory is created 0700 before the files are
-        moved in. Without it, it goes: a destination changed to S3, or
-        removed, must not leave a key on the host. ``rm -rf`` names that
-        one path.
+        moved in, and without a key to ship (a destination that logs in
+        with a password) the one an earlier build left is removed. Without
+        SFTP, it goes: a destination changed to S3, or removed, must not
+        leave a key on the host. ``rm -rf`` names that one path.
 
         :param str d: the instance directory
         :return: a one-step tuple
@@ -3057,10 +3069,10 @@ class DeployInstanceExecutor(
         """
         path = f"{d}/{sftp_dst.SSH_DIR}"
         if self._backup_ssh_shipped():
-            return ((
-                "Ready the backup SSH directory",
-                f"mkdir -p {path} && chmod 700 {path}",
-            ),)
+            ready = f"mkdir -p {path} && chmod 700 {path}"
+            if sftp_dst.SSH_KEY_FILE not in self._addon_env_files():
+                ready += f" && rm -f {d}/{sftp_dst.SSH_KEY_FILE}"
+            return (("Ready the backup SSH directory", ready),)
         return (("Remove the backup SSH directory", f"rm -rf {path}"),)
 
     def _write_extra_env_step(self, d):

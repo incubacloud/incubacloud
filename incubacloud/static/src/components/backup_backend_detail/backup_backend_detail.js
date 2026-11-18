@@ -23,6 +23,8 @@ const EMPTY_FORM = () => ({
   sftp_port: 22,
   sftp_user: "",
   sftp_path: "backups",
+  sftp_auth_method: "key",
+  sftp_password: "",
   passphrase: "",
   backup_image_version: "latest",
   email_from: "",
@@ -45,6 +47,8 @@ const ADVANCED_FIELDS = ["backup_retention", "backup_tz", "retention_owner"];
 const isS3 = (form) => (form.backend_type || "s3") === "s3";
 /** @returns {boolean} whether the form is an SFTP destination's */
 const isSftp = (form) => form.backend_type === "sftp";
+/** @returns {boolean} whether the form is an SFTP destination's that logs in with a password */
+const isSftpPassword = (form) => isSftp(form) && form.sftp_auth_method === "password";
 
 export class BackupBackendDetail extends Component {
   static props = {backend_id: {type: Number, optional: true}};
@@ -67,6 +71,7 @@ export class BackupBackendDetail extends Component {
       form: this.isNew ? EMPTY_FORM() : {},
       has_s3_secret_access_key: false,
       has_passphrase: false,
+      has_sftp_password: false,
       retention_owner_declared: true,
       // Usage display (separate from form because not editable here)
       last_measured_gb: 0,
@@ -91,6 +96,12 @@ export class BackupBackendDetail extends Component {
       ],
       sftp_port: [when(isSftp, portRange(_t("Use a port between 1 and 65535.")))],
       sftp_user: [when(isSftp, required(_t("User is required")))],
+      sftp_password: [
+        when(
+          (form) => isSftpPassword(form) && !this.state.has_sftp_password,
+          required(_t("Password is required"))
+        ),
+      ],
       email_from: [email(_t("Sender email is invalid"))],
       email_to: [email(_t("Recipient email is invalid"))],
       backup_retention: [
@@ -172,6 +183,7 @@ export class BackupBackendDetail extends Component {
       this.state.backend = b;
       this.state.has_s3_secret_access_key = b.has_s3_secret_access_key || false;
       this.state.has_passphrase = b.has_passphrase || false;
+      this.state.has_sftp_password = b.has_sftp_password || false;
       this.state.last_measured_gb = b.last_measured_gb || 0;
       this.state.last_measured_at = b.last_measured_at || "";
       this.state.retention_owner_declared = b.retention_owner_declared !== false;
@@ -188,6 +200,8 @@ export class BackupBackendDetail extends Component {
         sftp_port: b.sftp_port || 22,
         sftp_user: b.sftp_user || "",
         sftp_path: b.sftp_path || "",
+        sftp_auth_method: b.sftp_auth_method || "key",
+        sftp_password: "",
         passphrase: "",
         backup_image_version: b.backup_image_version || "latest",
         email_from: b.email_from || "",
@@ -324,6 +338,19 @@ export class BackupBackendDetail extends Component {
     return isSftp(this.state.form);
   }
 
+  /** @returns {boolean} whether the form is an SFTP destination's that logs in with a password */
+  get isSftpPassword() {
+    return isSftpPassword(this.state.form);
+  }
+
+  /** @returns {Array} the ways an SFTP destination can log in */
+  get authOptions() {
+    return [
+      {value: "key", label: _t("Key (recommended)")},
+      {value: "password", label: _t("Password")},
+    ];
+  }
+
   /** @returns {Array} the retention owners this type of destination has */
   get retentionOwnerOptions() {
     const options = [
@@ -378,6 +405,17 @@ export class BackupBackendDetail extends Component {
     const saved = JSON.parse(this._savedForm);
     return saved.sftp_host !== this.state.form.sftp_host
       || Number(saved.sftp_port) !== Number(this.state.form.sftp_port);
+  }
+
+  /**
+   * Whether this save switches a saved SFTP destination between a key and a
+   * password, which drops the other secret.
+   *
+   * @returns {boolean}
+   */
+  get _switchesLogin() {
+    if (this.isNew || !this.isSftp || !this._savedForm) return false;
+    return JSON.parse(this._savedForm).sftp_auth_method !== this.state.form.sftp_auth_method;
   }
 
   /** Copy *text* to the clipboard and say so. */
@@ -479,6 +517,21 @@ export class BackupBackendDetail extends Component {
       });
       if (!confirmed) return;
     }
+    if (this._switchesLogin) {
+      const toPassword = this.isSftpPassword;
+      const confirmed = await this._confirm({
+        title: _t("Change how the panel logs in"),
+        message: toPassword
+          ? _t(
+              "The key pair is deleted and the backups log in with the password. Rebuild the instances on this destination: until then they log in with the old key, so keep its line in authorized_keys until every one has been rebuilt."
+            )
+          : _t(
+              "The password is deleted and the panel generates a new key pair. Add its public key to the server's authorized_keys, then rebuild the instances on this destination: until then they log in with the password."
+            ),
+        confirmLabel: _t("Change"),
+      });
+      if (!confirmed) return;
+    }
     this.state.saving = true;
     try {
       const vals = {...this.state.form};
@@ -503,8 +556,9 @@ export class BackupBackendDetail extends Component {
         }
         this._savedForm = sent;
         if (this.isSftp) {
-          // The server drops the trusted key with a new endpoint, and
-          // recomputes the path.
+          // The server drops the trusted key with a new endpoint,
+          // recomputes the path, and makes or drops the key pair with
+          // another way of logging in.
           await this.loadBackend();
         }
         this.env.toast?.success(_t("Changes saved"));

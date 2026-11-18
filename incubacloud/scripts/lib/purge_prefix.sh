@@ -57,13 +57,16 @@
 # An ``sftp://`` DST is emptied over SFTP with paramiko (in both images),
 # with the same contract: the key and the trusted server key are read from
 # ``/root/.ssh`` (``id_ed25519``, ``known_hosts``), any other server key is
-# refused, and links are removed, never followed. With ``PURGE_BEFORE`` or
-# ``PURGE_SINCE`` the server's clock decides what is in scope (a file's
-# mtime), so it is checked first: a probe file's mtime more than 120 s off
-# the container's clock stops the purge with 22. Off, it would take the
-# other instance's files, or leave this one's behind and answer 10. The
-# chain check (23) reads a file's mtime where S3 gives ``LastModified``;
-# a file the server gives no time for is kept, and counts as newer.
+# refused, and links are removed, never followed. A destination that logs
+# in with a password has no key there: ``BACKEND_PASSWORD``, which
+# duplicity logs in with, is in the environment, and the purge uses it.
+# With ``PURGE_BEFORE`` or ``PURGE_SINCE`` the server's clock decides what
+# is in scope (a file's mtime), so it is checked first: a probe file's
+# mtime more than 120 s off the container's clock stops the purge with 22.
+# Off, it would take the other instance's files, or leave this one's behind
+# and answer 10. The chain check (23) reads a file's mtime where S3 gives
+# ``LastModified``; a file the server gives no time for is kept, and counts
+# as newer.
 #
 # Exit codes are the contract with the executors (see backup_purge.sh):
 #   0   purged and verified empty (of objects in scope)
@@ -240,10 +243,14 @@ def sftp_purge():
     except OSError as exc:
         print(f"ERROR no trusted server key to check {host} against: {exc}")
         sys.exit(22)
+    password = os.environ.get("BACKEND_PASSWORD") or None
+    if password:
+        login, what = {"password": password}, "password"
+    else:
+        login, what = {"key_filename": os.path.join(ssh_dir, "id_ed25519")}, "key"
     try:
         client.connect(
-            host, port=port, username=user,
-            key_filename=os.path.join(ssh_dir, "id_ed25519"),
+            host, port=port, username=user, **login,
             look_for_keys=False, allow_agent=False,
             timeout=30, banner_timeout=30, auth_timeout=30,
         )
@@ -251,7 +258,7 @@ def sftp_purge():
         print(f"ERROR the server key of {host} does not match the trusted one")
         sys.exit(22)
     except paramiko.AuthenticationException:
-        print(f"ERROR {host} rejected the key")
+        print(f"ERROR {host} rejected the {what}")
         sys.exit(21)
     except (paramiko.SSHException, OSError) as exc:
         print(f"ERROR cannot reach {host}:{port}: {exc}")

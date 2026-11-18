@@ -13340,8 +13340,11 @@ msgstr "Frase de paso"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__password
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__sftp_auth_method__password
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__login_type__password
 msgid "Password"
 msgstr "Contraseña"
@@ -28447,3 +28450,176 @@ msgstr "· opcional"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Use a port between 1 and 65535."
 msgstr "Use un puerto entre 1 y 65535."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "The SFTP password of %(name)s cannot be read: enter it again."
+msgstr ""
+"No se puede leer la contraseña SFTP de %(name)s: introdúzcala de nuevo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "Enter the password %(name)s logs in to the SFTP server with."
+msgstr ""
+"Introduzca la contraseña con la que %(name)s inicia sesión en el servidor "
+"SFTP."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The SFTP password of %(name)s may not hold quotes, backquotes, $, \\, #, "
+"line breaks or control characters, nor start or end with a space."
+msgstr ""
+"La contraseña SFTP de %(name)s no puede contener comillas, comillas "
+"invertidas, $, \\, #, saltos de línea ni caracteres de control, ni empezar o "
+"terminar con un espacio."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
+"The SFTP password of %(name)s must be at least %(min)s characters long."
+msgstr ""
+"La contraseña SFTP de %(name)s debe tener al menos %(min)s caracteres."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "%(name)s logs in with a password: switch it to a key first."
+msgstr ""
+"%(name)s inicia sesión con una contraseña: cámbielo antes a una clave."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"The SFTP password of the backup destination %(name)s cannot be read. Enter "
+"it again on the destination and try again."
+msgstr ""
+"No se puede leer la contraseña SFTP del destino de copias %(name)s. "
+"Introdúzcala de nuevo en el destino y vuelva a intentarlo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/purge_archived_executor.py:0
+msgid ""
+"Enter the SFTP password again on the backup destination %(name)s: nothing "
+"was deleted."
+msgstr ""
+"Introduzca de nuevo la contraseña SFTP en el destino de copias %(name)s: no "
+"se ha borrado nada."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid ""
+"The server refused the user or the password. Check both with your provider "
+"and enter the password again."
+msgstr ""
+"El servidor rechazó el usuario o la contraseña. Compruebe ambos con su "
+"proveedor e introduzca de nuevo la contraseña."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__sftp_auth_method
+msgid "SFTP Authentication"
+msgstr "Autenticación SFTP"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__sftp_auth_method
+msgid ""
+"How the panel and the backups log in to the SFTP server: with a key the "
+"panel generates, or with a password for a server that accepts no key."
+msgstr ""
+"Cómo inician sesión el panel y las copias en el servidor SFTP: con una clave "
+"que genera el panel, o con una contraseña para un servidor que no acepta "
+"claves."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__sftp_password
+msgid "SFTP Password"
+msgstr "Contraseña SFTP"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__sftp_auth_method__key
+msgid "Key (recommended)"
+msgstr "Clave (recomendada)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Password is required"
+msgstr "La contraseña es obligatoria"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Change how the panel logs in"
+msgstr "Cambiar cómo inicia sesión el panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid ""
+"The key pair is deleted and the backups log in with the password. Rebuild "
+"the instances on this destination: until then they log in with the old key, "
+"so keep its line in authorized_keys until every one has been rebuilt."
+msgstr ""
+"Se borra el par de claves y las copias inician sesión con la contraseña. "
+"Reconstruya las instancias de este destino: hasta entonces inician sesión "
+"con la clave anterior, así que mantenga su línea en authorized_keys hasta "
+"que se hayan reconstruido todas."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid ""
+"The password is deleted and the panel generates a new key pair. Add its "
+"public key to the server's authorized_keys, then rebuild the instances on "
+"this destination: until then they log in with the password."
+msgstr ""
+"Se borra la contraseña y el panel genera un par de claves nuevo. Añada su "
+"clave pública al authorized_keys del servidor y luego reconstruya las "
+"instancias de este destino: hasta entonces inician sesión con la contraseña."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Authentication"
+msgstr "Autenticación"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid ""
+"A key the panel generates is the safer way in. Choose a password only for a "
+"server that accepts no key."
+msgstr ""
+"Una clave que genera el panel es la forma más segura de entrar. Elija una "
+"contraseña solo para un servidor que no acepte claves."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid ""
+"The SFTP user's password. It may not hold quotes, backquotes, $, \\ or #, "
+"nor start or end with a space."
+msgstr ""
+"La contraseña del usuario SFTP. No puede contener comillas, comillas "
+"invertidas, $, \\ ni #, ni empezar o terminar con un espacio."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Once you create it, confirm the server's key here."
+msgstr "Cuando lo cree, confirme aquí la clave del servidor."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Save to generate the key, then add it to the server."
+msgstr "Guarde para generar la clave y luego añádala al servidor."
