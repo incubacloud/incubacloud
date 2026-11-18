@@ -566,7 +566,14 @@ class TestTheUpdateNamesThePathsSavedBefore(_BackupDstCase):
         self.assertFalse(live.backup_path_suffix)
 
     def test_the_alert_resolves_once_one_record_holds_the_path(self):
-        """At the daily check of archived copies, compared as a purge reads it."""
+        """At the daily check of archived copies, compared as a purge reads it.
+
+        A copy of a panel's database may hold alerts of its own, one of
+        them resolvable by the first check: that check runs first, so the
+        counts below are this test's paths alone.
+        """
+        Instance = self.env["cloud.instance"]
+        Instance._resolve_unshared_backup_paths()
         self.instance._finalize_removal(keep_in_panel=True)
         path = self.instance.custom_backup_dst
         live = self.env["cloud.instance"].create({
@@ -578,10 +585,11 @@ class TestTheUpdateNamesThePathsSavedBefore(_BackupDstCase):
         self._saved_before(path, live)
         with self.assertLogs(_MIGRATION_LOGGER, "WARNING"):
             self._migrate()
-        Instance = self.env["cloud.instance"]
         alert = self.env["cloud.alert"].search([
             ("code", "=", "backup_path_shared"), ("state", "=", "active"),
+            ("dedup_key", "=", path),
         ])
+        self.assertEqual(len(alert), 1)
         self.assertEqual(Instance._resolve_unshared_backup_paths(), 0)
         self.assertEqual(alert.state, "active")
         self._saved_before(f"{path}/", live)

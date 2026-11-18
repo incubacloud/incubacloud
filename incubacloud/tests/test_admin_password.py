@@ -28,6 +28,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import psycopg2
+from lxml import etree
 from passlib.context import CryptContext
 
 import odoo
@@ -39,6 +40,7 @@ from odoo.service import model as model_service
 from odoo.sql_db import close_db, connection_info_for
 from odoo.tests import tagged
 from odoo.tests.common import BaseCase, TransactionCase
+from odoo.tools import file_open
 
 from ..models._admin_password import (
     LABEL_ADMIN_PASSWORD,
@@ -1020,9 +1022,22 @@ class TestTheSweep(_FlowCase):
                 self.assertEqual(self.inst.admin_password_state, state)
 
     def test_the_cron_is_hourly_and_active(self):
+        """Hourly, and active as the module's data creates it.
+
+        ``active`` is read from the data file, not the record: a copy of
+        a panel's database (QA's, a deploy's clone) pauses its crons
+        before the suite runs, and an update never writes the flag back.
+        The record is not declared inactive, so it takes ``ir.cron``'s
+        default, which must be active.
+        """
         cron = self.env.ref("incubacloud.cron_check_admin_passwords")
-        self.assertTrue(cron.active)
         self.assertEqual((cron.interval_number, cron.interval_type), (1, "hours"))
+        with file_open("incubacloud/data/admin_password_cron.xml", "rb") as handle:
+            root = etree.parse(handle).getroot()
+        (record,) = root.iterfind(".//record[@id='cron_check_admin_passwords']")
+        self.assertEqual(record.get("model"), "ir.cron")
+        self.assertIsNone(record.find("field[@name='active']"))
+        self.assertIs(self.env["ir.cron"].default_get(["active"])["active"], True)
 
 
 # ---------------------------------------------------------------------------

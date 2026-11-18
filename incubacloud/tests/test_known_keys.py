@@ -18,7 +18,7 @@ import psycopg2
 from odoo import fields
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.service.model import get_public_method
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import TransactionCase, tagged
 from odoo.tools import mute_logger
 
 from ..models import cloud_host_known_key as known
@@ -58,8 +58,15 @@ def _ed25519():
     return line, key.get_fingerprint("sha256")
 
 
+@tagged("post_install", "-at_install")
 class KnownKeysCase(TransactionCase):
-    """A server sending its security logs, an Administrator and a Developer."""
+    """A server sending its security logs, an Administrator and a Developer.
+
+    After every module is loaded: the users are created through the ORM,
+    and on a database with ``account`` installed ``res_partner`` holds its
+    NOT NULL ``autopost_bills``, whose default core's registry lacks while
+    core loads alone (at install).
+    """
 
     def setUp(self):
         """The server, its users, and the panel's key read as :data:`PANEL_FP`."""
@@ -433,8 +440,9 @@ class TestKnownKeyTold(KnownKeysCase):
         self.assertTrue(self._add(name="One more").active)
 
 
+@tagged("post_install", "-at_install")
 class TestKnownKeyCron(SecurityEventsCase):
-    """The events' cron with known keys."""
+    """The events' cron with known keys; after every module, as :class:`KnownKeysCase`."""
 
     def setUp(self):
         """An Administrator who adds keys; notices off."""

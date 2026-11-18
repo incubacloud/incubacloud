@@ -270,6 +270,13 @@ recreates the bot only when it is missing.
   on the missing `docker` and raised an alert every night. The prune is
   queued only on the servers whose Full Setup ended, as the monitoring
   agents are.
+- **Four test classes pass on a copy of a panel's database.** The tests
+  of known keys and of the Access tab's route created their users while
+  core loaded alone, where a database with `account` installed refuses a
+  partner without `autopost_bills`: they now run once every module is
+  loaded. The test of the admin password check's cron reads that it is
+  active from the module's data, as a copy pauses its crons; the test of
+  a shared backup path's alert counts only the alerts of its own paths.
 
 ### Security
 

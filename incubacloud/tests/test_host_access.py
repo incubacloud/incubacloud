@@ -7,7 +7,7 @@ patched: its own tests read the central.
 import json
 from unittest.mock import patch
 
-from odoo.tests.common import HttpCase, TransactionCase
+from odoo.tests.common import HttpCase, TransactionCase, tagged
 
 from odoo.addons.incubacloud.models import cloud_host_access as access_mod
 
@@ -95,7 +95,11 @@ class TestAccessSummary(TransactionCase):
         self.assertIn("10.0.0.5", logged.output[0])
 
 
+@tagged("post_install", "-at_install")
 class TestAccessRoute(HttpCase):
+    """The route, by role; after every module, as its users are created
+    through the ORM (``account``'s NOT NULL ``autopost_bills`` on
+    ``res_partner`` has no default while core loads alone)."""
 
     def setUp(self):
         super().setUp()
