@@ -537,11 +537,16 @@ jobs:
       # The Odoo suite cannot run these: the CI's Odoo image has Python
       # 3.10, below what ansible-core 2.21 runs on, and no Ansible. Here
       # the launcher runs playbooks with the ansible-core and
-      # ansible-runner of requirements.txt on a /dev/shm made read-only,
-      # and the tripwire compares what they use of multiprocessing with
-      # the versions reviewed.
+      # ansible-runner pinned in requirements.txt, which this step
+      # installs from it, on a /dev/shm that a sitecustomize simulates as
+      # read-only (sem_open and shm_open raise EROFS), and the tripwire
+      # compares what they use of multiprocessing with the versions
+      # reviewed. The tests also assert that the installed versions are
+      # requirements.txt's pins.
       - name: Install ansible-core, ansible-runner and pytest
-        run: pip install 'ansible-core==2.21.2' 'ansible-runner==2.4.3' 'pytest==9.1.1'
+        run: |
+          grep -E '^(ansible-core|ansible-runner)==' requirements.txt > ansible-pins.txt
+          pip install -r ansible-pins.txt 'pytest==9.1.1'
 
       - name: Run the launcher's tests
         run: python -m pytest -p no:cacheprovider tests/ansible_noshm

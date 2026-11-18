@@ -343,7 +343,9 @@ each with its own review and QA.
   over pipes and refuses the primitives it has no substitute for, then
   runs ansible-playbook's `main` in its own process. A panel where locks
   work runs ansible-playbook as before. The CI job `ansible-noshm` runs
-  playbooks through it on a `/dev/shm` made read-only and compares what
+  playbooks through it on a simulated read-only `/dev/shm` (a
+  `sitecustomize` makes `sem_open` and `shm_open` raise `EROFS`; only the
+  QA's Odoo.sh profile mounts it read-only) and compares what
   ansible-core and ansible-runner use of `multiprocessing` with the
   versions reviewed. A cancel kills the playbook's process group with
   SIGKILL; from ansible-core 2.19 the workers leave that group, so the
