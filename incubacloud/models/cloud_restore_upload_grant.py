@@ -300,7 +300,7 @@ class CloudRestoreUploadGrant(models.Model):
         """
         self.ensure_one()
         lang = self.sudo().user_id.lang or "en_US"
-        return self.env(context=dict(self.env.context, lang=lang))
+        return self.env(context=self.env.context | {"lang": lang})
 
     def _key_comment(self):
         """Return the marker that identifies this grant's key line.
