@@ -55,6 +55,7 @@ NOT_READ = frozenset(
         "CODE_OF_CONDUCT.md",
         "images",
         "requirements-ci.txt",
+        "tests",
     }
 )
 #: Folders never searched: generated or caches. Vendored libraries are the

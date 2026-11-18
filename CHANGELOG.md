@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.0.236] — unreleased
+## [1.0.238] — unreleased
 
 A server keeps the SSH keys its Administrators sign in with as known keys:
 their sign-ins are listed and raise no alert, and each key added raises a
@@ -249,6 +249,43 @@ when it is missing.
 - `0.0.0`'s `end-cron-bot`, run on every version change, creates the cron
   bot when it is missing and gives it the crons of the panel's modules
   still owned by uid 1; with the bot there, it does nothing.
+
+## [1.0.236] — unreleased
+
+Ansible jobs run on a panel on Odoo.sh, a playbook ends before the
+request's time limit, and Ansible logs in to a password host with sshpass.
+The update changes no table and has no data migration.
+
+### Fixed
+
+- **Ansible jobs run on Odoo.sh.** Odoo.sh mounts `/dev/shm` read-only,
+  where Python keeps its semaphores, and ansible-core's controller passes
+  its tasks' results through queues that need them: Harden Host, the Check,
+  maintenance, the observability agents and every other playbook ended with
+  *Unable to use multiprocessing, this is normally caused by lack of access
+  to /dev/shm: [Errno 30] Read-only file system*, and no setting of Ansible
+  avoids it. When the panel cannot make a semaphore, it now starts
+  ansible-playbook with its own Python through a launcher
+  (`incubacloud/ansible_noshm.py`) that gives Ansible locks over pipes, and
+  the job's log says so. A panel whose `/dev/shm` works runs
+  ansible-playbook as before. The CI's `ansible-noshm` job runs playbooks
+  through the launcher on a `/dev/shm` made read-only, and fails on a new
+  ansible-core or ansible-runner until what it uses of `multiprocessing` is
+  reviewed.
+- **A playbook ends before the request's time limit.** A playbook runs
+  within its job's request, and past `limit_time_real` Odoo killed the
+  request (with `workers = 0`, the whole server): the job was retried from
+  the start and the run's copy of the server's key stayed on the panel's
+  disk. The panel now stops the playbook a minute before what the request
+  has left of `limit_time_real`; the job fails, saying *The playbook was
+  stopped*, through its usual failure path, and the run's files are
+  removed.
+- **Ansible logs in to a password host with sshpass.** The panel lets a
+  host log in with a password only where sshpass is installed, but since
+  ansible-core 2.19 Ansible's default is `ssh_askpass`, which hands the
+  password over in a shared memory block in `/dev/shm` instead. The
+  inventory now names sshpass (`ansible_ssh_password_mechanism`), the
+  mechanism the panel checks for.
 
 ## [1.0.235] — unreleased
 
