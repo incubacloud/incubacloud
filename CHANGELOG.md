@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.237] — unreleased
 
-Harden Host supports Ubuntu 26.04 LTS.
+Harden Host supports Ubuntu 26.04 LTS, and the security logs read its sudo.
 The update changes no table and has no data migration.
 
 ### Added
@@ -27,6 +27,17 @@ The update changes no table and has no data migration.
   is not asked to harden again: on the systems admitted before, the
   recipe runs the same steps with the same values. The CI parses the
   firewall ruleset with 26.04's nft too.
+
+### Fixed
+
+- **The security logs read sudo-rs, Ubuntu 26.04's sudo.** It writes two
+  spaces after the user's colon, and the panel read none of its lines: a
+  command run by another user than the panel's raised no alert and was
+  missing from the server's Security view. It also writes no line of its
+  own for a wrong password, only PAM's, so the agents counted no refused
+  sudo; they now count PAM's line when sudo-rs wrote it (GNU sudo writes
+  both, and is still counted once). sudo-rs logs nothing at all for a
+  user the sudoers leave out, so on 26.04 that refusal is not seen.
 
 ## [1.0.236] — unreleased
 

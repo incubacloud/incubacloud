@@ -581,9 +581,10 @@ def parse_sshd(line):
 
 #: ``<user> : [<refusal> ; ][TTY=… ; ]PWD=… ; USER=<as> ; …COMMAND=<cmd>``.
 #: A refusal (``1 incorrect password attempt``, ``user NOT in sudoers``)
-#: comes before the fields and has neither ``;`` nor ``=``.
+#: comes before the fields and has neither ``;`` nor ``=``. sudo-rs
+#: (Ubuntu 26.04's sudo) writes two spaces after the colon.
 _SUDO = re.compile(
-    r"^\s*(?P<user>\S+) : (?:(?P<refusal>[^;=]+) ; )?"
+    r"^\s*(?P<user>\S+) : +(?:(?P<refusal>[^;=]+) ; )?"
     r"(?:TTY=\S+ ; )?PWD=.* ; USER=(?P<run_as>\S+) ; (?:.* ; )?"
     r"COMMAND=(?P<command>.*)\Z",
     re.DOTALL,

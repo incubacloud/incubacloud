@@ -1,0 +1,8 @@
+# The lines Loki holds for source="sudo" from sudo-rs, Ubuntu 26.04's sudo
+# (sudo-rs 0.2.13, 18-nov-2026): two spaces after the user's colon. It
+# writes no line of its own for a refused password, only PAM's, and none
+# for a user the sudoers leave out. One line per shape, in this order:
+#   a command of the panel's user
+#   a refused password: PAM's line alone
+incubacloud :  PWD=/home/incubacloud ; USER=root ; COMMAND=/usr/bin/true
+pam_unix(sudo:auth): authentication failure; logname=incubacloud uid=1001 euid=0 tty= ruser=probador rhost=  user=probador

@@ -51,10 +51,26 @@ local function ssh(msg, out)
     end
 end
 
-local function sudo(msg, out)
+-- Whether the journal record is sudo-rs's (Ubuntu 26.04's sudo, which
+-- runs from /usr/lib/cargo/bin).
+local function is_sudo_rs(exe)
+    return exe ~= nil and (exe:find("/cargo/bin/sudo", 1, true) ~= nil
+        or exe:find("sudo-rs", 1, true) ~= nil)
+end
+
+local function sudo(msg, out, exe)
     -- The line of a refused sudo also carries COMMAND=: it is a failure,
     -- not a command run.
     if msg:find("incorrect password attempt", 1, true) then
+        out.c_sudo_failed = "1"
+        return
+    end
+    -- sudo-rs writes no line of its own for a wrong password, only PAM's,
+    -- one per refused sudo (Ubuntu 26.04, sudo-rs 0.2.13). GNU sudo writes
+    -- PAM's too, beside the line above: counted for sudo-rs alone, or each
+    -- refusal would count twice there.
+    if is_sudo_rs(exe)
+        and msg:find("^pam_unix%(sudo:auth%): authentication failure") then
         out.c_sudo_failed = "1"
         return
     end
@@ -298,7 +314,7 @@ function classify(tag, timestamp, record)
         -- sudo's.
         if record["SYSLOG_IDENTIFIER"] == "sudo" then
             out.source = "sudo"
-            sudo(msg, out)
+            sudo(msg, out, record["_EXE"])
         else
             out.source = "sshd"
             ssh(msg, out)
