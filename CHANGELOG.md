@@ -105,6 +105,11 @@ Import dialog.
   other module and say that agents still on `/mcp` have to switch to
   `/cloud/mcp`, or, where the address is a path of the panel's proxy, that
   the proxy has to forward it to `/cloud/mcp`.
+- **Export for Development works on a server started from a minimal
+  Debian 13 image.** The export copies the instance with `rsync`, which
+  such an image does not ship and Full Setup did not install, so the copy
+  failed at its first step. Full Setup installs it now, as it does `zip`
+  and `cron`; a server set up before gets it from a Full Setup run again.
 
 ### Documentation
 

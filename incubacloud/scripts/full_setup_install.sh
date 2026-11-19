@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install the host toolchain for a full setup: git, Docker CE, Compose v2,
 # the Python toolchain (pip/venv/pipx) and the deployment tools
-# (copier, invoke, pre-commit), plus zip and logrotate.
+# (copier, invoke, pre-commit), plus zip, logrotate, cron and rsync.
 #
 # Usage: full_setup_install.sh [git_helper_image]
 #   <git_helper_image>  the git helper image (doodba's by digest) that the
@@ -131,6 +131,12 @@ command -v logrotate >/dev/null 2>&1 || $APT install -y -qq logrotate \
 ic_log "Installing cron..."
 command -v crontab >/dev/null 2>&1 || $APT install -y -qq cron \
     || ic_warn "cron install failed: the metrics agents' install fails until it is installed (apt install cron)"
+
+# The development export (export_sanitize.sh) copies the instance with
+# rsync, which a minimal Debian 13 image does not ship.
+ic_log "Installing rsync..."
+command -v rsync >/dev/null 2>&1 || $APT install -y -qq rsync \
+    || ic_warn "rsync install failed: Export for Development fails until it is installed (apt install rsync)"
 
 # The client the observability agents' database collector (collect_pg.sh)
 # reads each instance's PostgreSQL with, through the socket of its db
