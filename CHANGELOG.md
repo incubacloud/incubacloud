@@ -125,7 +125,7 @@ Import dialog.
   cannot read.** asyncssh loaded `~/.ssh`'s keys before the key exchange,
   and the empty `id_rsa` a Doodba project ships stopped it with "Invalid
   private key": **Read the server key** on an SFTP destination only showed
-  "Could not read the server's key." in a tenant's panel. Reading a key,
+  "Could not read the server's key." in a managed panel. Reading a key,
   for SFTP destinations and hosts, loads no client key and no agent now,
   and a key asyncssh cannot import is told on the destination's page.
 
