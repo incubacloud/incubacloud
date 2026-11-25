@@ -662,13 +662,15 @@ msgid ""
 "%(type)s key, while the destination trusts its RSA key, which the server "
 "still presents. Read the server's key on the destination's page, trust it, "
 "then rebuild the instances on the destination: backups to it fail until "
-"then."
+"then. Before you trust the key, compare its fingerprint with the one your "
+"provider shows."
 msgstr ""
 "Las copias al servidor SFTP del destino de copia %(name)s comprueban su "
 "clave %(type)s, mientras que el destino confía en su clave RSA, que el "
 "servidor sigue presentando. Lea la clave del servidor en la página del "
 "destino, confíe en ella y después reconstruya las instancias del destino: "
-"hasta entonces, las copias a él fallan."
+"hasta entonces, las copias a él fallan. Antes de confiar en la clave, "
+"compare su huella con la que muestra su proveedor."
 
 #. module: incubacloud
 #. odoo-python

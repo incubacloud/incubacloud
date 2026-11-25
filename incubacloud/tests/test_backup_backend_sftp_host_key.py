@@ -9,8 +9,10 @@ looks up on the host.
 import asyncio
 import os
 import tempfile
+import threading
+from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import asyncssh
 
@@ -40,6 +42,53 @@ def _core_address(cls):
 def _server_key(kind="ssh-ed25519"):
     """Return a fresh server key of *kind*, as asyncssh hands one back."""
     return asyncssh.generate_private_key(kind).convert_to_public()
+
+
+@contextmanager
+def _loopback_server(host_keys):
+    """Run a real asyncssh server on 127.0.0.1, on a free port.
+
+    It runs on an event loop of its own in a thread, so the synchronous
+    :func:`ssh_host_keys.presented_host_key` can dial it with its own loop.
+    It only exchanges keys: no session is opened.
+
+    :param list host_keys: the server's host key pairs
+        (``asyncssh.load_keypairs``), each offered with its
+        ``host_key_algorithms``
+    :return: the port it listens on
+    :rtype: int
+    """
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+
+    async def _await(awaitable):
+        """Await *awaitable*: ``asyncssh.listen`` returns no coroutine."""
+        return await awaitable
+
+    async def _close(server):
+        """Close *server* on its own loop: asyncio is not thread-safe."""
+        server.close()
+        await server.wait_closed()
+
+    def _on_loop(awaitable):
+        """Await *awaitable* on the server's loop and return its result."""
+        return asyncio.run_coroutine_threadsafe(_await(awaitable), loop).result(
+            ssh_host_keys.TOTAL_TIMEOUT,
+        )
+
+    try:
+        server = _on_loop(asyncssh.listen(
+            "127.0.0.1", 0, server_host_keys=host_keys,
+        ))
+        try:
+            yield server.sockets[0].getsockname()[1]
+        finally:
+            _on_loop(_close(server))
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(ssh_host_keys.TOTAL_TIMEOUT)
+        loop.close()
 
 
 def _empty_client_key_home(home):
@@ -92,6 +141,7 @@ class TestSshHostKeys(TransactionCase):
         )
 
     def test_paramiko_puts_the_trusted_type_first(self):
+        """An ``ssh-rsa`` or ECDSA line moves its type to the front; Ed25519 is there."""
         order = ssh_host_keys.PARAMIKO_HOST_KEY_ORDER
         self.assertEqual(ssh_host_keys.paramiko_order(""), order)
         self.assertEqual(ssh_host_keys.paramiko_order("ssh-ed25519"), order)
@@ -102,6 +152,35 @@ class TestSshHostKeys(TransactionCase):
             ssh_host_keys.paramiko_order("ecdsa-sha2-nistp256")[:2],
             ("ecdsa-sha2-nistp256", "ssh-ed25519"),
         )
+
+    def test_a_server_without_ssh_rsa_answers_paramiko_order_with_ed25519(self):
+        """A real exchange with a server that offers RSA as OpenSSH 8.8 does.
+
+        The server has an RSA and an Ed25519 key and offers ``rsa-sha2-*``
+        but not ``ssh-rsa``: asked in paramiko's order for an RSA line, it
+        answers with its Ed25519 key, the one the backups compare; asked
+        for RSA alone, with its RSA key. An asyncssh server offers what its
+        key pairs list, so the RSA pair drops ``ssh-rsa`` from its list.
+        """
+        rsa, ed = asyncssh.load_keypairs([
+            asyncssh.generate_private_key("ssh-rsa"),
+            asyncssh.generate_private_key("ssh-ed25519"),
+        ])
+        rsa.host_key_algorithms = tuple(
+            alg for alg in rsa.host_key_algorithms if alg != b"ssh-rsa"
+        )
+        self.assertIn(b"rsa-sha2-512", rsa.host_key_algorithms)
+        with _loopback_server([rsa, ed]) as port:
+            paramiko = ssh_host_keys.presented_host_key(
+                "127.0.0.1", port,
+                server_host_key_algs=ssh_host_keys.paramiko_order("ssh-rsa"),
+            )
+            rsa_alone = ssh_host_keys.presented_host_key(
+                "127.0.0.1", port,
+                server_host_key_algs=ssh_host_keys.RSA_HOST_KEY_ORDER,
+            )
+        self.assertEqual(paramiko.public_data, ed.key_public_data)
+        self.assertEqual(rsa_alone.public_data, rsa.key_public_data)
 
     def test_no_key_types_keeps_asyncssh_order(self):
         """An empty tuple is asyncssh's default; a list would select nothing."""
@@ -233,12 +312,14 @@ class TestSftpHostKeyTrust(TransactionCase):
     def test_a_client_key_asyncssh_cannot_import_is_told(self):
         """A ``KeyImportError`` (a ``ValueError``) comes back as a UserError."""
         error = asyncssh.KeyImportError("Invalid private key")
-        with patch(_PRESENTED, side_effect=error), \
-                self.assertRaisesRegex(UserError, "Invalid private key"):
+        with patch.object(
+            ssh_host_keys, "presented_host_key", autospec=True,
+            side_effect=error,
+        ), self.assertRaisesRegex(UserError, "Invalid private key"):
             self.backend._sftp_read_host_key()
         with patch.object(
-            ssh_host_keys, "presented_host_key_async",
-            AsyncMock(side_effect=error),
+            ssh_host_keys, "presented_host_key_async", autospec=True,
+            side_effect=error,
         ), self.assertRaises(UserError):
             asyncio.run(self.backend._sftp_presented_line_async())
 
@@ -335,12 +416,14 @@ class TestSftpTrustedRsaKey(TransactionCase):
 
     @classmethod
     def setUpClass(cls):
+        """Generate the server's RSA and Ed25519 keys; dial the name itself."""
         super().setUpClass()
         _core_address(cls)
         cls.rsa = _server_key("ssh-rsa")
         cls.ed = _server_key()
 
     def setUp(self):
+        """Create a destination that trusts the server's RSA key."""
         super().setUp()
         self.backend = self.env["cloud.backup.backend"].create({
             "name": "sftp-rsa",
@@ -363,6 +446,7 @@ class TestSftpTrustedRsaKey(TransactionCase):
         ed = self.ed
 
         def presented(address, port, server_host_key_algs=()):
+            """Return *rsa* to RSA alone (or raise it), :attr:`ed` otherwise."""
             if tuple(server_host_key_algs) == ssh_host_keys.RSA_HOST_KEY_ORDER:
                 if isinstance(rsa, Exception):
                     raise rsa
@@ -375,6 +459,7 @@ class TestSftpTrustedRsaKey(TransactionCase):
         )
 
     def _alert(self):
+        """Return the destination's active server key alert."""
         return self.env["cloud.alert"].search([
             ("code", "=", "backup_sftp_host_key_changed"),
             ("dedup_key", "=", self.backend._alert_key()),
@@ -382,11 +467,13 @@ class TestSftpTrustedRsaKey(TransactionCase):
         ])
 
     def _ed_fingerprint(self):
+        """Return the fingerprint of the server's Ed25519 key."""
         return ssh_host_keys.fingerprint(
             ssh_host_keys.known_hosts_line("backup.example.com", 22, self.ed),
         )
 
     def test_the_same_rsa_key_asks_for_the_other_type(self):
+        """The trusted RSA key still presented: the alert asks for Ed25519."""
         with self._server(self.rsa) as presented:
             outcome = self.backend._sftp_check_presented_key()
         self.assertEqual(outcome, ("key_type", self._ed_fingerprint()))
@@ -401,21 +488,25 @@ class TestSftpTrustedRsaKey(TransactionCase):
         self.assertNotIn("not the trusted", alert.message)
 
     def test_another_rsa_key_is_a_changed_key(self):
+        """Another RSA key than the trusted one is the changed-key alert."""
         with self._server(_server_key("ssh-rsa")):
             outcome = self.backend._sftp_check_presented_key()
         self.assertEqual(outcome, ("changed", self._ed_fingerprint()))
         self.assertIn("not the trusted", self._alert().message)
 
     def test_no_rsa_key_left_is_a_changed_key(self):
+        """A server that no longer presents an RSA key: a changed key."""
         with self._server(OSError("no matching host key type")):
             outcome = self.backend._sftp_check_presented_key()
         self.assertEqual(outcome[0], "changed")
         self.assertIn("not the trusted", self._alert().message)
 
     def test_the_async_check_tells_the_same(self):
+        """The check inside an event loop gives the same outcome and alert."""
         rsa = self.rsa
 
         async def presented(address, port, server_host_key_algs=()):
+            """Return the RSA key to RSA alone, :attr:`ed` otherwise."""
             if tuple(server_host_key_algs) == ssh_host_keys.RSA_HOST_KEY_ORDER:
                 return rsa
             return self.ed
@@ -429,6 +520,7 @@ class TestSftpTrustedRsaKey(TransactionCase):
         self.assertTrue(self._alert())
 
     def test_an_ed25519_key_trusted_is_never_read_again(self):
+        """Only an RSA line is read again with RSA alone."""
         self.backend.sudo().write({
             "sftp_known_hosts": ssh_host_keys.known_hosts_line(
                 "backup.example.com", 22, _server_key(),
@@ -444,6 +536,7 @@ class TestSftpTrustedRsaKey(TransactionCase):
         rsa, ed = self.rsa, self.ed
 
         def presented(address, port, server_host_key_algs=()):
+            """Return the RSA key when ``ssh-rsa`` is asked first."""
             return rsa if server_host_key_algs[0] == "ssh-rsa" else ed
 
         with patch.object(
@@ -465,6 +558,7 @@ class TestSftpTrustedRsaKey(TransactionCase):
         })
 
         def presented(address, port, server_host_key_algs=()):
+            """Return the ECDSA key when ECDSA is asked first."""
             return ecdsa if server_host_key_algs[0].startswith("ecdsa") else ed
 
         with patch.object(

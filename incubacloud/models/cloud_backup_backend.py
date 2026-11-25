@@ -837,7 +837,6 @@ class CloudBackupBackend(models.Model):
         return (
             ssh_host_keys.key_type(trusted_line) == "ssh-rsa"
             and ssh_host_keys.key_type(line) != "ssh-rsa"
-            and ssh_host_keys.fingerprint(line) != self.sftp_host_key_fingerprint
         )
 
     def _sftp_alert_on_other_key(self, line, rsa_line=""):
@@ -876,7 +875,8 @@ class CloudBackupBackend(models.Model):
                     "trusts its RSA key, which the server still presents. Read "
                     "the server's key on the destination's page, trust it, "
                     "then rebuild the instances on the destination: backups "
-                    "to it fail until then.",
+                    "to it fail until then. Before you trust the key, compare "
+                    "its fingerprint with the one your provider shows.",
                     name=self.name, type=_KEY_TYPE_NAMES.get(kind, kind),
                 ),
                 level="critical",

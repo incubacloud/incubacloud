@@ -245,6 +245,7 @@ class TestSftpTestRoute(_SftpUseCase):
         })
 
         def presented(address, port, server_host_key_algs=()):
+            """Return the RSA key to RSA alone, the Ed25519 one otherwise."""
             if tuple(server_host_key_algs) == ssh_host_keys.RSA_HOST_KEY_ORDER:
                 return rsa
             return self.server_key
@@ -342,6 +343,7 @@ class TestSftpBackupList(_SftpUseCase):
             transport.execute.side_effect = _local_execute
 
             async def _presented(*_args, server_host_key_algs=(), **_kwargs):
+                """Return *rsa* to RSA alone when given, *presented* otherwise."""
                 if rsa is not None and (
                     tuple(server_host_key_algs) == ssh_host_keys.RSA_HOST_KEY_ORDER
                 ):
@@ -405,6 +407,7 @@ class TestSftpBackupList(_SftpUseCase):
         self.assertFalse(any("not the trusted" in line for line in lines))
 
     def test_a_trusted_rsa_key_replaced_is_a_changed_key(self):
+        """Another RSA key presented to RSA alone: the changed-key alert."""
         rsa = asyncssh.generate_private_key("ssh-rsa").convert_to_public()
         self.backend.sudo().write({
             "sftp_known_hosts": ssh_host_keys.known_hosts_line(
