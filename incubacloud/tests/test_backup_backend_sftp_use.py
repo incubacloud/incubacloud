@@ -168,7 +168,7 @@ class TestSftpSession(_SftpUseCase):
 
     def test_no_alert_when_the_key_is_the_trusted_one(self):
         with patch(_PRESENTED, return_value=self.server_key):
-            self.assertEqual(self.backend._sftp_check_presented_key(), "")
+            self.assertEqual(self.backend._sftp_check_presented_key(), ("", ""))
         self.assertFalse(self.env["cloud.alert"].search([
             ("code", "=", "backup_sftp_host_key_changed"),
         ]))
@@ -235,6 +235,30 @@ class TestSftpTestRoute(_SftpUseCase):
         self.assertFalse(result["ok"])
         self.assertIn("not the trusted", result["error"])
 
+    def test_a_trusted_rsa_key_still_presented_tells_the_real_cause(self):
+        """The panel logs in with the RSA key: its failure is not the key's."""
+        rsa = asyncssh.generate_private_key("ssh-rsa").convert_to_public()
+        self.backend.sudo().write({
+            "sftp_known_hosts": ssh_host_keys.known_hosts_line(
+                "backup.example.com", 22, rsa,
+            ),
+        })
+
+        def presented(address, port, server_host_key_algs=()):
+            if tuple(server_host_key_algs) == ssh_host_keys.RSA_HOST_KEY_ORDER:
+                return rsa
+            return self.server_key
+
+        with self._server(connect_error=asyncssh.PermissionDenied("denied")), \
+                patch.object(
+                    ssh_host_keys, "presented_host_key", autospec=True,
+                    side_effect=presented,
+                ):
+            result = self._call("cloud_test_backup_backend")
+        self.assertFalse(result["ok"])
+        self.assertIn(self.backend.sftp_public_key, result["error"])
+        self.assertNotIn("not the trusted", result["error"])
+
     def test_measure_route(self):
         with self._server({"backups": [_name("f", _FILE, 2048)]}):
             result = self._call("cloud_measure_backup_usage")
@@ -286,7 +310,8 @@ class TestSftpBackupList(_SftpUseCase):
         "The authenticity of host 'backup.example.com' can't be established."
     )
 
-    def _refused(self, applied_host_key, presented, text=None, stream="stderr"):
+    def _refused(self, applied_host_key, presented, text=None, stream="stderr",
+                 rsa=None):
         """Run the listing's own command here, with ``docker`` printing *text*.
 
         The command goes through ``bash`` as on the host, so what reaches
@@ -298,6 +323,8 @@ class TestSftpBackupList(_SftpUseCase):
         :param presented: the key the server presents now
         :param str text: what duplicity prints (``_DOES_NOT_MATCH``)
         :param str stream: ``stderr`` or ``stdout``, where it prints it
+        :param rsa: the key the server presents to RSA alone, when it is
+            not *presented*
         :return: the active changed-key alerts
         """
         self.instance.sudo().write({
@@ -314,6 +341,13 @@ class TestSftpBackupList(_SftpUseCase):
             transport = MagicMock(spec=SSHTransport)
             transport.execute.side_effect = _local_execute
 
+            async def _presented(*_args, server_host_key_algs=(), **_kwargs):
+                if rsa is not None and (
+                    tuple(server_host_key_algs) == ssh_host_keys.RSA_HOST_KEY_ORDER
+                ):
+                    return rsa
+                return presented
+
             async def _run():
                 results, _skipped = await self.executor._run_steps(
                     transport, self.executor.get_commands(),
@@ -326,7 +360,7 @@ class TestSftpBackupList(_SftpUseCase):
                     patch.dict(os.environ, {"PATH": f"{tmp}:{os.environ['PATH']}"}), \
                     patch.object(
                         ssh_host_keys.asyncssh, "get_server_host_key",
-                        AsyncMock(return_value=presented),
+                        autospec=True, side_effect=_presented,
                     ):
                 asyncio.run(_run())
         return self.env["cloud.alert"].search([
@@ -351,6 +385,37 @@ class TestSftpBackupList(_SftpUseCase):
             self.backend.sftp_host_key_fingerprint, other,
             text=self._UNKNOWN, stream="stdout",
         ))
+
+    def test_a_trusted_rsa_key_still_presented_asks_for_the_other_type(self):
+        """OpenSSH 8.8 and later: paramiko gets Ed25519 for an RSA line."""
+        rsa = asyncssh.generate_private_key("ssh-rsa").convert_to_public()
+        self.backend.sudo().write({
+            "sftp_known_hosts": ssh_host_keys.known_hosts_line(
+                "backup.example.com", 22, rsa,
+            ),
+        })
+        with patch.object(BackupListExecutor, "_sys", autospec=True) as said:
+            alert = self._refused(
+                self.backend.sftp_host_key_fingerprint, self.server_key, rsa=rsa,
+            )
+        self.assertIn("check its Ed25519 key", alert.message)
+        self.assertNotIn("not the trusted", alert.message)
+        lines = [c.args[1] for c in said.call_args_list]
+        self.assertTrue(any("still presents unchanged" in line for line in lines))
+        self.assertFalse(any("not the trusted" in line for line in lines))
+
+    def test_a_trusted_rsa_key_replaced_is_a_changed_key(self):
+        rsa = asyncssh.generate_private_key("ssh-rsa").convert_to_public()
+        self.backend.sudo().write({
+            "sftp_known_hosts": ssh_host_keys.known_hosts_line(
+                "backup.example.com", 22, rsa,
+            ),
+        })
+        alert = self._refused(
+            self.backend.sftp_host_key_fingerprint, self.server_key,
+            rsa=asyncssh.generate_private_key("ssh-rsa").convert_to_public(),
+        )
+        self.assertIn("not the trusted", alert.message)
 
     def test_the_trusted_key_presented_raises_nothing(self):
         self.assertFalse(self._refused(

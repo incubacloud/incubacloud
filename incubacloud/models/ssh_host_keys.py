@@ -28,6 +28,53 @@ ACCEPTED_KEY_TYPES = frozenset({
     "ssh-rsa",
 })
 
+#: The order an SFTP destination's key is read in: the one duplicity's
+#: paramiko 4.0.0 asks a server in (``Transport._preferred_keys``), as the
+#: backup image ``ghcr.io/tecnativa/docker-duplicity-postgres-s3`` ships it
+#: (checked on 25-nov-2026). paramiko puts the type of the trusted line
+#: first and compares the key the server answers with that line; a server
+#: that does not offer that type answers with the next one in this order,
+#: and the backups fail with "Host key for server … does not match". An
+#: ``ssh-rsa`` line fails so on every OpenSSH 8.8 or later that also has
+#: an Ed25519 key, since it no longer offers ``ssh-rsa`` (SHA-1): paramiko
+#: gets the Ed25519 key. Reading in this order files the key paramiko gets
+#: when it trusts nothing yet. asyncssh's own order puts RSA first, so the
+#: hosts, whose keys OpenSSH and asyncssh check, keep it
+#: (``cloud.host._presented_host_key_entry``): moving them would make every
+#: host with an RSA key trusted look as if its key had changed.
+PARAMIKO_HOST_KEY_ORDER = (
+    "ssh-ed25519",
+    "ecdsa-sha2-nistp256",
+    "ecdsa-sha2-nistp384",
+    "ecdsa-sha2-nistp521",
+    "rsa-sha2-512",
+    "rsa-sha2-256",
+    "ssh-rsa",
+)
+
+#: RSA alone: whether a server still presents the RSA key a destination
+#: trusts, when it answers the order above with another type.
+RSA_HOST_KEY_ORDER = ("rsa-sha2-512", "rsa-sha2-256", "ssh-rsa")
+
+
+def paramiko_order(trusted_type=""):
+    """Return the order paramiko asks in when it trusts a *trusted_type* line.
+
+    paramiko moves the trusted line's type to the front of
+    :data:`PARAMIKO_HOST_KEY_ORDER` (``client.py``, ``keytype =
+    our_server_keys.keys()[0]``), and compares what the server answers
+    with that line. Read in this order, the key is the one the backups get.
+
+    :param str trusted_type: the trusted line's type (:func:`key_type`),
+        ``''`` when none is trusted
+    :rtype: tuple
+    """
+    if trusted_type not in PARAMIKO_HOST_KEY_ORDER:
+        return PARAMIKO_HOST_KEY_ORDER
+    return (trusted_type,) + tuple(
+        alg for alg in PARAMIKO_HOST_KEY_ORDER if alg != trusted_type
+    )
+
 
 def known_hosts_prefix(host, port):
     """Return the ``known_hosts`` host pattern for a (host, port) endpoint.
@@ -96,32 +143,51 @@ def fingerprint(entry):
     return ""
 
 
-async def presented_host_key_async(address, port):
+async def presented_host_key_async(address, port, server_host_key_algs=()):
     """Return the key the server at *address* presents, without logging in.
+
+    The key types go to ``get_server_host_key`` as its own keyword: given
+    inside ``options`` they are overridden by that keyword's default. An
+    empty tuple is that default; an empty list would select no type.
+
+    No client key and no agent are loaded (``client_keys=None``,
+    ``agent_path=None``): none is sent, and asyncssh would otherwise read
+    ``~/.ssh`` first, where a key it cannot import (the empty ``id_rsa``
+    a Doodba project ships) stops the reading with ``KeyImportError``.
 
     :param str address: the address to dial (already checked by the
         caller against its network policy)
     :param int port: the SSH port
+    :param server_host_key_algs: the key types to ask for, in order
+        (:data:`PARAMIKO_HOST_KEY_ORDER`); empty for asyncssh's own
     :return: the ``asyncssh`` key, or None when none was presented
-    :raise asyncssh.Error, OSError: on a failed connection
+    :raise asyncssh.Error, OSError: on a failed connection, or a server
+        that offers none of the types asked
+    :raise ValueError: on options asyncssh refuses
     :raise asyncio.TimeoutError: past :data:`TOTAL_TIMEOUT`
     """
     options = asyncssh.SSHClientConnectionOptions(
-        connect_timeout=CONNECT_TIMEOUT,
+        connect_timeout=CONNECT_TIMEOUT, client_keys=None, agent_path=None,
     )
     return await asyncio.wait_for(
-        asyncssh.get_server_host_key(address, int(port or 22), options=options),
+        asyncssh.get_server_host_key(
+            address, int(port or 22),
+            server_host_key_algs=tuple(server_host_key_algs),
+            options=options,
+        ),
         TOTAL_TIMEOUT,
     )
 
 
-def presented_host_key(address, port):
+def presented_host_key(address, port, server_host_key_algs=()):
     """Synchronous :func:`presented_host_key_async`, on a loop of its own.
 
     Only for a caller outside an event loop (a route, a cron).
     """
     loop = asyncio.new_event_loop()
     try:
-        return loop.run_until_complete(presented_host_key_async(address, port))
+        return loop.run_until_complete(presented_host_key_async(
+            address, port, server_host_key_algs=server_host_key_algs,
+        ))
     finally:
         loop.close()

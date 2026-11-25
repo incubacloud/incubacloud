@@ -110,6 +110,24 @@ Import dialog.
   such an image does not ship and Full Setup did not install, so the copy
   failed at its first step. Full Setup installs it now, as it does `zip`
   and `cron`; a server set up before gets it from a Full Setup run again.
+- **An SFTP destination's key is the one its backups check.** The panel
+  read the server's key in asyncssh's order, RSA first, while the backups'
+  paramiko 4 asks first for the trusted line's type: an `ssh-rsa` line on
+  a server with OpenSSH 8.8 or later, which no longer offers `ssh-rsa`,
+  got its Ed25519 key, and every backup failed with "Host key for server
+  … does not match". The destination's key is now read in paramiko's
+  order (Ed25519, ECDSA, then RSA). A destination that trusts an RSA key
+  the server still presents gets an alert asking to read and trust the
+  server's other key and rebuild its instances, not the changed-key one;
+  another RSA key is still a changed key. The hosts' keys keep asyncssh's
+  order, the one OpenSSH and asyncssh check them in.
+- **Reading a server's key no longer stops on a client key the panel
+  cannot read.** asyncssh loaded `~/.ssh`'s keys before the key exchange,
+  and the empty `id_rsa` a Doodba project ships stopped it with "Invalid
+  private key": **Read the server key** on an SFTP destination only showed
+  "Could not read the server's key." in a tenant's panel. Reading a key,
+  for SFTP destinations and hosts, loads no client key and no agent now,
+  and a key asyncssh cannot import is told on the destination's page.
 
 ### Documentation
 

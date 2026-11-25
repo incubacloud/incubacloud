@@ -658,6 +658,22 @@ msgstr "El puerto SFTP va de 1 a 65535."
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_backup_backend.py:0
 msgid ""
+"The backups to the SFTP server of the backup destination %(name)s check its "
+"%(type)s key, while the destination trusts its RSA key, which the server "
+"still presents. Read the server's key on the destination's page, trust it, "
+"then rebuild the instances on the destination: backups to it fail until "
+"then."
+msgstr ""
+"Las copias al servidor SFTP del destino de copia %(name)s comprueban su "
+"clave %(type)s, mientras que el destino confía en su clave RSA, que el "
+"servidor sigue presentando. Lea la clave del servidor en la página del "
+"destino, confíe en ella y después reconstruya las instancias del destino: "
+"hasta entonces, las copias a él fallan."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid ""
 "The SFTP server of the backup destination %(name)s presents the key "
 "%(presented)s, not the trusted %(trusted)s. Backups to it fail until the key"
 " is checked and trusted again."

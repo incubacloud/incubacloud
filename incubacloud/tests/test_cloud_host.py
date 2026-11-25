@@ -6,11 +6,12 @@ is archived or unlinked.
 """
 
 import asyncio
+import os
 import shutil
 import subprocess
 import tempfile
 from contextlib import contextmanager
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import asyncssh
 import werkzeug.wrappers
@@ -28,6 +29,7 @@ from odoo.addons.incubacloud.models.host_hardening_executor import (
 from odoo.addons.incubacloud.net import real_ip
 
 from ._certs import make_pair
+from .test_backup_backend_sftp_host_key import _empty_client_key_home
 from .test_cloud_job import _run_after_commit
 
 
@@ -2047,8 +2049,33 @@ class TestTrustOnlyTheApprovedKey(KnownHostsCase):
         self.assertEqual(peek["trusted_fingerprint"], host.known_hosts_fingerprint)
         self.assertEqual(peek["revoked_fingerprint"], "")
         self.assertEqual(host.known_hosts_key, trusted)
-        scan.assert_called_once_with(host.ip_address, host.port)
+        scan.assert_called_once_with(host.ip_address, host.port, options=ANY)
         connect.assert_not_called()
+
+    def test_a_peek_loads_no_client_key_and_keeps_asyncssh_order(self):
+        """A peek reads no client key or agent, and asks for no key types.
+
+        An unreadable ``~/.ssh/id_rsa`` (the empty one a Doodba project
+        ships) does not stop it; the key types stay asyncssh's, the order
+        the hosts' trusted keys were read in, not the one the SFTP
+        destinations read in for duplicity's paramiko.
+        """
+        host = self._host()
+        presented = asyncssh.generate_private_key("ssh-ed25519")
+        with tempfile.TemporaryDirectory() as home:
+            _empty_client_key_home(home)
+            with patch.dict(os.environ, {"HOME": home}):
+                # What the reading met before: the empty key stops asyncssh.
+                with self.assertRaises(asyncssh.KeyImportError):
+                    asyncssh.SSHClientConnectionOptions()
+                with self._server(presented) as (scan, _connect):
+                    peek = host._peek_known_host_key()
+        self.assertEqual(peek["fingerprint"], presented.get_fingerprint("sha256"))
+        options = scan.call_args.kwargs["options"]
+        self.assertIsNone(options.kwargs["client_keys"])
+        self.assertIsNone(options.kwargs["agent_path"])
+        self.assertNotIn("server_host_key_algs", scan.call_args.kwargs)
+        self.assertNotIn("server_host_key_algs", options.kwargs)
 
     def test_the_approved_key_is_trusted_and_the_login_accepts_only_it(self):
         """The approved key is stored; the login it took accepted that key only."""

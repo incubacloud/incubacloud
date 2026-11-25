@@ -458,7 +458,9 @@ class BackendsMixin:
         A failed key exchange is told apart by reading the key the server
         presents now and comparing fingerprints
         (``_sftp_check_presented_key``, which raises the alert), not by
-        the error's type.
+        the error's type. A trusted RSA key the server still presents is
+        no change: the panel logs in with it, so its failure has another
+        cause, told below, and the alert asks for the key the backups get.
 
         :param b: the ``cloud.backup.backend``
         :param exc: what was raised
@@ -467,8 +469,8 @@ class BackendsMixin:
         if isinstance(exc, UserError):
             return {"ok": False, "error": str(exc)}
         cause = exc.__cause__ if isinstance(exc, SftpUnreachable) else exc
-        presented = b._sftp_check_presented_key()
-        if presented:
+        outcome, presented = b._sftp_check_presented_key()
+        if outcome == "changed":
             return {"ok": False, "error": _(
                 "The server presents the key %(presented)s, not the trusted "
                 "%(trusted)s. Check it with your provider before trusting it.",

@@ -501,7 +501,9 @@ class BackupListExecutor(AbstractSSHExecutor):
         raised again the day after it was resolved. And even then only
         when the server presents another key than the trusted one, read
         without credentials (``_sftp_check_presented_key_async``: this runs
-        in the job's own loop).
+        in the job's own loop). A trusted RSA key the server still presents
+        beside the other type it answers duplicity's paramiko with is told
+        as such, not as a changed key.
         """
         inst = self._inst()
         backend = inst.effective_backup_backend.sudo()
@@ -517,10 +519,17 @@ class BackupListExecutor(AbstractSSHExecutor):
                 "(rebuild) so it gets the trusted key."
             )
             return
-        presented = await backend._sftp_check_presented_key_async()
-        if presented:
+        outcome, presented = await backend._sftp_check_presented_key_async()
+        if outcome == 'changed':
             self._sys(
                 f"The SFTP server presents the key {presented}, not the "
                 f"trusted {backend.sftp_host_key_fingerprint}: check it and "
                 "trust it again on the backup destination."
+            )
+        elif outcome == 'key_type':
+            self._sys(
+                f"The backups get the SFTP server's key {presented}, of "
+                "another type than the trusted RSA key, which the server "
+                "still presents unchanged: read the server's key on the "
+                "backup destination, trust it and rebuild the instance."
             )

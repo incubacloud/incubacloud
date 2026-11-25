@@ -56,6 +56,15 @@ SFTP_PASSWORD_HMAC_SCOPE = "incubacloud.sftp_password_snapshot"
 #: ``MIN_SECRET_LEN``), so a shorter one could reach an agent in a log.
 SFTP_PASSWORD_MIN_LEN = 8
 
+#: How the server key's alert names a key type: as its provider and
+#: ``ssh-keygen -l`` name it, not as it is written in ``known_hosts``.
+_KEY_TYPE_NAMES = {
+    "ssh-ed25519": "Ed25519",
+    "ecdsa-sha2-nistp256": "ECDSA",
+    "ecdsa-sha2-nistp384": "ECDSA",
+    "ecdsa-sha2-nistp521": "ECDSA",
+}
+
 #: Fields only the server writes on an SFTP destination: the key pair it
 #: generates and the server key a person confirmed, with its fingerprint.
 #: Refused to any write that does not run as the platform, so a manager
@@ -307,7 +316,12 @@ class CloudBackupBackend(models.Model):
 
     # ── SFTP server key ─────────────────────────────────────────────────────
 
-    #: Raised when the SFTP server presents another key than the trusted one.
+    #: Raised when the backups would refuse the SFTP server's key: another
+    #: key than the trusted one, or a trusted RSA key the server still
+    #: presents while the backups get another type (``_sftp_alert_on_other_key``).
+    #: One code for both: either way the destination has one alert about its
+    #: server key, trusting a key resolves it, and passing from one case to
+    #: the other rewrites its message instead of leaving two.
     _SFTP_HOST_KEY_ALERT_CODE = "backup_sftp_host_key_changed"
 
     @api.model
@@ -347,32 +361,47 @@ class CloudBackupBackend(models.Model):
                 host=host,
             )) from exc
 
-    def _sftp_presented_line(self):
+    def _sftp_presented_line(
+        self, server_host_key_algs=ssh_host_keys.PARAMIKO_HOST_KEY_ORDER,
+    ):
         """Read the key the server presents, filed under the URL's name.
 
         The line is labelled with the server as the URL names it
         (``host`` on 22, ``[host]:port`` otherwise), which is what
-        duplicity's paramiko looks up, whatever address was dialled.
+        duplicity's paramiko looks up, whatever address was dialled. The
+        key is read in the order paramiko asks for one, so it is the key
+        the backups get (``ssh_host_keys.PARAMIKO_HOST_KEY_ORDER``).
 
+        :param server_host_key_algs: the key types to ask for, in order
         :return: the ``known_hosts`` line
         :rtype: str
         :raise UserError: when the server cannot be reached, presents no
-            key, or a key type paramiko does not read
+            key, or a key type paramiko does not read, and on a
+            ``ValueError`` of asyncssh (``KeyImportError`` among them)
         """
         self.ensure_one()
         address = self._sftp_key_address()
         try:
-            key = ssh_host_keys.presented_host_key(address, self.sftp_port)
-        except (asyncssh.Error, OSError, TimeoutError, asyncio.TimeoutError) as exc:
+            key = ssh_host_keys.presented_host_key(
+                address, self.sftp_port,
+                server_host_key_algs=server_host_key_algs,
+            )
+        except (
+            asyncssh.Error, OSError, TimeoutError, asyncio.TimeoutError,
+            ValueError,
+        ) as exc:
             raise self._sftp_key_read_error(exc) from exc
         return self._sftp_presented_key_line(key)
 
-    async def _sftp_presented_line_async(self):
+    async def _sftp_presented_line_async(
+        self, server_host_key_algs=ssh_host_keys.PARAMIKO_HOST_KEY_ORDER,
+    ):
         """:meth:`_sftp_presented_line` for a caller inside an event loop.
 
         The ``backup_list`` job reads the key from its own running loop,
         where the synchronous form cannot start another one.
 
+        :param server_host_key_algs: the key types to ask for, in order
         :return: the ``known_hosts`` line
         :rtype: str
         :raise UserError: as :meth:`_sftp_presented_line`
@@ -382,8 +411,12 @@ class CloudBackupBackend(models.Model):
         try:
             key = await ssh_host_keys.presented_host_key_async(
                 address, self.sftp_port,
+                server_host_key_algs=server_host_key_algs,
             )
-        except (asyncssh.Error, OSError, TimeoutError, asyncio.TimeoutError) as exc:
+        except (
+            asyncssh.Error, OSError, TimeoutError, asyncio.TimeoutError,
+            ValueError,
+        ) as exc:
             raise self._sftp_key_read_error(exc) from exc
         return self._sftp_presented_key_line(key)
 
@@ -717,54 +750,140 @@ class CloudBackupBackend(models.Model):
         return self._sftp_run(_probe)
 
     def _sftp_check_presented_key(self):
-        """Raise the changed-key alert if the server presents another key.
+        """Raise the server key's alert if the backups would refuse its key.
 
         Compares fingerprints read with the key exchange alone, rather
         than reading the failure's type: a server that stopped offering
         the trusted key's algorithm fails the negotiation, not the key
-        check. Nothing is trusted here; the person confirms a new key on
-        the destination's page.
+        check. The key is read as the backups ask for it
+        (``_sftp_backups_order``), and a trusted RSA key is read again
+        with RSA alone when the server answers with another type
+        (``_sftp_reads_rsa_again``).
+        Nothing is trusted here; the person confirms a new key on the
+        destination's page.
 
-        :return: the fingerprint presented when it differs, else ``''``
-        :rtype: str
+        :return: ``(outcome, fingerprint)``, as
+            :meth:`_sftp_alert_on_other_key`; ``("", "")`` when the server
+            cannot be reached now
+        :rtype: tuple
         """
         self.ensure_one()
         if not self.sftp_host_key_fingerprint:
-            return ""
+            return ("", "")
         try:
-            line = self._sftp_presented_line()
+            line = self._sftp_presented_line(self._sftp_backups_order())
         except UserError:
             # Not reachable now: nothing to compare, nothing to say.
-            return ""
-        return self._sftp_alert_on_other_key(line)
+            return ("", "")
+        rsa_line = ""
+        if self._sftp_reads_rsa_again(line):
+            with contextlib.suppress(UserError):
+                rsa_line = self._sftp_presented_line(
+                    ssh_host_keys.RSA_HOST_KEY_ORDER,
+                )
+        return self._sftp_alert_on_other_key(line, rsa_line)
 
     async def _sftp_check_presented_key_async(self):
         """:meth:`_sftp_check_presented_key` inside a running event loop.
 
-        :return: the fingerprint presented when it differs, else ``''``
-        :rtype: str
+        :return: ``(outcome, fingerprint)``, as
+            :meth:`_sftp_alert_on_other_key`
+        :rtype: tuple
         """
         self.ensure_one()
         if not self.sftp_host_key_fingerprint:
-            return ""
+            return ("", "")
         try:
-            line = await self._sftp_presented_line_async()
+            line = await self._sftp_presented_line_async(
+                self._sftp_backups_order(),
+            )
         except UserError:
-            return ""
-        return self._sftp_alert_on_other_key(line)
+            return ("", "")
+        rsa_line = ""
+        if self._sftp_reads_rsa_again(line):
+            with contextlib.suppress(UserError):
+                rsa_line = await self._sftp_presented_line_async(
+                    ssh_host_keys.RSA_HOST_KEY_ORDER,
+                )
+        return self._sftp_alert_on_other_key(line, rsa_line)
 
-    def _sftp_alert_on_other_key(self, line):
-        """Raise the changed-key alert when *line* is not the trusted key.
+    def _sftp_backups_order(self):
+        """Return the order the backups ask the server for its key in.
+
+        paramiko's, with the trusted line's type first
+        (``ssh_host_keys.paramiko_order``): a server that still offers it
+        answers with the key the backups compare, so a destination whose
+        backups work raises nothing.
+
+        :rtype: tuple
+        """
+        return ssh_host_keys.paramiko_order(
+            ssh_host_keys.key_type(self.sudo().sftp_known_hosts or ""),
+        )
+
+    def _sftp_reads_rsa_again(self, line):
+        """Tell whether the trusted key must be looked for with RSA alone.
+
+        True when the destination trusts an RSA key and the server answers
+        paramiko's order with another key type. A server on OpenSSH 8.8 or
+        later no longer offers ``ssh-rsa``, the type paramiko asks first
+        for an RSA line, so the backups get its Ed25519 or ECDSA key: the
+        RSA key may well be unchanged.
 
         :param str line: the ``known_hosts`` line the server presents now
-        :return: its fingerprint when it differs from the trusted one,
-            else ``''``
-        :rtype: str
+        :rtype: bool
+        """
+        trusted_line = self.sudo().sftp_known_hosts or ""
+        return (
+            ssh_host_keys.key_type(trusted_line) == "ssh-rsa"
+            and ssh_host_keys.key_type(line) != "ssh-rsa"
+            and ssh_host_keys.fingerprint(line) != self.sftp_host_key_fingerprint
+        )
+
+    def _sftp_alert_on_other_key(self, line, rsa_line=""):
+        """Raise the server key's alert when the backups refuse *line*.
+
+        Two cases, one alert code (``_SFTP_HOST_KEY_ALERT_CODE``):
+
+        - the server still presents the trusted RSA key (*rsa_line*) and
+          answers paramiko's order with another type: the key did not
+          change, the backups need that other key trusted, and the alert
+          says so without calling it a change;
+        - otherwise the server presents another key than the trusted one:
+          the changed-key alert.
+
+        :param str line: the ``known_hosts`` line the server presents now,
+            in paramiko's order
+        :param str rsa_line: the line read with RSA alone, when it was read
+            (``_sftp_reads_rsa_again``), else ``''``
+        :return: ``("", "")`` when *line* is the trusted key (or none is
+            trusted), ``("key_type", fingerprint)`` in the first case,
+            ``("changed", fingerprint)`` in the second, with the
+            fingerprint of *line*
+        :rtype: tuple
         """
         trusted = self.sftp_host_key_fingerprint or ""
         presented = ssh_host_keys.fingerprint(line)
         if not trusted or presented == trusted:
-            return ""
+            return ("", "")
+        if rsa_line and ssh_host_keys.fingerprint(rsa_line) == trusted:
+            kind = ssh_host_keys.key_type(line)
+            self.env["cloud.alert"].sudo().raise_alert(
+                self._SFTP_HOST_KEY_ALERT_CODE,
+                _(
+                    "The backups to the SFTP server of the backup destination "
+                    "%(name)s check its %(type)s key, while the destination "
+                    "trusts its RSA key, which the server still presents. Read "
+                    "the server's key on the destination's page, trust it, "
+                    "then rebuild the instances on the destination: backups "
+                    "to it fail until then.",
+                    name=self.name, type=_KEY_TYPE_NAMES.get(kind, kind),
+                ),
+                level="critical",
+                key=self._alert_key(),
+                payload={"backup_backend_id": self.id},
+            )
+            return ("key_type", presented)
         self.env["cloud.alert"].sudo().raise_alert(
             self._SFTP_HOST_KEY_ALERT_CODE,
             _(
@@ -777,7 +896,7 @@ class CloudBackupBackend(models.Model):
             key=self._alert_key(),
             payload={"backup_backend_id": self.id},
         )
-        return presented
+        return ("changed", presented)
 
     # ── SFTP validation ─────────────────────────────────────────────────────
 

@@ -1473,7 +1473,11 @@ class CloudHost(models.Model):
 
         Only the key exchange runs: no user name, password or client key
         is sent, so asking a server that is not the trusted one gives it
-        nothing.
+        nothing. No client key or agent is loaded either: asyncssh would
+        read ``~/.ssh`` first, where a key it cannot import (the empty
+        ``id_rsa`` a Doodba project ships) stops the reading with
+        ``KeyImportError``. The key types keep asyncssh's order, the one
+        the hosts' trusted keys were read in (``ssh_host_keys``).
 
         Raises ``asyncssh.Error`` / ``OSError`` on connection failure.
 
@@ -1483,9 +1487,12 @@ class CloudHost(models.Model):
         self.ensure_one()
         loop = asyncio.new_event_loop()
         try:
-            server_key = loop.run_until_complete(
-                asyncssh.get_server_host_key(self.ip_address, self.port),
-            )
+            server_key = loop.run_until_complete(asyncssh.get_server_host_key(
+                self.ip_address, self.port,
+                options=asyncssh.SSHClientConnectionOptions(
+                    client_keys=None, agent_path=None,
+                ),
+            ))
         finally:
             loop.close()
         return self._known_hosts_line(server_key) if server_key else ""
