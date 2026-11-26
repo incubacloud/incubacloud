@@ -280,6 +280,11 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         # withholds the logs, were it left on by an update cut short or
         # turned on past the checks (review of 12-nov-2026).
         self._sent_security_logs = self._security_logs_due(host)
+        # Kept for on_success: a vmauth container recreated meanwhile
+        # re-applies every server, this one included.
+        self._sent_vmauth_generation = self.env["ir.config_parameter"].sudo().get_param(
+            VMAUTH_GENERATION_PARAM, "",
+        ) or ""
         return {
             "ic_host_id": str(host.id),
             "ic_host_name": host.name or "",
@@ -305,9 +310,7 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             "ic_collect_pg": self._sent_collect_pg,
             # The central's vmauth container: vmagent restarts once for
             # one it has not restarted for (``_note_vmauth_generation``).
-            "ic_vmauth_generation": self.env["ir.config_parameter"].sudo().get_param(
-                VMAUTH_GENERATION_PARAM, "",
-            ),
+            "ic_vmauth_generation": self._sent_vmauth_generation,
             # User half of the credential. It is also the label the
             # central forces on everything this agent writes, so the copy
             # the agent sends is only a hint — the gateway overwrites it
@@ -602,11 +605,12 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         """Return the revision this install leaves on *host*, or None for none.
 
         None when the database collector's switch, this server's Send
-        security logs, or the credential the agents are to write with
-        moved while the install ran: the install applied the old value. The collector's switch already asked the
-        reconciliation cron to re-apply every server, and the server's
-        switch queued an install of its own; recording the current
-        revision would cancel the first for this one.
+        security logs, the credential the agents are to write with, or the
+        vmauth container serving the central moved while the install ran:
+        the install applied the old value. The collector's switch and a new
+        vmauth container already asked the reconciliation cron to re-apply
+        every server, and the server's switch queued an install of its own;
+        recording the current revision would cancel the first for this one.
 
         :param host: the ``cloud.host`` the install ran on.
         :param dict facts: what the playbook exported.
@@ -642,7 +646,38 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
                 "applied again."
             )
             return None
+        if self._vmauth_generation_moved(facts):
+            self._sys(
+                "vmauth's container on the central changed during this "
+                "install: the agents are applied again and reconnect to it."
+            )
+            return None
         return AGENTS_REVISION
+
+    def _vmauth_generation_moved(self, facts):
+        """Return whether the central's vmauth container changed since this install read it.
+
+        The container this install restarted vmagent for is what this
+        executor sent, or, for a job resumed by a worker that did not
+        render its variables, what the playbook says it installed
+        (``ic_vmauth_generation_installed``). Neither, as from a playbook
+        from before the export: nothing to compare, so no.
+
+        :param dict facts: what the playbook exported.
+        :return: whether it differs from the one the panel now records
+            (``VMAUTH_GENERATION_PARAM``).
+        :rtype: bool
+        """
+        sent = getattr(self, "_sent_vmauth_generation", None)
+        if sent is None:
+            if "ic_vmauth_generation_installed" not in facts:
+                return False
+            sent = facts.get("ic_vmauth_generation_installed")
+        current = self.env["ir.config_parameter"].sudo().get_param(
+            VMAUTH_GENERATION_PARAM, "",
+        )
+        # Folded by YAML, the two halves may come with a line break.
+        return " ".join(str(sent or "").split()) != " ".join(str(current or "").split())
 
     async def on_cancelled_running(self, results, exc):
         """A stop is not a failed install: the host's agent state stays as it was.

@@ -1365,6 +1365,9 @@
           ic_write_url_installed: "{{ ic_write_url }}"
           # Which credential the agents write with: agent or account.
           ic_write_user_installed: "{{ ic_write_user_kind }}"
+          # Which vmauth container vmagent was restarted for, so a job
+          # resumed elsewhere still tells one recreated meanwhile.
+          ic_vmauth_generation_installed: "{{ ic_vmauth_generation }}"
           # The address the panel came in from and the uid it signs in
           # as, both read without become (plan #84, A1 and M2).
           ic_panel_source: "{{ (ic_panel_connection.stdout | default('')).split(' ') | first | truncate(64, true, '') }}"

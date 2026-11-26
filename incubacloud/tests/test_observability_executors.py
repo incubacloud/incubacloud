@@ -28,6 +28,7 @@ from odoo.addons.incubacloud.models.metrics_acl_sync_executor import (
     MetricsAclSyncExecutor,
 )
 from odoo.addons.incubacloud.models.observability_agents_executor import (
+    AGENTS_REVISION,
     ObservabilityAgentsExecutor,
 )
 from odoo.addons.incubacloud.models.observability_central_executor import (
@@ -1007,6 +1008,62 @@ class TestTheAgentsFollowANewGateway(ObservabilityExecutorCase):
     def test_before_any_is_read_the_agents_install_carries_none(self):
         extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
         self.assertEqual(extra["ic_vmauth_generation"], "")
+
+    _NEXT = "9a07 2026-11-26T11:02:41.118503612Z"
+
+    def _install_ends(self, executor, **facts):
+        """Run the agents install's ``on_success`` with *facts* exported.
+
+        :param executor: an agents executor, rendered or not.
+        :param facts: what the playbook exported besides the agents' count.
+        :return: the revision the host holds after it.
+        """
+        executor._facts = {"ic_agents_running": "3", "ic_instances_labelled": "0"} | facts
+        asyncio.run(executor.on_success({}))
+        self.host.invalidate_recordset()
+        return self.host.metrics_agents_revision
+
+    def test_a_container_recreated_during_an_install_records_no_revision(self):
+        """The install read the old container; the deployment that recreated
+        vmauth re-applied every server meanwhile, this one too: recording
+        the revision over that would leave it on its old connection."""
+        self.env["ir.config_parameter"].sudo().set_param(
+            VMAUTH_GENERATION_PARAM, self._GENERATION,
+        )
+        executor = self._make(ObservabilityAgentsExecutor)
+        executor.get_extra_vars()
+        self.assertTrue(self._note(ObservabilityCentralExecutor, self._NEXT))
+        self.assertEqual(self.host.metrics_agents_revision, 0)
+        self.assertEqual(self._install_ends(
+            executor, ic_vmauth_generation_installed=self._GENERATION,
+        ), 0)
+
+    def test_the_same_container_through_the_install_records_the_revision(self):
+        self.env["ir.config_parameter"].sudo().set_param(
+            VMAUTH_GENERATION_PARAM, self._GENERATION,
+        )
+        self.host.metrics_agents_revision = 0
+        executor = self._make(ObservabilityAgentsExecutor)
+        executor.get_extra_vars()
+        self.assertEqual(self._install_ends(
+            executor, ic_vmauth_generation_installed=self._GENERATION.replace(" ", "\n"),
+        ), AGENTS_REVISION)
+
+    def test_a_resumed_install_is_judged_by_what_the_playbook_installed(self):
+        """Resumed by a worker that did not render it: the playbook's word."""
+        self.env["ir.config_parameter"].sudo().set_param(VMAUTH_GENERATION_PARAM, self._NEXT)
+        cases = (
+            ("an older container", {"ic_vmauth_generation_installed": self._GENERATION}, 0),
+            ("the current one", {"ic_vmauth_generation_installed": self._NEXT}, AGENTS_REVISION),
+            ("none known then", {"ic_vmauth_generation_installed": ""}, 0),
+            # A playbook from before the export says nothing to compare.
+            ("a playbook from before", {}, AGENTS_REVISION),
+        )
+        for label, facts, expected in cases:
+            with self.subTest(case=label):
+                self.host.metrics_agents_revision = 0
+                executor = self._make(ObservabilityAgentsExecutor)
+                self.assertEqual(self._install_ends(executor, **facts), expected)
 
 
 def _load_central_migration():

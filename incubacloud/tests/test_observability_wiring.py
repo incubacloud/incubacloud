@@ -935,6 +935,15 @@ class TestTheAgentsReconnectToANewGateway(BaseCase):
             names.index("Restart vmagent when its configuration changed"),
         )
 
+    def test_the_gateway_installed_is_exported(self):
+        """A job resumed by another worker tells a gateway recreated meanwhile."""
+        tasks, _variables = self._tasks()
+        export = next(t for t in tasks if t.get("name") == "Export the agent facts")
+        self.assertEqual(
+            export["ansible.builtin.set_stats"]["data"]["ic_vmauth_generation_installed"],
+            "{{ ic_vmauth_generation }}",
+        )
+
 
 class TestObservabilityCapabilities(TransactionCase):
     """The one definition of what a panel can do with observability.
