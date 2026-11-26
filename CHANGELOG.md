@@ -139,6 +139,10 @@ Import dialog.
   server's other key and rebuild its instances, not the changed-key one;
   another RSA key is still a changed key. The hosts' keys keep asyncssh's
   order, the one OpenSSH and asyncssh check them in.
+- **A notice with a long word stays on the screen.** A key's SHA256
+  fingerprint, as an SFTP destination's changed-key notice gives it, did
+  not break: the notice grew past the right edge of the window and its
+  close button with it. A word longer than the line now breaks.
 - **Reading a server's key no longer stops on a client key the panel
   cannot read.** asyncssh loaded `~/.ssh`'s keys before the key exchange,
   and the empty `id_rsa` a Doodba project ships stopped it with "Invalid

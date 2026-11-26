@@ -65,6 +65,11 @@
 
 .ic-toast-msg {
     flex: 1;
+    // A word longer than the line, such as a key's SHA256 fingerprint,
+    // breaks instead of widening the notice past the screen's edge, which
+    // took its close button out of reach.
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .ic-toast-action {
