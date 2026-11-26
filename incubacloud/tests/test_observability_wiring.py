@@ -450,8 +450,10 @@ class TestTheCentralIsReadableByItsOwnContainers(BaseCase):
                 f"root, but is written {mode}: the container will fail to "
                 f"read it while the file looks correct on the host",
             )
+        # Loki's configuration; vmauth's is a directory mount since
+        # 26-nov-2026, its file checked by TestVmauthReloadsInPlace.
         self.assertGreaterEqual(
-            checked, 2, "the mount list stopped matching the copy tasks",
+            checked, 1, "the mount list stopped matching the copy tasks",
         )
 
     def test_every_mounted_directory_can_be_entered(self):
@@ -638,6 +640,183 @@ class TestTheAccountSyncSharesTheBoundary(BaseCase):
                     f"{sorted(missing)}, which {playbook.name} reads and "
                     f"never defines; Ansible resolves those to undefined",
                 )
+
+
+class TestVmauthReloadsInPlace(BaseCase):
+    """A new account list reaches vmauth without its container going away.
+
+    The routers that publish the central through the host's Traefik are
+    vmauth's own labels. Restarting vmauth dropped them for a moment, a TLS
+    connection opened then got the default TLS options, and from Traefik
+    v2.11.47 every later request on it was answered 421: vmagent keeps its
+    connection, so a server whose agents connected then sent no metrics
+    again (QA, 26-nov-2026). Deploying a managed panel syncs the accounts
+    while it restarts the agents, which hit the gap often.
+    """
+
+    _APPLY = _ROOT / "ansible" / "playbooks" / "tasks" / "vmauth_acl_apply.yml"
+    _WRITE = _ROOT / "ansible" / "playbooks" / "tasks" / "vmauth_acl_write.yml"
+
+    #: What vmauth v1.102.0 answers on /metrics about its config, as read
+    #: from the image (lab, 26-nov-2026), after one reload with SIGHUP.
+    _METRICS = (
+        "vmauth_config_last_reload_errors_total 0\n"
+        "vmauth_config_last_reload_success_timestamp_seconds 1795688268\n"
+        "vmauth_config_last_reload_successful 1\n"
+        "vmauth_config_last_reload_total 1\n"
+    )
+
+    def _apply_tasks(self):
+        """Return the shared apply task list, as parsed from YAML."""
+        return yaml.safe_load(self._APPLY.read_text())
+
+    def _task(self, name):
+        """Return the apply task called *name*.
+
+        :param name: the task's ``name``.
+        """
+        for task in self._apply_tasks():
+            if task.get("name") == name:
+                return task
+        self.fail(f"{self._APPLY.name} has no task {name!r}")
+
+    def _vmauth_service(self):
+        """Return the vmauth service of the compose file, rendered bare."""
+        play = yaml.safe_load(_CENTRAL_PLAYBOOK.read_text())[0]
+        task = next(
+            t for t in play["tasks"]
+            if t.get("name") == "Write the central compose file"
+        )
+        # Ansible's own defaults: trim_blocks on, lstrip_blocks off.
+        rendered = jinja2.Environment(  # nosec B701 — renders YAML as Ansible does, never HTML
+            trim_blocks=True,
+        ).from_string(task["ansible.builtin.copy"]["content"]).render(
+            ic_central_dir="/root/observability-central",
+            ic_gateway_bind="172.17.0.1:8428",
+            ic_retention_days=90,
+        )
+        return yaml.safe_load(rendered)["services"]["vmauth"]
+
+    def test_vmauth_is_never_restarted_or_recreated_by_the_apply(self):
+        body = self._APPLY.read_text()
+        for verb in ("restart", "up -d", "stop", "rm ", "down"):
+            with self.subTest(verb=verb):
+                self.assertNotRegex(
+                    body, rf"docker compose [^\n]*\b{verb}",
+                    f"{self._APPLY.name} runs docker compose {verb}: the "
+                    "routers on vmauth's labels would go away with it",
+                )
+
+    def test_a_changed_config_is_reloaded_with_sighup(self):
+        task = self._task("Reload vmauth when only its configuration changed")
+        cmd = task["ansible.builtin.command"]["cmd"]
+        self.assertTrue(cmd.startswith("docker compose -p incubacloud-central"))
+        self.assertTrue(cmd.endswith(" kill -s SIGHUP vmauth"), cmd)
+        self.assertEqual(task["when"], "ic_vmauth_cfg is changed")
+
+    def test_the_signal_waits_for_vmauth_to_listen(self):
+        """SIGHUP ends a process that does not catch it yet.
+
+        ``up -d`` may have created the container a moment before; vmauth
+        catches the signal before it listens, so an answer comes first.
+        """
+        names = [t["name"] for t in self._apply_tasks()]
+        wait = self._task("Wait for vmauth to listen")
+        self.assertTrue(wait["ansible.builtin.uri"]["url"].endswith("/metrics"))
+        self.assertEqual(wait["register"], "ic_vmauth_before")
+        self.assertLess(
+            names.index("Wait for vmauth to listen"),
+            names.index("Reload vmauth when only its configuration changed"),
+        )
+
+    def test_a_vmauth_mounting_the_file_alone_is_not_signalled(self):
+        """Created before the directory mount, it would read the old list
+        again and say all is well; the job fails until a deployment."""
+        names = [t["name"] for t in self._apply_tasks()]
+        guard = self._task(
+            "Refuse to reload a vmauth that mounts its config file alone",
+        )
+        self.assertIn("'/etc/vmauth/auth.yml' not in", guard["ansible.builtin.assert"]["that"])
+        self.assertIn("Deploy the metrics central again", guard["ansible.builtin.assert"]["fail_msg"])
+        self.assertEqual(guard["when"], "ic_vmauth_cfg is changed")
+        self.assertLess(
+            names.index("Refuse to reload a vmauth that mounts its config file alone"),
+            names.index("Reload vmauth when only its configuration changed"),
+        )
+
+    def test_the_config_s_directory_is_mounted_not_the_file(self):
+        """``copy`` renames a new file over the old one; a file's mount
+        keeps the old one, which a reload in place would read again."""
+        service = self._vmauth_service()
+        self.assertEqual(
+            service["volumes"], ["/root/observability-central/vmauth:/etc/vmauth:ro"],
+        )
+        self.assertIn("-auth.config=/etc/vmauth/auth.yml", service["command"])
+
+    def test_the_mounted_directory_holds_the_config_alone(self):
+        """Whatever the plays write there, the container sees."""
+        written = set()
+        for path in sorted((_ROOT / "ansible" / "playbooks").rglob("*.yml")):
+            written |= set(re.findall(
+                r"\{\{\s*ic_central_dir\s*\}\}/vmauth/(\S+?)[\"'\s]",
+                path.read_text(),
+            ))
+        self.assertEqual(written, {"auth.yml"})
+        copy = yaml.safe_load(self._WRITE.read_text())[0]["ansible.builtin.copy"]
+        self.assertEqual(copy["dest"], "{{ ic_central_dir }}/vmauth/auth.yml")
+        # vmauth's process is not root.
+        self.assertEqual(copy["mode"], "0644")
+
+    def test_the_reload_is_confirmed_from_vmauth_s_own_record(self):
+        """An answer proves nothing: vmauth answers with its old list too."""
+        block = self._task("Confirm vmauth holds the access-control config on disk")
+        self.assertNotIn("when", block)
+        stat, wait = block["block"]
+        self.assertEqual(
+            stat["ansible.builtin.stat"]["path"],
+            "{{ ic_central_dir }}/vmauth/auth.yml",
+        )
+        self.assertEqual(stat["register"], "ic_vmauth_cfg_stat")
+        self.assertTrue(wait["ansible.builtin.uri"]["url"].endswith("/metrics"))
+        self.assertEqual(wait["register"], "ic_vmauth_metrics")
+        self.assertGreater(wait["retries"] * wait["delay"], 0)
+        for name in ("ic_vmauth_loaded_ok", "ic_vmauth_reloaded", "ic_vmauth_current"):
+            self.assertIn(name, wait["until"])
+        self.assertIn("mtime", block["vars"]["ic_vmauth_written_at"])
+        self.assertIn("ic_vmauth_written_at", block["vars"]["ic_vmauth_current"])
+        # A load after the signal counts only when there was a signal.
+        self.assertIn("ic_vmauth_cfg is changed", block["vars"]["ic_vmauth_reloaded"])
+        self.assertIn("ic_vmauth_before.content", block["vars"]["ic_vmauth_reloads_before"])
+        # A reload that did not take fails the job, in its words.
+        (fail,) = block["rescue"]
+        self.assertIn("did not load", fail["ansible.builtin.fail"]["msg"])
+        names = [t["name"] for t in self._apply_tasks()]
+        self.assertLess(
+            names.index("Reload vmauth when only its configuration changed"),
+            names.index("Confirm vmauth holds the access-control config on disk"),
+        )
+        self.assertLess(
+            names.index("Confirm vmauth holds the access-control config on disk"),
+            names.index("Wait for vmauth to answer"),
+        )
+
+    def test_the_metrics_read_are_the_ones_vmauth_writes(self):
+        """The patterns match v1.102.0's lines, and nothing else."""
+        block = self._task("Confirm vmauth holds the access-control config on disk")
+        patterns = re.findall(
+            r"'(\^vmauth_[^']+)'", "\n".join(block["vars"].values()),
+        )
+        self.assertEqual(len(patterns), 4, patterns)
+        ok, at, before, after = patterns
+        self.assertTrue(re.search(ok, self._METRICS, re.MULTILINE))
+        self.assertFalse(re.search(ok, self._METRICS.replace(
+            "successful 1", "successful 0"), re.MULTILINE))
+        self.assertEqual(
+            re.findall(at, self._METRICS, re.MULTILINE), ["1795688268"],
+        )
+        self.assertEqual(before, after)
+        # The total of reloads, not the errors' total.
+        self.assertEqual(re.findall(before, self._METRICS, re.MULTILINE), ["1"])
 
 
 class TestObservabilityCapabilities(TransactionCase):

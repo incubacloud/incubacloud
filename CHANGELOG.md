@@ -105,6 +105,20 @@ Import dialog.
   other module and say that agents still on `/mcp` have to switch to
   `/cloud/mcp`, or, where the address is a path of the panel's proxy, that
   the proxy has to forward it to `/cloud/mcp`.
+- **A server's agents keep sending metrics to the central after its
+  account list changes.** Syncing the accounts, which deploying a
+  managed panel does while it restarts the server's agents, restarted vmauth,
+  and the central's routers on the host's Traefik live on vmauth's labels:
+  a connection the agents opened in that moment got the proxy's default
+  TLS options, and from Traefik v2.11.47 every later request on it was
+  answered *421 Misdirected Request*, so that server sent no metrics
+  again. vmauth now loads the new list in place with SIGHUP, from its
+  configuration directory, which the compose file mounts instead of the
+  file, and the job fails, saying why, unless vmauth's own metrics show
+  the list on disk loaded. The central is deployed again once, by the
+  reconciliation cron (`CENTRAL_REVISION` 5), which recreates vmauth with
+  the new mount; until then a sync that changes the list fails and asks
+  for that deployment.
 - **Export for Development works on a server started from a minimal
   Debian 13 image.** The export copies the instance with `rsync`, which
   such an image does not ship and Full Setup did not install, so the copy

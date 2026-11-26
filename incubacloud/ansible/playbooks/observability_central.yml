@@ -379,8 +379,13 @@
               command:
                 - '-auth.config=/etc/vmauth/auth.yml'
                 - '-httpListenAddr=:8428'
+              # The directory, not the file: the config is replaced by
+              # renaming a new file over it, and a file's own mount keeps
+              # showing the one replaced, so the reload in place
+              # (tasks/vmauth_acl_apply.yml) would read the old list. It
+              # holds auth.yml alone.
               volumes:
-                - {{ ic_central_dir }}/vmauth/auth.yml:/etc/vmauth/auth.yml:ro
+                - {{ ic_central_dir }}/vmauth:/etc/vmauth:ro
               ports:
                 - "{{ ic_gateway_bind }}:8428"
           {% if ic_public_host or ic_direct_host or ic_single_host %}

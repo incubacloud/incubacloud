@@ -34,7 +34,9 @@
    14-nov-2026: revision 2, Loki's series per query and its restart when
    its configuration changes; 15-nov-2026: revision 3, Loki splitting a
    query by day; 17-nov-2026: revision 4, the operator's `/admin-r/`
-   closed in vmauth and in the proxy's routers). A change of Loki's configuration restarts Loki alone:
+   closed in vmauth and in the proxy's routers; 26-nov-2026: revision 5,
+   vmauth's config directory mounted, so a new account list is loaded in
+   place). A change of Loki's configuration restarts Loki alone:
    about 20 s in which a log read says the central does not answer and
    the agents keep their lines and send them again (Loki 2.9.8, its
    write-ahead log on the volume).
@@ -142,7 +144,12 @@ bridge). It served the accounts' `query` and `query_range` and `/health`
 from 12-nov-2026, and the whole backend (`/admin-r/.*`) before. The
 deployment and the account sync prove the gateway with the panel's own
 account instead: `/r/api/v1/query?query=vector(1)` must answer 200
-(`tasks/vmauth_acl_apply.yml`). `/r/` and `/lr/` served Grafana's
+(`tasks/vmauth_acl_apply.yml`). Before that, a new list is loaded with
+SIGHUP, never by restarting vmauth, whose labels carry the central's
+routers on the host's Traefik, and the job fails unless vmauth's own
+metrics say its last load succeeded and read the file as it is
+(`vmauth_config_last_reload_successful`, `_total` and
+`_success_timestamp_seconds`). `/r/` and `/lr/` served Grafana's
 endpoints too (series, labels, label values, metadata, the log index)
 until 1.0.230.
 

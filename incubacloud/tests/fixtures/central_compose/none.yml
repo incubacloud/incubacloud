@@ -30,8 +30,13 @@ services:
     command:
       - '-auth.config=/etc/vmauth/auth.yml'
       - '-httpListenAddr=:8428'
+    # The directory, not the file: the config is replaced by
+    # renaming a new file over it, and a file's own mount keeps
+    # showing the one replaced, so the reload in place
+    # (tasks/vmauth_acl_apply.yml) would read the old list. It
+    # holds auth.yml alone.
     volumes:
-      - /root/observability-central/vmauth/auth.yml:/etc/vmauth/auth.yml:ro
+      - /root/observability-central/vmauth:/etc/vmauth:ro
     ports:
       - "172.17.0.1:8428:8428"
     depends_on:

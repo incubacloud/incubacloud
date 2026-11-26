@@ -56,7 +56,10 @@ _LOKI_URL = "http://loki:3100/"
 #: 4. 17-nov-2026: the operator's cross-account read, ``/admin-r/``, is
 #:    gone from vmauth and from the proxy's routers; the operator keeps
 #:    series deletion only.
-CENTRAL_REVISION = 4
+#: 5. 26-nov-2026: vmauth's config directory is mounted rather than the
+#:    file, so a new account list is loaded with SIGHUP and vmauth is
+#:    never restarted, which dropped its routers from the host's Traefik.
+CENTRAL_REVISION = 5
 
 #: Its existence keeps what Grafana left on the central through the
 #: deployments, for an operator who wants it before the update removes it
