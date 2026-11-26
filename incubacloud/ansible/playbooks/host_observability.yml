@@ -1242,11 +1242,15 @@
       when: ic_vmauth_generation | length > 0
 
     - name: Restart vmagent when the central gateway was recreated  # noqa: no-handler
-      # A new connection, made with the routers in place.
+      # A new connection, made with the routers in place. Not again when
+      # the new scrape config restarted it above: that restart made the
+      # new connection, and the mark below is written after it.
       ansible.builtin.command:
         cmd: docker compose -p incubacloud-observability -f docker-compose.yaml restart vmagent
         chdir: "{{ ic_obs_dir }}"
-      when: ic_vmauth_generation_seen is changed
+      when:
+        - ic_vmauth_generation_seen is changed
+        - ic_scrape_cfg is not changed
       changed_when: true
 
     - name: Record the central gateway vmagent restarted for

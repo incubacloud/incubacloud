@@ -924,7 +924,11 @@ class TestTheAgentsReconnectToANewGateway(BaseCase):
             record["ansible.builtin.copy"]["content"],
         )
         self.assertNotIn("check_mode", record)
-        self.assertEqual(restart["when"], "ic_vmauth_generation_seen is changed")
+        self.assertEqual(restart["when"], [
+            "ic_vmauth_generation_seen is changed",
+            "ic_scrape_cfg is not changed",
+        ])
+        self.assertEqual(record["when"], "ic_vmauth_generation | length > 0")
         self.assertTrue(
             restart["ansible.builtin.command"]["cmd"].endswith(" restart vmagent"),
         )
@@ -934,6 +938,46 @@ class TestTheAgentsReconnectToANewGateway(BaseCase):
             names.index(compare["name"]),
             names.index("Restart vmagent when its configuration changed"),
         )
+
+    def test_vmagent_restarts_once_when_both_change(self):
+        """A new scrape config and a new gateway: the first restart makes
+        the new connection, the second is not run, and the mark is written
+        after the first. Both ``when`` rendered by Ansible's own templar."""
+        try:
+            from ansible.parsing.dataloader import DataLoader  # noqa: PLC0415
+            from ansible.template import Templar, trust_as_template  # noqa: PLC0415
+        except ImportError:
+            self.skipTest("ansible-core is not importable here")
+        tasks, _variables = self._tasks()
+        names = [t.get("name") for t in tasks]
+        by_config = tasks[names.index("Restart vmagent when its configuration changed")]
+        by_gateway = tasks[names.index("Restart vmagent when the central gateway was recreated")]
+        record = names.index("Record the central gateway vmagent restarted for")
+        self.assertLess(names.index(by_config["name"]), record)
+
+        def runs(task, scrape, gateway):
+            """Return whether *task* runs with these two results.
+
+            :param task: a restart task of the playbook.
+            :param bool scrape: whether the scrape config changed.
+            :param bool gateway: whether the gateway's mark would change.
+            """
+            conditions = task["when"]
+            if isinstance(conditions, str):
+                conditions = [conditions]
+            templar = Templar(loader=DataLoader(), variables={
+                "ic_scrape_cfg": {"changed": scrape, "failed": False},
+                "ic_vmauth_generation_seen": {"changed": gateway, "failed": False},
+            })
+            return all(
+                templar.evaluate_conditional(trust_as_template(c)) for c in conditions
+            )
+
+        for scrape in (False, True):
+            for gateway in (False, True):
+                with self.subTest(scrape=scrape, gateway=gateway):
+                    restarts = runs(by_config, scrape, gateway) + runs(by_gateway, scrape, gateway)
+                    self.assertEqual(restarts, int(scrape or gateway))
 
     def test_the_gateway_installed_is_exported(self):
         """A job resumed by another worker tells a gateway recreated meanwhile."""
