@@ -144,12 +144,18 @@ bridge). It served the accounts' `query` and `query_range` and `/health`
 from 12-nov-2026, and the whole backend (`/admin-r/.*`) before. The
 deployment and the account sync prove the gateway with the panel's own
 account instead: `/r/api/v1/query?query=vector(1)` must answer 200
-(`tasks/vmauth_acl_apply.yml`). Before that, a new list is loaded with
-SIGHUP, never by restarting vmauth, whose labels carry the central's
-routers on the host's Traefik, and the job fails unless vmauth's own
-metrics say its last load succeeded and read the file as it is
-(`vmauth_config_last_reload_successful`, `_total` and
-`_success_timestamp_seconds`). `/r/` and `/lr/` served Grafana's
+(`tasks/vmauth_acl_apply.yml`). Before that, vmauth reads the list again
+through `/-/reload` on the bridge, on every deployment and sync, never by
+a restart (its labels carry the central's routers on the host's Traefik)
+nor by a signal sent through Docker (which cancels `restart:
+unless-stopped`), and the job fails unless vmauth's own metrics count a
+load after the reload and say it succeeded
+(`vmauth_config_last_reload_total`, `vmauth_config_last_reload_successful`).
+When vmauth's container is new or restarted
+(`incubacloud.metrics_vmauth_generation`), every server's agents are
+applied again and restart vmagent once: a vmagent that connected while the
+routers were gone is answered 421 for good from Traefik v2.11.47. `/r/`
+and `/lr/` served Grafana's
 endpoints too (series, labels, label values, metadata, the log index)
 until 1.0.230.
 

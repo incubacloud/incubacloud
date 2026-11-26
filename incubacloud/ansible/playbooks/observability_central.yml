@@ -498,9 +498,9 @@
       changed_when: true
 
     - name: Apply the access-control config and verify the boundary
-      # Shared with the account sync: reload vmauth if the document
-      # changed, wait for it through the front door, and refuse to finish
-      # if anonymous writes are accepted.
+      # Shared with the account sync: reload vmauth in place, confirm it
+      # loaded the document, wait for it through the front door, and
+      # refuse to finish if anonymous writes are accepted.
       ansible.builtin.include_tasks: tasks/vmauth_acl_apply.yml
 
     # ── What Grafana left ─────────────────────────────────────────────

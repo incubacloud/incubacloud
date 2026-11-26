@@ -650,15 +650,18 @@ class TestVmauthReloadsInPlace(BaseCase):
     connection opened then got the default TLS options, and from Traefik
     v2.11.47 every later request on it was answered 421: vmagent keeps its
     connection, so a server whose agents connected then sent no metrics
-    again (QA, 26-nov-2026). Deploying a managed panel syncs the accounts
-    while it restarts the agents, which hit the gap often.
+    again (QA, 26-nov-2026). A sync that ran while a server's agents
+    reconnected hit the gap often.
     """
 
     _APPLY = _ROOT / "ansible" / "playbooks" / "tasks" / "vmauth_acl_apply.yml"
     _WRITE = _ROOT / "ansible" / "playbooks" / "tasks" / "vmauth_acl_write.yml"
+    _CONFIRM = "Confirm vmauth holds the access-control config on disk"
+    _RELOAD = "Reload vmauth's configuration in place"
+    _GUARD = "Refuse to reload a vmauth that mounts its config file alone"
 
     #: What vmauth v1.102.0 answers on /metrics about its config, as read
-    #: from the image (lab, 26-nov-2026), after one reload with SIGHUP.
+    #: from the image (lab, 26-nov-2026), after one reload.
     _METRICS = (
         "vmauth_config_last_reload_errors_total 0\n"
         "vmauth_config_last_reload_success_timestamp_seconds 1795688268\n"
@@ -669,6 +672,10 @@ class TestVmauthReloadsInPlace(BaseCase):
     def _apply_tasks(self):
         """Return the shared apply task list, as parsed from YAML."""
         return yaml.safe_load(self._APPLY.read_text())
+
+    def _names(self):
+        """Return the names of the apply tasks, in order."""
+        return [t["name"] for t in self._apply_tasks()]
 
     def _task(self, name):
         """Return the apply task called *name*.
@@ -697,52 +704,82 @@ class TestVmauthReloadsInPlace(BaseCase):
         )
         return yaml.safe_load(rendered)["services"]["vmauth"]
 
-    def test_vmauth_is_never_restarted_or_recreated_by_the_apply(self):
-        body = self._APPLY.read_text()
-        for verb in ("restart", "up -d", "stop", "rm ", "down"):
-            with self.subTest(verb=verb):
-                self.assertNotRegex(
-                    body, rf"docker compose [^\n]*\b{verb}",
-                    f"{self._APPLY.name} runs docker compose {verb}: the "
-                    "routers on vmauth's labels would go away with it",
-                )
+    def test_vmauth_is_never_restarted_recreated_or_signalled_through_docker(self):
+        """Its labels, and the routers on them, must not go away; and a
+        signal sent by Docker's kill cancels ``restart: unless-stopped``
+        for the rest of the container's life (Docker 29, 26-nov-2026)."""
+        commands = []
+        stack = list(self._apply_tasks())
+        while stack:
+            task = stack.pop()
+            for key in ("block", "rescue", "always"):
+                stack.extend(task.get(key) or [])
+            for module in ("ansible.builtin.command", "ansible.builtin.shell"):
+                spec = task.get(module)
+                if spec:
+                    commands.append(spec["cmd"] if isinstance(spec, dict) else spec)
+        self.assertTrue(commands, "the walk found no command to check")
+        for pattern in (
+            r"docker compose .*\b(restart|up|stop|rm|down|kill|create)\b",
+            r"docker (container )?(restart|stop|rm|kill)\b",
+        ):
+            for cmd in commands:
+                with self.subTest(pattern=pattern, cmd=cmd):
+                    self.assertNotRegex(
+                        cmd, pattern,
+                        f"{self._APPLY.name} restarts, recreates or signals "
+                        "vmauth through Docker",
+                    )
 
-    def test_a_changed_config_is_reloaded_with_sighup(self):
-        task = self._task("Reload vmauth when only its configuration changed")
-        cmd = task["ansible.builtin.command"]["cmd"]
-        self.assertTrue(cmd.startswith("docker compose -p incubacloud-central"))
-        self.assertTrue(cmd.endswith(" kill -s SIGHUP vmauth"), cmd)
-        self.assertEqual(task["when"], "ic_vmauth_cfg is changed")
+    def test_the_config_is_reloaded_over_http_every_time(self):
+        """Not only when the file changed: a run cut off between the write
+        and the reload, or a good list after a bad one, would otherwise
+        stay unloaded with nothing to say so."""
+        task = self._task(self._RELOAD)
+        uri = task["ansible.builtin.uri"]
+        self.assertEqual(uri["url"], "http://{{ ic_gateway_bind }}/-/reload")
+        self.assertEqual(uri["status_code"], [200])
+        self.assertNotIn("when", task)
 
-    def test_the_signal_waits_for_vmauth_to_listen(self):
-        """SIGHUP ends a process that does not catch it yet.
-
-        ``up -d`` may have created the container a moment before; vmauth
-        catches the signal before it listens, so an answer comes first.
-        """
-        names = [t["name"] for t in self._apply_tasks()]
+    def test_the_reload_waits_for_vmauth_to_listen(self):
+        """The reloads it counted are read before, and its absence is said."""
         wait = self._task("Wait for vmauth to listen")
-        self.assertTrue(wait["ansible.builtin.uri"]["url"].endswith("/metrics"))
-        self.assertEqual(wait["register"], "ic_vmauth_before")
+        (read,) = wait["block"]
+        self.assertTrue(read["ansible.builtin.uri"]["url"].endswith("/metrics"))
+        self.assertEqual(read["register"], "ic_vmauth_before")
+        self.assertTrue(read["no_log"])
+        (fail,) = wait["rescue"]
+        self.assertIn("did not answer", fail["ansible.builtin.fail"]["msg"])
+        names = self._names()
+        self.assertLess(names.index("Wait for vmauth to listen"), names.index(self._RELOAD))
+
+    def test_a_missing_container_is_said_before_docker_inspect(self):
+        names = self._names()
+        check = self._task("Fail when vmauth has no container")
+        self.assertIn("length > 0", check["ansible.builtin.assert"]["that"])
         self.assertLess(
-            names.index("Wait for vmauth to listen"),
-            names.index("Reload vmauth when only its configuration changed"),
+            names.index("Fail when vmauth has no container"),
+            names.index("Read vmauth's mounts"),
         )
 
-    def test_a_vmauth_mounting_the_file_alone_is_not_signalled(self):
+    def test_a_vmauth_mounting_the_file_alone_is_not_reloaded(self):
         """Created before the directory mount, it would read the old list
-        again and say all is well; the job fails until a deployment."""
-        names = [t["name"] for t in self._apply_tasks()]
-        guard = self._task(
-            "Refuse to reload a vmauth that mounts its config file alone",
-        )
+        again and say all is well; the job fails until a deployment, with
+        or without a new list."""
+        guard = self._task(self._GUARD)
         self.assertIn("'/etc/vmauth/auth.yml' not in", guard["ansible.builtin.assert"]["that"])
         self.assertIn("Deploy the metrics central again", guard["ansible.builtin.assert"]["fail_msg"])
-        self.assertEqual(guard["when"], "ic_vmauth_cfg is changed")
-        self.assertLess(
-            names.index("Refuse to reload a vmauth that mounts its config file alone"),
-            names.index("Reload vmauth when only its configuration changed"),
-        )
+        self.assertNotIn("when", guard)
+        names = self._names()
+        self.assertLess(names.index(self._GUARD), names.index(self._RELOAD))
+
+    def test_the_container_serving_the_central_is_exported(self):
+        """The panel restarts the agents when it changes."""
+        task = self._task("Export which vmauth container serves the central")
+        value = task["ansible.builtin.set_stats"]["data"]["ic_vmauth_generation"]
+        self.assertIn(".Id", value)
+        self.assertIn(".State.StartedAt", value)
+        self.assertIs(task["ansible.builtin.set_stats"]["aggregate"], False)
 
     def test_the_config_s_directory_is_mounted_not_the_file(self):
         """``copy`` renames a new file over the old one; a file's mount
@@ -769,54 +806,134 @@ class TestVmauthReloadsInPlace(BaseCase):
 
     def test_the_reload_is_confirmed_from_vmauth_s_own_record(self):
         """An answer proves nothing: vmauth answers with its old list too."""
-        block = self._task("Confirm vmauth holds the access-control config on disk")
+        block = self._task(self._CONFIRM)
         self.assertNotIn("when", block)
-        stat, wait = block["block"]
-        self.assertEqual(
-            stat["ansible.builtin.stat"]["path"],
-            "{{ ic_central_dir }}/vmauth/auth.yml",
-        )
-        self.assertEqual(stat["register"], "ic_vmauth_cfg_stat")
+        (wait,) = block["block"]
         self.assertTrue(wait["ansible.builtin.uri"]["url"].endswith("/metrics"))
         self.assertEqual(wait["register"], "ic_vmauth_metrics")
         self.assertGreater(wait["retries"] * wait["delay"], 0)
-        for name in ("ic_vmauth_loaded_ok", "ic_vmauth_reloaded", "ic_vmauth_current"):
+        for name in ("ic_vmauth_reloaded", "ic_vmauth_loaded_ok"):
             self.assertIn(name, wait["until"])
-        self.assertIn("mtime", block["vars"]["ic_vmauth_written_at"])
-        self.assertIn("ic_vmauth_written_at", block["vars"]["ic_vmauth_current"])
-        # A load after the signal counts only when there was a signal.
-        self.assertIn("ic_vmauth_cfg is changed", block["vars"]["ic_vmauth_reloaded"])
         self.assertIn("ic_vmauth_before.content", block["vars"]["ic_vmauth_reloads_before"])
+        self.assertNotIn("mtime", yaml.safe_dump(block))
         # A reload that did not take fails the job, in its words.
         (fail,) = block["rescue"]
         self.assertIn("did not load", fail["ansible.builtin.fail"]["msg"])
-        names = [t["name"] for t in self._apply_tasks()]
-        self.assertLess(
-            names.index("Reload vmauth when only its configuration changed"),
-            names.index("Confirm vmauth holds the access-control config on disk"),
-        )
-        self.assertLess(
-            names.index("Confirm vmauth holds the access-control config on disk"),
-            names.index("Wait for vmauth to answer"),
-        )
+        names = self._names()
+        self.assertLess(names.index(self._RELOAD), names.index(self._CONFIRM))
+        self.assertLess(names.index(self._CONFIRM), names.index("Wait for vmauth to answer"))
 
     def test_the_metrics_read_are_the_ones_vmauth_writes(self):
         """The patterns match v1.102.0's lines, and nothing else."""
-        block = self._task("Confirm vmauth holds the access-control config on disk")
+        block = self._task(self._CONFIRM)
         patterns = re.findall(
             r"'(\^vmauth_[^']+)'", "\n".join(block["vars"].values()),
         )
-        self.assertEqual(len(patterns), 4, patterns)
-        ok, at, before, after = patterns
+        self.assertEqual(len(patterns), 3, patterns)
+        ok, before, after = patterns
         self.assertTrue(re.search(ok, self._METRICS, re.MULTILINE))
         self.assertFalse(re.search(ok, self._METRICS.replace(
             "successful 1", "successful 0"), re.MULTILINE))
-        self.assertEqual(
-            re.findall(at, self._METRICS, re.MULTILINE), ["1795688268"],
-        )
         self.assertEqual(before, after)
         # The total of reloads, not the errors' total.
         self.assertEqual(re.findall(before, self._METRICS, re.MULTILINE), ["1"])
+
+    def test_the_confirmation_as_ansible_evaluates_it(self):
+        """The block's variables and its ``until``, rendered by Ansible's
+        own templar against vmauth's metrics before and after."""
+        try:
+            from ansible.parsing.dataloader import DataLoader  # noqa: PLC0415
+            from ansible.template import Templar, trust_as_template  # noqa: PLC0415
+        except ImportError:
+            self.skipTest("ansible-core is not importable here")
+        block = self._task(self._CONFIRM)
+        until = block["block"][0]["until"]
+
+        def metrics(total, successful):
+            """Return vmauth's config lines with these values."""
+            return self._METRICS.replace(
+                "reload_total 1", f"reload_total {total}",
+            ).replace("successful 1", f"successful {successful}")
+
+        def confirmed(before, after):
+            """Evaluate the ``until`` with these metrics pages.
+
+            :param before: the page read before the reload.
+            :param after: the page read after, ``None`` when unreadable.
+            """
+            variables = {
+                name: trust_as_template(value)
+                for name, value in block["vars"].items()
+            }
+            variables["ic_vmauth_before"] = {
+                "content": before, "failed": False, "changed": False,
+            }
+            variables["ic_vmauth_metrics"] = (
+                {"content": after, "failed": False, "changed": False}
+                if after is not None else {"failed": True, "changed": False}
+            )
+            return Templar(
+                loader=DataLoader(), variables=variables,
+            ).evaluate_conditional(trust_as_template(until))
+
+        cases = (
+            ("a new list, loaded", metrics(1, 1), metrics(2, 1), True),
+            ("the same list, reloaded", metrics(5, 1), metrics(6, 1), True),
+            ("a container just created", metrics(0, 1), metrics(1, 1), True),
+            ("a list that does not parse", metrics(2, 1), metrics(3, 0), False),
+            ("no load counted", metrics(3, 1), metrics(3, 1), False),
+            ("a container restarted meanwhile", metrics(3, 1), metrics(0, 1), False),
+            ("metrics unreadable", metrics(3, 1), None, False),
+        )
+        for label, before, after, expected in cases:
+            with self.subTest(case=label):
+                self.assertIs(confirmed(before, after), expected)
+
+
+class TestTheAgentsReconnectToANewGateway(BaseCase):
+    """A server whose vmagent connected while vmauth was recreated stays at
+    421 until vmagent restarts; the agents' install restarts it once for
+    every vmauth container it has not restarted for."""
+
+    _AGENTS = _ROOT / "ansible" / "playbooks" / "host_observability.yml"
+
+    def _tasks(self):
+        """Return the agents playbook's top-level tasks and its variables."""
+        play = yaml.safe_load(self._AGENTS.read_text())[0]
+        return play["tasks"], play["vars"]
+
+    def test_vmagent_restarts_once_per_gateway_and_marks_it_after(self):
+        tasks, variables = self._tasks()
+        self.assertEqual(variables["ic_vmauth_generation"], "")
+        names = [t.get("name") for t in tasks]
+        compare = tasks[names.index(
+            "Compare the central gateway with the one vmagent last restarted for",
+        )]
+        restart = tasks[names.index(
+            "Restart vmagent when the central gateway was recreated",
+        )]
+        record = tasks[names.index("Record the central gateway vmagent restarted for")]
+        self.assertIs(compare["check_mode"], True)
+        self.assertEqual(compare["register"], "ic_vmauth_generation_seen")
+        self.assertEqual(
+            compare["ansible.builtin.copy"]["dest"],
+            record["ansible.builtin.copy"]["dest"],
+        )
+        self.assertEqual(
+            compare["ansible.builtin.copy"]["content"],
+            record["ansible.builtin.copy"]["content"],
+        )
+        self.assertNotIn("check_mode", record)
+        self.assertEqual(restart["when"], "ic_vmauth_generation_seen is changed")
+        self.assertTrue(
+            restart["ansible.builtin.command"]["cmd"].endswith(" restart vmagent"),
+        )
+        self.assertLess(names.index(compare["name"]), names.index(restart["name"]))
+        self.assertLess(names.index(restart["name"]), names.index(record["name"]))
+        self.assertGreater(
+            names.index(compare["name"]),
+            names.index("Restart vmagent when its configuration changed"),
+        )
 
 
 class TestObservabilityCapabilities(TransactionCase):

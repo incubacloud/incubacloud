@@ -57,14 +57,23 @@ _LOKI_URL = "http://loki:3100/"
 #:    gone from vmauth and from the proxy's routers; the operator keeps
 #:    series deletion only.
 #: 5. 26-nov-2026: vmauth's config directory is mounted rather than the
-#:    file, so a new account list is loaded with SIGHUP and vmauth is
-#:    never restarted, which dropped its routers from the host's Traefik.
+#:    file, so a new account list is loaded in place (``/-/reload``) and
+#:    vmauth is never restarted, which dropped its routers from the host's
+#:    Traefik.
 CENTRAL_REVISION = 5
 
 #: Its existence keeps what Grafana left on the central through the
 #: deployments, for an operator who wants it before the update removes it
 #: (the owner decided on 10-nov-2026 to remove it; review of 12-nov-2026).
 _KEEP_GRAFANA_PARAM = "incubacloud.metrics_keep_grafana_data"
+
+#: Which vmauth container serves the central, its id and when it started,
+#: as the last deployment or account sync read it. The central's routers
+#: on its host's Traefik are that container's labels: a new one means they
+#: went away for a moment, and an agent that connected then is answered
+#: 421 for good from Traefik v2.11.47 (QA, 26-nov-2026). The agents' install
+#: restarts vmagent once for every value it has not restarted for.
+VMAUTH_GENERATION_PARAM = "incubacloud.metrics_vmauth_generation"
 
 # What an account may reach on the central, and nothing else. Each is a
 # vmauth ``src_paths`` regex, which vmauth matches against the WHOLE path.
@@ -277,6 +286,37 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         # The accounts authenticate from now on: whoever hands them out
         # hears it here, from both jobs that write the list.
         settings._metrics_accounts_shipped()
+
+    def _note_vmauth_generation(self):
+        """Have the agents restart vmagent when vmauth's container changed.
+
+        Called on success by the deployment and by the account sync, which
+        both read the container that serves the central
+        (``ic_vmauth_generation``). A value this panel has not seen sends
+        every installed server's agents to be applied again at the
+        reconciliation's pace, and each restarts vmagent once for it: the
+        connections a recreated or restarted vmauth stranded are made
+        again with its routers in place. The first value read after the
+        update counts as new, which frees the servers stranded before it.
+
+        :return: whether the value was new.
+        :rtype: bool
+        """
+        generation = " ".join(
+            str(self.playbook_facts().get("ic_vmauth_generation") or "").split()
+        )
+        if not generation:
+            return False
+        params = self.env["ir.config_parameter"].sudo()
+        if params.get_param(VMAUTH_GENERATION_PARAM) == generation:
+            return False
+        params.set_param(VMAUTH_GENERATION_PARAM, generation)
+        self.env["cloud.host"]._reapply_observability_everywhere()
+        self._sys(
+            "vmauth's container is new or restarted since it was last read: "
+            "every server's agents are applied again and reconnect to it."
+        )
+        return True
 
     def _account_url_map(self, user, read=True, write=True):
         """Return the vmauth ``url_map`` for one account.
@@ -752,6 +792,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         vals["metrics_central_revision"] = CENTRAL_REVISION
         settings.write(vals)
         self._record_shipped_accounts()
+        self._note_vmauth_generation()
         self._report_grafana_purge()
         self._report_acme_same_name()
         if (settings.metrics_central_direct_host or "").strip() or single:

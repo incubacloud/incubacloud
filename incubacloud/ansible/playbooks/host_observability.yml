@@ -106,6 +106,10 @@
     # connecting user's home: its script, its list of databases and its
     # schedule are files that user cannot change.
     ic_collect_pg: true
+    # Which vmauth container serves the central, as its last deployment or
+    # account sync read it (``incubacloud.metrics_vmauth_generation``).
+    # Empty: not known yet, vmagent is left as it is.
+    ic_vmauth_generation: ""
     ic_lib_dir: /usr/local/lib/incubacloud
     ic_pg_cron_file: /etc/cron.d/incubacloud-collect-pg
     # Below this much memory a server measures its filestores once an
@@ -1218,6 +1222,39 @@
         chdir: "{{ ic_obs_dir }}"
       when: ic_scrape_cfg is changed
       changed_when: true
+
+    # ── A central gateway recreated since vmagent last connected ──────
+    # The central's routers on its host's Traefik are labels of its vmauth
+    # container, gone while it is recreated. A connection vmagent opened
+    # then got the proxy's default TLS options, and from Traefik v2.11.47
+    # every request on it is answered 421; vmagent keeps that connection,
+    # so the server sends no metrics again until vmagent restarts (QA,
+    # 26-nov-2026). The panel re-applies the agents when that container
+    # changes; each server restarts vmagent once per container, the mark
+    # written only after the restart so a run cut short tries again.
+    - name: Compare the central gateway with the one vmagent last restarted for
+      ansible.builtin.copy:
+        dest: "{{ ic_obs_dir }}/central-gateway"
+        content: "{{ ic_vmauth_generation }}\n"
+        mode: "0644"
+      check_mode: true
+      register: ic_vmauth_generation_seen
+      when: ic_vmauth_generation | length > 0
+
+    - name: Restart vmagent when the central gateway was recreated  # noqa: no-handler
+      # A new connection, made with the routers in place.
+      ansible.builtin.command:
+        cmd: docker compose -p incubacloud-observability -f docker-compose.yaml restart vmagent
+        chdir: "{{ ic_obs_dir }}"
+      when: ic_vmauth_generation_seen is changed
+      changed_when: true
+
+    - name: Record the central gateway vmagent restarted for
+      ansible.builtin.copy:
+        dest: "{{ ic_obs_dir }}/central-gateway"
+        content: "{{ ic_vmauth_generation }}\n"
+        mode: "0644"
+      when: ic_vmauth_generation | length > 0
 
     - name: Restart Fluent Bit when its configuration changed  # noqa: no-handler
       # Same reason as vmagent's: new files alone do not recreate the

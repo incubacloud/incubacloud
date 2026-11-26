@@ -36,6 +36,7 @@ from odoo.addons.incubacloud.models.observability_central_executor import (
     _DELETE_KEY_IN_FILE_PARAM,
     _OPERATOR_DELETE_PATH,
     _OPERATOR_MAX_CONCURRENT,
+    VMAUTH_GENERATION_PARAM,
     ObservabilityCentralExecutor,
 )
 from odoo.addons.incubacloud.tests._direct import central_names_as_new
@@ -916,3 +917,92 @@ class TestTheCentralsSecretsOutliveTheJob(JobEndAssertions, ObservabilityExecuto
             account = self.settings.metrics_account
         self.end_job()
         self.assertEqual(account, self.stored(self.settings, "metrics_account"))
+
+
+class TestTheAgentsFollowANewGateway(ObservabilityExecutorCase):
+    """A new vmauth container sends every server's agents to reconnect.
+
+    Its routers on the central's host Traefik are its labels; a vmagent
+    that connected while they were gone is answered 421 for good.
+    """
+
+    _GENERATION = "4f1c 2026-11-26T10:29:10.352943945Z"
+
+    def setUp(self):
+        super().setUp()
+        self.host.write({
+            "metrics_agents_state": "installed",
+            "metrics_agents_revision": 4,
+        })
+
+    def _note(self, executor_cls, generation):
+        """Run ``_note_vmauth_generation`` with *generation* exported.
+
+        :param executor_cls: the executor class to build.
+        :param generation: what the playbook exported, or ``None``.
+        :return: the method's answer.
+        """
+        executor = self._make(executor_cls)
+        if generation is not None:
+            executor._facts = {"ic_vmauth_generation": generation}
+        answer = executor._note_vmauth_generation()
+        self.host.invalidate_recordset()
+        return answer
+
+    def _param(self):
+        """Return the generation the panel recorded."""
+        return self.env["ir.config_parameter"].sudo().get_param(VMAUTH_GENERATION_PARAM)
+
+    def test_a_new_container_reapplies_every_installed_server(self):
+        for cls in (ObservabilityCentralExecutor, MetricsAclSyncExecutor):
+            with self.subTest(job=cls._job_type):
+                self.env["ir.config_parameter"].sudo().set_param(VMAUTH_GENERATION_PARAM, False)
+                self.host.metrics_agents_revision = 4
+                self.assertTrue(self._note(cls, self._GENERATION))
+                self.assertEqual(self._param(), self._GENERATION)
+                self.assertEqual(self.host.metrics_agents_revision, 0)
+
+    def test_the_same_container_leaves_the_agents_alone(self):
+        self.env["ir.config_parameter"].sudo().set_param(
+            VMAUTH_GENERATION_PARAM, self._GENERATION,
+        )
+        # Folded by YAML, the two halves may come with a line break.
+        self.assertFalse(self._note(
+            MetricsAclSyncExecutor, self._GENERATION.replace(" ", "\n"),
+        ))
+        self.assertEqual(self.host.metrics_agents_revision, 4)
+
+    def test_nothing_read_changes_nothing(self):
+        self.env["ir.config_parameter"].sudo().set_param(
+            VMAUTH_GENERATION_PARAM, self._GENERATION,
+        )
+        for generation in (None, "", "  "):
+            with self.subTest(generation=generation):
+                self.assertFalse(self._note(MetricsAclSyncExecutor, generation))
+        self.assertEqual(self._param(), self._GENERATION)
+        self.assertEqual(self.host.metrics_agents_revision, 4)
+
+    def test_a_deployment_notes_it_on_success(self):
+        executor = self._make(ObservabilityCentralExecutor)
+        executor._facts = {
+            "ic_central_up": "True",
+            "ic_central_gateway": "http://172.17.0.1:8428",
+            "ic_vmauth_generation": self._GENERATION,
+        }
+        executor._shipped_accounts = []
+        asyncio.run(executor.on_success({}))
+        self.host.invalidate_recordset()
+        self.assertEqual(self._param(), self._GENERATION)
+        self.assertEqual(self.host.metrics_agents_revision, 0)
+
+    def test_the_agents_install_carries_it(self):
+        self.env["ir.config_parameter"].sudo().set_param(
+            VMAUTH_GENERATION_PARAM, self._GENERATION,
+        )
+        extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
+        self.assertEqual(extra["ic_vmauth_generation"], self._GENERATION)
+
+    def test_before_any_is_read_the_agents_install_carries_none(self):
+        extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
+        self.assertEqual(extra["ic_vmauth_generation"], "")
+

@@ -113,6 +113,7 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
         intent rather than fact would defeat it.
         """
         self._record_shipped_accounts()
+        self._note_vmauth_generation()
         self._sys("✓ The access-control list is in force on the gateway.")
         self._resolve_alert("metrics_acl_sync_failed")
 

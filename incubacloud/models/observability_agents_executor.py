@@ -20,6 +20,7 @@ from . import _direct_probe
 from .abstract_executor import CANCELLED_WHILE_RUNNING
 from .ansible_executor import AnsibleExecutor
 from .cloud_host_central import CERT_REFUSED
+from .observability_central_executor import VMAUTH_GENERATION_PARAM
 
 _logger = logging.getLogger(__name__)
 
@@ -302,6 +303,11 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             "ic_panel_ssh_user": host.user or "",
             # The per-minute database collector, root's; off removes it.
             "ic_collect_pg": self._sent_collect_pg,
+            # The central's vmauth container: vmagent restarts once for
+            # one it has not restarted for (``_note_vmauth_generation``).
+            "ic_vmauth_generation": self.env["ir.config_parameter"].sudo().get_param(
+                VMAUTH_GENERATION_PARAM, "",
+            ),
             # User half of the credential. It is also the label the
             # central forces on everything this agent writes, so the copy
             # the agent sends is only a hint — the gateway overwrites it

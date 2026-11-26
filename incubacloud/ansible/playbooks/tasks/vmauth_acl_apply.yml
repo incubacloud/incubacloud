@@ -6,58 +6,72 @@
 # Requires ``ic_vmauth_cfg`` to be registered by tasks/vmauth_acl_write.yml
 # earlier in the same play.
 #
-# vmauth is reloaded in place, never restarted. The routers that publish
-# the central through the host's Traefik live on vmauth's own labels, and
-# while its container restarts Traefik drops them. A TLS connection opened
-# in that gap gets the default TLS options; from Traefik v2.11.47 every
-# later request on it whose router names other options (``ic-central@file``)
-# is answered 421, and vmagent keeps its one connection for good: a server
-# whose agents connected then sent no metrics again (QA, 26-nov-2026,
-# Traefik 2.11.64). Deploying a managed panel syncs the accounts while
-# it restarts the agents, so it hit the gap often.
+# vmauth is reloaded in place, never restarted, and never signalled
+# through Docker. The routers that publish the central through the host's
+# Traefik live on vmauth's own labels, and while its container restarts
+# Traefik drops them. A TLS connection opened in that gap gets the default
+# TLS options; from Traefik v2.11.47 every later request on it whose
+# router names other options (``ic-central@file``) is answered 421, and
+# vmagent keeps its one connection for good: a server whose agents
+# connected then sent no metrics again (QA, 26-nov-2026, Traefik 2.11.64).
+# A sync that ran while a server's agents reconnected hit the gap often.
 
 - name: Wait for vmauth to listen
-  # Before the reload signal: a container ``up -d`` has just created
-  # may not catch SIGHUP yet, and SIGHUP's default is to end the process.
-  # vmauth registers its handler before it reads its config, and listens
-  # only after that (v1.102.0, app/vmauth/main.go and auth_config.go), so
-  # an answer here means the signal is caught. Its own metrics, which are
-  # not behind the access control and which no router publishes: how many
-  # reloads it counted is read again after the signal.
-  ansible.builtin.uri:
-    url: "http://{{ ic_gateway_bind }}/metrics"
-    return_content: true
-  register: ic_vmauth_before
-  retries: 10
-  delay: 3
-  until: ic_vmauth_before is succeeded
-  no_log: true
+  # Its own metrics, which are not behind the access control and which
+  # no router publishes: the reloads it counted are read again after the
+  # reload below. Quiet: a failure would print the whole page; the
+  # message below says what failed.
+  block:
+    - name: Read vmauth's metrics before the reload
+      ansible.builtin.uri:
+        url: "http://{{ ic_gateway_bind }}/metrics"
+        return_content: true
+      register: ic_vmauth_before
+      retries: 10
+      delay: 3
+      until: ic_vmauth_before is succeeded
+      no_log: true
+  rescue:
+    - name: Fail when vmauth does not answer on the bridge
+      ansible.builtin.fail:
+        msg: >-
+          vmauth did not answer on http://{{ ic_gateway_bind }}/metrics within
+          30 s (status {{ ic_vmauth_before.status | default('none') }}). See its
+          state and log on the central (docker compose -p incubacloud-central
+          ps, logs vmauth).
 
-- name: Find vmauth's container  # noqa: no-handler
+- name: Find vmauth's container
   # Its mounts are read next.
   ansible.builtin.command:
     cmd: docker compose -p incubacloud-central -f docker-compose.yaml ps -q vmauth
     chdir: "{{ ic_central_dir }}"
   register: ic_vmauth_container
   changed_when: false
-  when: ic_vmauth_cfg is changed
 
-- name: Read vmauth's mounts  # noqa: no-handler
+- name: Fail when vmauth has no container
+  # ``docker inspect`` of nothing would fail with Docker's words.
+  ansible.builtin.assert:
+    that: ic_vmauth_container.stdout | trim | length > 0
+    fail_msg: >-
+      The central's compose project has no vmauth container. Deploy the
+      metrics central again.
+    quiet: true
+
+- name: Read vmauth's mounts
   # Whether it mounts the config's directory or the file alone, asked
-  # next.
+  # next; its identity and start are exported below.
   ansible.builtin.command:
     cmd: docker inspect --type container {{ ic_vmauth_container.stdout | trim }}
   register: ic_vmauth_inspect
   changed_when: false
-  when: ic_vmauth_cfg is changed
 
-- name: Refuse to reload a vmauth that mounts its config file alone  # noqa: no-handler
+- name: Refuse to reload a vmauth that mounts its config file alone
   # A container created before 26-nov-2026 mounts auth.yml itself, and
   # ``copy`` replaces the file by renaming another over it: that mount
   # keeps showing the replaced one, so the reload would read the old list
   # again and vmauth would say all is well. The central's next deployment
   # mounts the directory (CENTRAL_REVISION 5, which the reconciliation
-  # cron deploys); until then the accounts wait for it.
+  # cron and the update deploy); until then the accounts wait for it.
   ansible.builtin.assert:
     that: >-
       '/etc/vmauth/auth.yml' not in
@@ -68,45 +82,50 @@
       a new account list in place. Deploy the metrics central again: its
       deployment mounts the directory, and the accounts are written then.
     quiet: true
-  when: ic_vmauth_cfg is changed
 
-- name: Reload vmauth when only its configuration changed  # noqa: no-handler
-  # ``up -d`` does not recreate a container whose image and compose
-  # definition are unchanged, so a new account list alone would not
-  # be picked up — and an account that cannot authenticate looks
-  # exactly like a broken agent. SIGHUP makes vmauth read -auth.config
-  # again, and keep the last good one if the new one does not parse; its
-  # container, labels and routers stay. Not a handler on purpose: the
-  # reload must land between ``up -d`` and the checks below, whereas
-  # handlers run at the end of the play — after the probe.
-  ansible.builtin.command:
-    cmd: docker compose -p incubacloud-central -f docker-compose.yaml kill -s SIGHUP vmauth
-    chdir: "{{ ic_central_dir }}"
-  when: ic_vmauth_cfg is changed
-  changed_when: true
+- name: Export which vmauth container serves the central
+  # Its id and when it started. A new one means its routers went away
+  # for a moment and came back, and an agent that connected then is
+  # answered 421 for good: the panel restarts the agents that write here
+  # when it changes (``_note_vmauth_generation``).
+  ansible.builtin.set_stats:
+    aggregate: false
+    data:
+      ic_vmauth_generation: >-
+        {{ (ic_vmauth_inspect.stdout | from_json | first).Id }}
+        {{ (ic_vmauth_inspect.stdout | from_json | first).State.StartedAt }}
+
+- name: Reload vmauth's configuration in place
+  # Every time, not only when the file changed: a run cut off between
+  # the write and the reload, or a good list written after a bad one,
+  # would otherwise leave vmauth on the old list with nothing to say so.
+  # A reload that finds the bytes it already holds costs nothing and
+  # still counts. Over HTTP, not ``docker compose kill -s SIGHUP``:
+  # Docker's kill of a container without a stop signal cancels
+  # ``restart: unless-stopped`` for the rest of its life, so a later
+  # crash left vmauth down (Docker 29, 26-nov-2026). vmauth's /-/reload
+  # sends the SIGHUP to itself (v1.102.0): it reads -auth.config again and
+  # keeps the last good one if the new one does not parse. It is on the
+  # bridge only, no router publishes it, and all it can do is read the
+  # file again. ``up -d`` does not recreate a container whose image and
+  # compose definition are unchanged, so without it a new account list
+  # would not be picked up — and an account that cannot authenticate
+  # looks exactly like a broken agent.
+  ansible.builtin.uri:
+    url: "http://{{ ic_gateway_bind }}/-/reload"
+    status_code: [200]
+  changed_when: ic_vmauth_cfg is changed
 
 - name: Confirm vmauth holds the access-control config on disk
   # Answering proves nothing about the reload: vmauth keeps answering
   # with the list it had when a new one fails to parse or never reached
-  # it. What vmauth says of its loads does (v1.102.0): its last one
-  # succeeded, and either it counted a load after the signal, which read
-  # the file as it is now, or the list it holds was loaded no earlier
-  # than the file was last written. Both are needed: a load that finds
-  # the list it already holds (the good list again after a bad one)
-  # counts, but records no new time; a central the deployment has just
-  # created, or a sync that changed nothing, sends no signal, and its
-  # time is that of the load of the file. The time is in whole seconds of
-  # a clock vmauth reads once a second (fasttime), so it may read one
-  # second behind the file's: hence the one second of slack.
+  # it. What vmauth says of its loads does (v1.102.0): it counted a load
+  # after the reload above, which read the file as it is now, and its
+  # last load succeeded.
   vars:
     ic_vmauth_metrics_text: "{{ ic_vmauth_metrics.content | default('') }}"
     ic_vmauth_loaded_ok: >-
       {{ ic_vmauth_metrics_text is search('^vmauth_config_last_reload_successful 1$', multiline=true) }}
-    ic_vmauth_loaded_at: >-
-      {{ ic_vmauth_metrics_text
-         | regex_findall('^vmauth_config_last_reload_success_timestamp_seconds ([0-9]+)$', multiline=true)
-         | first | default(0) | int }}
-    ic_vmauth_written_at: "{{ ic_vmauth_cfg_stat.stat.mtime | default(0) | int }}"
     ic_vmauth_reloads_before: >-
       {{ ic_vmauth_before.content | default('')
          | regex_findall('^vmauth_config_last_reload_total ([0-9]+)$', multiline=true)
@@ -116,17 +135,8 @@
          | regex_findall('^vmauth_config_last_reload_total ([0-9]+)$', multiline=true)
          | first | default(0) | int }}
     ic_vmauth_reloaded: >-
-      {{ ic_vmauth_cfg is changed
-         and (ic_vmauth_reloads_after | int) > (ic_vmauth_reloads_before | int) }}
-    ic_vmauth_current: >-
-      {{ (ic_vmauth_loaded_at | int) + 1 >= (ic_vmauth_written_at | int) }}
+      {{ (ic_vmauth_reloads_after | int) > (ic_vmauth_reloads_before | int) }}
   block:
-    - name: Read when the access-control config was written
-      ansible.builtin.stat:
-        path: "{{ ic_central_dir }}/vmauth/auth.yml"
-        get_checksum: false
-      register: ic_vmauth_cfg_stat
-
     - name: Wait for vmauth to load the access-control config
       # Quiet: on failure the whole metrics page would fill the job's log;
       # the message below says what was read.
@@ -138,8 +148,8 @@
       delay: 3
       until: >-
         ic_vmauth_metrics is succeeded
+        and ic_vmauth_reloaded
         and ic_vmauth_loaded_ok
-        and (ic_vmauth_reloaded or ic_vmauth_current)
       no_log: true
 
   rescue:
@@ -148,11 +158,9 @@
       # otherwise look like a gateway that answers.
       ansible.builtin.fail:
         msg: >-
-          vmauth did not load the access-control config written at
-          {{ ic_vmauth_written_at }} (Unix time): its last good load is at
-          {{ ic_vmauth_loaded_at }}, it counted
+          vmauth did not load the access-control config on disk: it counted
           {{ (ic_vmauth_reloads_after | int) - (ic_vmauth_reloads_before | int) }}
-          load(s) since the reload signal, and its last load
+          load(s) since the reload, and its last load
           {{ 'succeeded' if ic_vmauth_loaded_ok else 'failed or could not be read' }}.
           The accounts it grants or revokes are not in force. See vmauth's
           log on the central (docker compose -p incubacloud-central logs vmauth).
