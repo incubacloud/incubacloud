@@ -9,6 +9,7 @@ Built the same way as the hardening executor's tests — instantiated
 without ``__init__`` so no SSH transport or job record is needed.
 """
 import asyncio
+import importlib.util
 import pathlib
 import re
 from unittest.mock import MagicMock, patch
@@ -16,6 +17,7 @@ from unittest.mock import MagicMock, patch
 import yaml
 
 from odoo.exceptions import UserError
+from odoo.modules.module import get_module_path
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.models.abstract_executor import (
@@ -1005,4 +1007,49 @@ class TestTheAgentsFollowANewGateway(ObservabilityExecutorCase):
     def test_before_any_is_read_the_agents_install_carries_none(self):
         extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
         self.assertEqual(extra["ic_vmauth_generation"], "")
+
+
+def _load_central_migration():
+    """Import 1.0.239's end-deploy-central script as a module."""
+    path = pathlib.Path(get_module_path("incubacloud")) / (
+        "migrations/1.0.239/end-deploy-central.py"
+    )
+    spec = importlib.util.spec_from_file_location("ic_end_1_0_239_central", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestTheUpdateDeploysTheCentral(ObservabilityExecutorCase):
+    """1.0.239 queues the central's deployment that mounts vmauth's directory."""
+
+    def setUp(self):
+        super().setUp()
+        self.settings.write({
+            "metrics_central_host_id": self.host.id,
+            "metrics_central_revision": 4,
+        })
+
+    def _deployments(self):
+        """Return the central's deployments queued on this test's host."""
+        return self.env["cloud.job"].search([
+            ("host_id", "=", self.host.id),
+            ("job_type_id.code", "=", "deploy_metrics_central"),
+        ])
+
+    def test_a_central_behind_is_queued(self):
+        _load_central_migration().migrate(self.env.cr, "1.0.238")
+        self.assertEqual(len(self._deployments()), 1)
+
+    def test_a_new_install_queues_nothing(self):
+        _load_central_migration().migrate(self.env.cr, None)
+        self.assertFalse(self._deployments())
+
+    def test_a_refused_queue_does_not_stop_the_update(self):
+        with patch.object(
+            type(self.env["cloud.host"]), "_reconcile_central_revision",
+            side_effect=RuntimeError("busy"),
+        ):
+            _load_central_migration().migrate(self.env.cr, "1.0.238")
+        self.assertFalse(self._deployments())
 
