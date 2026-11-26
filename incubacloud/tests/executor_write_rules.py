@@ -79,6 +79,9 @@ HOOK_HELPERS = {
     "_write_own_job": "the job's own row, in the transaction that stores it done",
     "_record_frozen_copy": "records the copy a move froze, or failed to freeze",
     "_record_shipped_accounts": "records the ACL a successful run shipped",
+    "_note_vmauth_generation": "records the vmauth container a successful "
+                               "deploy or sync read, and re-applies the agents "
+                               "when it is new",
     "_record_central_ca": "records the central's authority a successful "
                           "install gave the host's agents",
     "_record_write_user": "records the credential a successful install "
