@@ -838,14 +838,91 @@ class TestVmauthReloadsInPlace(BaseCase):
         # The total of reloads, not the errors' total.
         self.assertEqual(re.findall(before, self._METRICS, re.MULTILINE), ["1"])
 
-    def test_the_confirmation_as_ansible_evaluates_it(self):
-        """The block's variables and its ``until``, rendered by Ansible's
-        own templar against vmauth's metrics before and after."""
+    def _ansible(self):
+        """Return Ansible's templar pieces, or skip where it is not importable.
+
+        :return: ``(DataLoader, Templar, trust_as_template)``.
+        """
         try:
             from ansible.parsing.dataloader import DataLoader  # noqa: PLC0415
             from ansible.template import Templar, trust_as_template  # noqa: PLC0415
         except ImportError:
             self.skipTest("ansible-core is not importable here")
+        return DataLoader, Templar, trust_as_template
+
+    @staticmethod
+    def _inspect(destination, source):
+        """Return ``docker inspect`` of a vmauth container, as Docker 29 prints it.
+
+        Trimmed to the keys around the ones the tasks read, with their
+        real shapes: a list of one container, ``Mounts`` a list of binds.
+
+        :param destination: where the config is mounted in the container.
+        :param source: what is mounted there on the host.
+        :rtype: str
+        """
+        return json.dumps([{
+            "Id": "4f1c0e9b7d2a",
+            "Created": "2026-11-26T10:29:09.874201137Z",
+            "State": {
+                "Status": "running", "Running": True, "Pid": 41187,
+                "ExitCode": 0,
+                "StartedAt": "2026-11-26T10:29:10.352943945Z",
+                "FinishedAt": "0001-01-01T00:00:00Z",
+            },
+            "Name": "/incubacloud-central-vmauth-1",
+            "RestartCount": 0,
+            "HostConfig": {"RestartPolicy": {"Name": "unless-stopped", "MaximumRetryCount": 0}},
+            "Mounts": [{
+                "Type": "bind", "Source": source, "Destination": destination,
+                "Mode": "ro", "RW": False, "Propagation": "rprivate",
+            }],
+            "Config": {"Labels": {"com.docker.compose.service": "vmauth"}},
+        }], indent=4)
+
+    def test_the_mount_guard_as_ansible_evaluates_it(self):
+        """The guard's ``that``, evaluated by Ansible's own templar against
+        what ``docker inspect`` prints for each mount."""
+        DataLoader, Templar, trust_as_template = self._ansible()
+        that = self._task(self._GUARD)["ansible.builtin.assert"]["that"]
+        cases = (
+            ("the file alone, refused",
+             "/etc/vmauth/auth.yml", "/root/observability-central/vmauth/auth.yml", False),
+            ("the directory, accepted",
+             "/etc/vmauth", "/root/observability-central/vmauth", True),
+        )
+        for label, destination, source, expected in cases:
+            with self.subTest(case=label):
+                variables = {"ic_vmauth_inspect": {
+                    "stdout": self._inspect(destination, source),
+                    "rc": 0, "failed": False, "changed": False,
+                }}
+                self.assertIs(Templar(
+                    loader=DataLoader(), variables=variables,
+                ).evaluate_conditional(trust_as_template(that)), expected)
+
+    def test_the_generation_as_ansible_renders_it(self):
+        """The export, rendered by Ansible's own templar: the container's id
+        and when it started, as ``_note_vmauth_generation`` reads them."""
+        DataLoader, Templar, trust_as_template = self._ansible()
+        task = self._task("Export which vmauth container serves the central")
+        value = task["ansible.builtin.set_stats"]["data"]["ic_vmauth_generation"]
+        variables = {"ic_vmauth_inspect": {
+            "stdout": self._inspect("/etc/vmauth", "/root/observability-central/vmauth"),
+            "rc": 0, "failed": False, "changed": False,
+        }}
+        rendered = Templar(
+            loader=DataLoader(), variables=variables,
+        ).template(trust_as_template(value))
+        self.assertEqual(
+            " ".join(str(rendered).split()),
+            "4f1c0e9b7d2a 2026-11-26T10:29:10.352943945Z",
+        )
+
+    def test_the_confirmation_as_ansible_evaluates_it(self):
+        """The block's variables and its ``until``, rendered by Ansible's
+        own templar against vmauth's metrics before and after."""
+        DataLoader, Templar, trust_as_template = self._ansible()
         block = self._task(self._CONFIRM)
         until = block["block"][0]["until"]
 
