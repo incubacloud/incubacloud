@@ -152,9 +152,11 @@ unless-stopped`), and the job fails unless vmauth's own metrics count a
 load after the reload and say it succeeded
 (`vmauth_config_last_reload_total`, `vmauth_config_last_reload_successful`).
 When vmauth's container is new or restarted
-(`incubacloud.metrics_vmauth_generation`), every server's agents are
-applied again and restart vmagent once: a vmagent that connected while the
-routers were gone is answered 421 for good from Traefik v2.11.47. `/r/`
+(`incubacloud.metrics_vmauth_generation`), the panel that deploys the
+central applies its servers' agents again and each restarts vmagent once:
+a vmagent that connected while the routers were gone is answered 421 for
+good from Traefik v2.11.47. A managed panel runs neither that deployment
+nor the sync, so its servers are not restarted this way. `/r/`
 and `/lr/` served Grafana's
 endpoints too (series, labels, label values, metadata, the log index)
 until 1.0.230.

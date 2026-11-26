@@ -116,8 +116,10 @@ Import dialog.
   directory, which the compose file mounts instead of the file; every
   deployment and sync reloads it and fails, saying why, unless vmauth's
   own metrics show a successful load after the reload. When vmauth's
-  container is new or restarted, every server's agents are applied again
-  and restart vmagent once, which also frees the servers already stranded.
+  container is new or restarted, the panel that deploys the central applies
+  its servers' agents again and each restarts vmagent once, which also
+  frees that panel's servers already stranded; a managed panel's servers
+  are not restarted this way.
   The update deploys the central once more (`CENTRAL_REVISION` 5), which
   recreates vmauth with the new mount; until it has run, an account sync
   fails and asks for that deployment.
