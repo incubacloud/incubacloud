@@ -430,7 +430,7 @@
                     id="'bbd-sftp_password'"
                     value="state.form.sftp_password"
                     hasValue="state.has_sftp_password"
-                    ariaInvalid="Boolean(validator.fieldError('sftp_password'))"
+                    ariaInvalid="!!validator.fieldError('sftp_password')"
                     ariaDescribedby="validator.fieldError('sftp_password') ? 'bbd-err-sftp_password' : 'bbd-sftp_password-note'"
                     onChange="(val) => this.onPasswordChange('sftp_password', val)"
                   />
