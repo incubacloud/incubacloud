@@ -97,7 +97,7 @@ def owl_globals_in(root):
     root = pathlib.Path(root)
     found = []
     for path in sorted(root.glob("*/static/src/**/*.xml")):
-        for element in ElementTree.parse(path).iter():
+        for element in ElementTree.parse(path).iter():  # nosec B314 — this repo's own templates
             for expression in _expressions(element):
                 for name in _CALL.findall(_code(expression)):
                     found.append(
@@ -120,7 +120,7 @@ class TestOwlTemplateGlobals(BaseCase):
 
     def test_the_check_sees_a_call_in_a_prop_and_a_directive(self):
         """The check must catch what it is for, and leave strings and members alone."""
-        template = ElementTree.fromstring(
+        template = ElementTree.fromstring(  # nosec B314 — a literal of this test
             '<t t-name="x">'
             '<Comp flag="Boolean(a)" label="\'Number(1)\'" n="this.String(b)"'
             ' title.translate="Set up backups"/>'
